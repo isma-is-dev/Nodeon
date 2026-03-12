@@ -8,6 +8,7 @@ import {
   CallExpression,
   BinaryExpression,
   UnaryExpression,
+  UpdateExpression,
   Identifier,
   Literal,
   TemplateLiteral,
@@ -16,6 +17,7 @@ import {
   IfStatement,
   ForStatement,
   WhileStatement,
+  DoWhileStatement,
   ReturnStatement,
   ImportDeclaration,
   ExportDeclaration,
@@ -23,26 +25,39 @@ import {
   ClassMethod,
   TryCatchStatement,
   ThrowStatement,
+  SwitchStatement,
   MemberExpression,
   ArrayExpression,
   ObjectExpression,
   ArrowFunction,
   AssignmentExpression,
+  CompoundAssignmentExpression,
   NewExpression,
   AwaitExpression,
   SpreadExpression,
   TernaryExpression,
+  TypeofExpression,
+  VoidExpression,
+  DeleteExpression,
+  YieldExpression,
   Param,
 } from "@ast/nodes";
 
 const BIN_PRECEDENCE: Record<string, number> = {
   "..": 1,
-  "||": 2,
+  "??": 2,
+  "||": 3,
   "&&": 3,
-  "==": 4, "!=": 4,
-  "<": 5, ">": 5, "<=": 5, ">=": 5,
-  "+": 6, "-": 6,
-  "*": 7, "/": 7, "%": 7,
+  "|": 4,
+  "^": 5,
+  "&": 6,
+  "==": 7, "!=": 7, "===": 7, "!==": 7,
+  "<": 8, ">": 8, "<=": 8, ">=": 8, "instanceof": 8,
+  "<<": 9, ">>": 9, ">>>": 9,
+  "+": 10, "-": 10,
+  "*": 11, "/": 11, "%": 11,
+  "**": 12,
+  "|>": 13,
 };
 
 // ── Public API ─────────────────────────────────────────────────────
@@ -93,6 +108,8 @@ function emitStatement(stmt: Statement, ctx: GenContext): string {
       return emitFor(stmt, ctx);
     case "WhileStatement":
       return emitWhile(stmt, ctx);
+    case "DoWhileStatement":
+      return emitDoWhile(stmt, ctx);
     case "ReturnStatement":
       return emitReturn(stmt, ctx);
     case "ImportDeclaration":
@@ -105,6 +122,14 @@ function emitStatement(stmt: Statement, ctx: GenContext): string {
       return emitTryCatch(stmt, ctx);
     case "ThrowStatement":
       return `throw ${emitExpression(stmt.value, ctx)};`;
+    case "SwitchStatement":
+      return emitSwitch(stmt, ctx);
+    case "BreakStatement":
+      return "break;";
+    case "ContinueStatement":
+      return "continue;";
+    case "DebuggerStatement":
+      return "debugger;";
     default:
       throw new Error(`Unsupported statement type: ${(stmt as any).type}`);
   }
@@ -137,15 +162,13 @@ function emitParam(p: Param, ctx: GenContext): string {
 
 function emitVariable(v: VariableDeclaration, ctx: GenContext): string {
   const name = v.name.name;
-  if (v.constant) {
-    ctx.declaredVars.add(name);
-    return `const ${name}${ctx.sp}=${ctx.sp}${emitExpression(v.value, ctx)};`;
-  }
-  if (ctx.declaredVars.has(name)) {
+  const keyword = v.kind;
+  if (keyword === "let" && ctx.declaredVars.has(name)) {
+    // Re-assignment in Nodeon: bare `x = expr` compiles to just `x = expr`
     return `${name}${ctx.sp}=${ctx.sp}${emitExpression(v.value, ctx)};`;
   }
   ctx.declaredVars.add(name);
-  return `let ${name}${ctx.sp}=${ctx.sp}${emitExpression(v.value, ctx)};`;
+  return `${keyword} ${name}${ctx.sp}=${ctx.sp}${emitExpression(v.value, ctx)};`;
 }
 
 function emitIf(stmt: IfStatement, ctx: GenContext): string {
@@ -190,6 +213,13 @@ function emitWhile(stmt: WhileStatement, ctx: GenContext): string {
   return `while${ctx.sp}(${cond})${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`;
 }
 
+function emitDoWhile(stmt: DoWhileStatement, ctx: GenContext): string {
+  const inner = childScope(indented(ctx));
+  const body = stmt.body.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl);
+  const cond = emitExpression(stmt.condition, ctx);
+  return `do${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}${ctx.sp}while${ctx.sp}(${cond});`;
+}
+
 function emitReturn(stmt: ReturnStatement, ctx: GenContext): string {
   if (!stmt.value) return "return;";
   return `return ${emitExpression(stmt.value, ctx)};`;
@@ -199,6 +229,9 @@ function emitImport(stmt: ImportDeclaration, ctx: GenContext): string {
   if (stmt.namedImports.length > 0) {
     const names = stmt.namedImports.join("," + ctx.sp);
     return `import${ctx.sp}{${ctx.sp}${names}${ctx.sp}}${ctx.sp}from${ctx.sp}${JSON.stringify(stmt.source)};`;
+  }
+  if (stmt.defaultImport && stmt.defaultImport.startsWith("*")) {
+    return `import ${stmt.defaultImport}${ctx.sp}from${ctx.sp}${JSON.stringify(stmt.source)};`;
   }
   return `import ${stmt.defaultImport}${ctx.sp}from${ctx.sp}${JSON.stringify(stmt.source)};`;
 }
@@ -234,9 +267,34 @@ function emitMethod(m: ClassMethod, ctx: GenContext): string {
 function emitTryCatch(stmt: TryCatchStatement, ctx: GenContext): string {
   const inner = indented(ctx);
   const tryBody = stmt.tryBlock.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl);
-  const catchBody = stmt.catchBlock.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl);
-  const param = stmt.catchParam ? `${ctx.sp}(${stmt.catchParam.name})` : "";
-  return `try${ctx.sp}{${ctx.nl}${tryBody}${ctx.nl}${pad(ctx)}}${ctx.sp}catch${param}${ctx.sp}{${ctx.nl}${catchBody}${ctx.nl}${pad(ctx)}}`;
+  let out = `try${ctx.sp}{${ctx.nl}${tryBody}${ctx.nl}${pad(ctx)}}`;
+
+  if (stmt.catchBlock.length > 0 || stmt.catchParam) {
+    const catchBody = stmt.catchBlock.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl);
+    const param = stmt.catchParam ? `${ctx.sp}(${stmt.catchParam.name})` : "";
+    out += `${ctx.sp}catch${param}${ctx.sp}{${ctx.nl}${catchBody}${ctx.nl}${pad(ctx)}}`;
+  }
+
+  if (stmt.finallyBlock) {
+    const finallyBody = stmt.finallyBlock.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl);
+    out += `${ctx.sp}finally${ctx.sp}{${ctx.nl}${finallyBody}${ctx.nl}${pad(ctx)}}`;
+  }
+
+  return out;
+}
+
+function emitSwitch(stmt: SwitchStatement, ctx: GenContext): string {
+  const inner = indented(ctx);
+  const caseInner = indented(inner);
+  const disc = emitExpression(stmt.discriminant, ctx);
+  const cases = stmt.cases.map((c) => {
+    const header = c.test
+      ? `${pad(inner)}case ${emitExpression(c.test, inner)}:`
+      : `${pad(inner)}default:`;
+    const body = c.consequent.map((s) => pad(caseInner) + emitStatement(s, caseInner)).join(ctx.nl);
+    return `${header}${ctx.nl}${body}`;
+  }).join(ctx.nl);
+  return `switch${ctx.sp}(${disc})${ctx.sp}{${ctx.nl}${cases}${ctx.nl}${pad(ctx)}}`;
 }
 
 // ── Expressions ────────────────────────────────────────────────────
@@ -253,6 +311,10 @@ function emitExpression(expr: Expression, ctx: GenContext): string {
       return emitBinary(expr, ctx);
     case "UnaryExpression":
       return `${expr.operator}${emitExpression(expr.argument, ctx)}`;
+    case "UpdateExpression":
+      return expr.prefix
+        ? `${expr.operator}${emitExpression(expr.argument, ctx)}`
+        : `${emitExpression(expr.argument, ctx)}${expr.operator}`;
     case "TemplateLiteral":
       return emitTemplate(expr, ctx);
     case "MemberExpression":
@@ -265,6 +327,8 @@ function emitExpression(expr: Expression, ctx: GenContext): string {
       return emitArrow(expr, ctx);
     case "AssignmentExpression":
       return `${emitExpression(expr.left, ctx)}${ctx.sp}=${ctx.sp}${emitExpression(expr.right, ctx)}`;
+    case "CompoundAssignmentExpression":
+      return `${emitExpression(expr.left, ctx)}${ctx.sp}${expr.operator}${ctx.sp}${emitExpression(expr.right, ctx)}`;
     case "NewExpression":
       return emitNew(expr, ctx);
     case "AwaitExpression":
@@ -273,6 +337,17 @@ function emitExpression(expr: Expression, ctx: GenContext): string {
       return `...${emitExpression(expr.argument, ctx)}`;
     case "TernaryExpression":
       return `${emitExpression(expr.condition, ctx)}${ctx.sp}?${ctx.sp}${emitExpression(expr.consequent, ctx)}${ctx.sp}:${ctx.sp}${emitExpression(expr.alternate, ctx)}`;
+    case "TypeofExpression":
+      return `typeof ${emitExpression(expr.argument, ctx)}`;
+    case "VoidExpression":
+      return `void ${emitExpression(expr.argument, ctx)}`;
+    case "DeleteExpression":
+      return `delete ${emitExpression(expr.argument, ctx)}`;
+    case "YieldExpression": {
+      const delegate = expr.delegate ? "*" : "";
+      if (!expr.argument) return `yield${delegate}`;
+      return `yield${delegate} ${emitExpression(expr.argument, ctx)}`;
+    }
     default:
       throw new Error(`Unsupported expression type: ${(expr as any).type}`);
   }
@@ -284,6 +359,7 @@ function emitLiteral(lit: Literal): string {
     case "string": return JSON.stringify(lit.value);
     case "boolean": return String(lit.value);
     case "null": return "null";
+    case "undefined": return "undefined";
     default: return String(lit.value);
   }
 }
@@ -300,11 +376,16 @@ function emitCall(call: CallExpression, ctx: GenContext): string {
 }
 
 function emitBinary(bin: BinaryExpression, ctx: GenContext): string {
+  // Nodeon == compiles to JS ===, and != to !==
+  let op = bin.operator;
+  if (op === "==") op = "===";
+  else if (op === "!=") op = "!==";
+
   // Range operator (..) is handled at the ForStatement level, but
   // if it appears in an expression context emit as-is for safety
   const left = parenthesizeIfNeeded(bin.left, bin.operator, ctx);
   const right = parenthesizeIfNeeded(bin.right, bin.operator, ctx);
-  return `${left}${ctx.sp}${bin.operator}${ctx.sp}${right}`;
+  return `${left}${ctx.sp}${op}${ctx.sp}${right}`;
 }
 
 function parenthesizeIfNeeded(expr: Expression, parentOp: string, ctx: GenContext): string {
@@ -328,7 +409,8 @@ function emitTemplate(t: TemplateLiteral, ctx: GenContext): string {
 function emitMember(m: MemberExpression, ctx: GenContext): string {
   const obj = emitExpression(m.object, ctx);
   if (m.computed) return `${obj}[${emitExpression(m.property, ctx)}]`;
-  return `${obj}.${emitExpression(m.property, ctx)}`;
+  const dot = m.optional ? "?." : ".";
+  return `${obj}${dot}${emitExpression(m.property, ctx)}`;
 }
 
 function emitArray(arr: ArrayExpression, ctx: GenContext): string {

@@ -12,12 +12,17 @@ export type Statement =
   | IfStatement
   | ForStatement
   | WhileStatement
+  | DoWhileStatement
   | ReturnStatement
   | ImportDeclaration
   | ExportDeclaration
   | ClassDeclaration
   | TryCatchStatement
-  | ThrowStatement;
+  | ThrowStatement
+  | SwitchStatement
+  | BreakStatement
+  | ContinueStatement
+  | DebuggerStatement;
 
 export type FunctionDeclaration = {
   type: "FunctionDeclaration";
@@ -38,7 +43,7 @@ export type VariableDeclaration = {
   type: "VariableDeclaration";
   name: Identifier;
   value: Expression;
-  constant: boolean;
+  kind: "let" | "const" | "var";
 };
 
 export type ExpressionStatement = {
@@ -62,6 +67,12 @@ export type ForStatement = {
 
 export type WhileStatement = {
   type: "WhileStatement";
+  condition: Expression;
+  body: Statement[];
+};
+
+export type DoWhileStatement = {
+  type: "DoWhileStatement";
   condition: Expression;
   body: Statement[];
 };
@@ -103,6 +114,7 @@ export type TryCatchStatement = {
   tryBlock: Statement[];
   catchParam: Identifier | null;
   catchBlock: Statement[];
+  finallyBlock: Statement[] | null;
 };
 
 export type ThrowStatement = {
@@ -110,11 +122,36 @@ export type ThrowStatement = {
   value: Expression;
 };
 
+export type SwitchStatement = {
+  type: "SwitchStatement";
+  discriminant: Expression;
+  cases: SwitchCase[];
+};
+
+export type SwitchCase = {
+  type: "SwitchCase";
+  test: Expression | null; // null for default
+  consequent: Statement[];
+};
+
+export type BreakStatement = {
+  type: "BreakStatement";
+};
+
+export type ContinueStatement = {
+  type: "ContinueStatement";
+};
+
+export type DebuggerStatement = {
+  type: "DebuggerStatement";
+};
+
 // ── Expressions ──────────────────────────────────────────────────────
 export type Expression =
   | CallExpression
   | BinaryExpression
   | UnaryExpression
+  | UpdateExpression
   | TemplateLiteral
   | Literal
   | Identifier
@@ -123,10 +160,15 @@ export type Expression =
   | ObjectExpression
   | ArrowFunction
   | AssignmentExpression
+  | CompoundAssignmentExpression
   | NewExpression
   | AwaitExpression
   | SpreadExpression
-  | TernaryExpression;
+  | TernaryExpression
+  | TypeofExpression
+  | VoidExpression
+  | DeleteExpression
+  | YieldExpression;
 
 export type CallExpression = {
   type: "CallExpression";
@@ -147,11 +189,19 @@ export type UnaryExpression = {
   argument: Expression;
 };
 
+export type UpdateExpression = {
+  type: "UpdateExpression";
+  operator: "++" | "--";
+  argument: Expression;
+  prefix: boolean;
+};
+
 export type MemberExpression = {
   type: "MemberExpression";
   object: Expression;
   property: Expression;
-  computed: boolean; // true for obj[expr], false for obj.prop
+  computed: boolean;
+  optional: boolean;
 };
 
 export type ArrayExpression = {
@@ -184,6 +234,13 @@ export type AssignmentExpression = {
   right: Expression;
 };
 
+export type CompoundAssignmentExpression = {
+  type: "CompoundAssignmentExpression";
+  operator: string;
+  left: Expression;
+  right: Expression;
+};
+
 export type NewExpression = {
   type: "NewExpression";
   callee: Expression;
@@ -207,6 +264,27 @@ export type TernaryExpression = {
   alternate: Expression;
 };
 
+export type TypeofExpression = {
+  type: "TypeofExpression";
+  argument: Expression;
+};
+
+export type VoidExpression = {
+  type: "VoidExpression";
+  argument: Expression;
+};
+
+export type DeleteExpression = {
+  type: "DeleteExpression";
+  argument: Expression;
+};
+
+export type YieldExpression = {
+  type: "YieldExpression";
+  argument: Expression | null;
+  delegate: boolean;
+};
+
 export type Identifier = {
   type: "Identifier";
   name: string;
@@ -214,8 +292,8 @@ export type Identifier = {
 
 export type Literal = {
   type: "Literal";
-  value: string | number | boolean | null;
-  literalType: "string" | "number" | "boolean" | "null";
+  value: string | number | boolean | null | undefined;
+  literalType: "string" | "number" | "boolean" | "null" | "undefined";
 };
 
 export type TemplatePartText = {

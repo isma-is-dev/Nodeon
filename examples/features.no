@@ -1,0 +1,94 @@
+# ──────────────────────────────────────────────────────────
+# Nodeon Feature Showcase: tests all major language features
+# ──────────────────────────────────────────────────────────
+
+# ── Variables with different declaration styles ───────────
+x = 42
+const PI = 3.14159
+let name = "Nodeon"
+
+# ── Hex, binary, octal number literals ────────────────────
+hex = 0xFF
+bin = 0b1010
+oct = 0o77
+
+# ── JS-style comments also work ──────────────────────────
+// This is a JS-style line comment
+/* This is a block comment */
+
+# ── Switch statement ──────────────────────────────────────
+color = "red"
+switch color {
+  case "red" {
+    print("Stop!")
+  }
+  case "green" {
+    print("Go!")
+  }
+  default {
+    print("Unknown color")
+  }
+}
+
+# ── Do-while loop ────────────────────────────────────────
+n = 5
+do {
+  n = n - 1
+} while n > 0
+
+# ── Compound assignment operators ─────────────────────────
+counter = 0
+counter += 10
+counter -= 3
+counter *= 2
+
+# ── Ternary expression ───────────────────────────────────
+status = counter > 10 ? "high" : "low"
+print("Counter status: {status}")
+
+# ── typeof ────────────────────────────────────────────────
+print(typeof x)
+
+# ── Optional chaining ────────────────────────────────────
+config = { db: { host: "localhost" } }
+port = config.db?.port
+print("Port: {port}")
+
+# ── Nullish coalescing ───────────────────────────────────
+fallback = port ?? 3000
+print("Using port: {fallback}")
+
+# ── Try/catch/finally ────────────────────────────────────
+try {
+  result = JSON.parse('{"ok": true}')
+  # Single-quoted strings don't interpolate, so {"ok": true} is literal
+  print("Parsed: {result.ok}")
+} catch (err) {
+  print("Error: {err}")
+} finally {
+  print("Cleanup done")
+}
+
+# ── Break and continue ───────────────────────────────────
+for i in 0..10 {
+  if i == 3 {
+    continue
+  }
+  if i == 7 {
+    break
+  }
+  print(i)
+}
+
+# ── Strict equality (=== in JS) ──────────────────────────
+a = "5"
+b = 5
+if a == b {
+  print("equal")
+} else {
+  print("not equal (=== comparison)")
+}
+
+# ── Backtick template literals ────────────────────────────
+greeting = `Hello ${name}, you have ${counter} items`
+print(greeting)

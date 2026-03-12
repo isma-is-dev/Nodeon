@@ -1,4 +1,5 @@
 import { Token, TokenType } from "@language/tokens";
+import { Lexer } from "@lexer/lexer";
 import {
   Program,
   Statement,
@@ -9,6 +10,7 @@ import {
   CallExpression,
   BinaryExpression,
   UnaryExpression,
+  UpdateExpression,
   Identifier,
   Literal,
   TemplateLiteral,
@@ -17,6 +19,7 @@ import {
   IfStatement,
   ForStatement,
   WhileStatement,
+  DoWhileStatement,
   ReturnStatement,
   ImportDeclaration,
   ExportDeclaration,
@@ -24,27 +27,50 @@ import {
   ClassMethod,
   TryCatchStatement,
   ThrowStatement,
+  SwitchStatement,
+  SwitchCase,
+  BreakStatement,
+  ContinueStatement,
+  DebuggerStatement,
   MemberExpression,
   ArrayExpression,
   ObjectExpression,
   ObjectProperty,
   ArrowFunction,
   AssignmentExpression,
+  CompoundAssignmentExpression,
   NewExpression,
   AwaitExpression,
   SpreadExpression,
+  TernaryExpression,
+  TypeofExpression,
+  VoidExpression,
+  DeleteExpression,
+  YieldExpression,
   Param,
 } from "@ast/nodes";
 
 const PRECEDENCE: Record<string, number> = {
   "..": 1,
-  "||": 2,
+  "??": 2,
+  "||": 3,
   "&&": 3,
-  "==": 4, "!=": 4,
-  "<": 5, ">": 5, "<=": 5, ">=": 5,
-  "+": 6, "-": 6,
-  "*": 7, "/": 7, "%": 7,
+  "|": 4,
+  "^": 5,
+  "&": 6,
+  "==": 7, "!=": 7, "===": 7, "!==": 7,
+  "<": 8, ">": 8, "<=": 8, ">=": 8, "instanceof": 8,
+  "<<": 9, ">>": 9, ">>>": 9,
+  "+": 10, "-": 10,
+  "*": 11, "/": 11, "%": 11,
+  "**": 12,
+  "|>": 13,
 };
+
+const COMPOUND_ASSIGN = new Set([
+  "+=", "-=", "*=", "/=", "%=", "**=",
+  "&&=", "||=", "??=",
+]);
 
 export class Parser {
   private tokens: Token[] = [];
@@ -74,6 +100,7 @@ export class Parser {
         case "if": return this.parseIfStatement();
         case "for": return this.parseForStatement();
         case "while": return this.parseWhileStatement();
+        case "do": return this.parseDoWhileStatement();
         case "return": return this.parseReturnStatement();
         case "import": return this.parseImportDeclaration();
         case "export": return this.parseExportDeclaration();
@@ -81,6 +108,12 @@ export class Parser {
         case "try": return this.parseTryCatch();
         case "throw": return this.parseThrowStatement();
         case "const": return this.parseConstDeclaration();
+        case "let": return this.parseLetDeclaration();
+        case "var": return this.parseVarDeclaration();
+        case "switch": return this.parseSwitchStatement();
+        case "break": { this.advance(); return { type: "BreakStatement" } as BreakStatement; }
+        case "continue": { this.advance(); return { type: "ContinueStatement" } as ContinueStatement; }
+        case "debugger": { this.advance(); return { type: "DebuggerStatement" } as DebuggerStatement; }
       }
     }
 
@@ -88,8 +121,8 @@ export class Parser {
       const next = this.peekNext();
       if (next?.type === TokenType.Operator && next.value === "=") {
         const afterEq = this.peekAt(2);
-        if (afterEq?.type !== TokenType.Operator || afterEq.value !== "=") {
-          return this.parseVariableDeclaration(false);
+        if (afterEq?.type !== TokenType.Operator || (afterEq.value !== "=" && afterEq.value !== ">")) {
+          return this.parseVariableDeclaration("let");
         }
       }
     }
@@ -189,6 +222,14 @@ export class Parser {
     return { type: "WhileStatement", condition, body };
   }
 
+  private parseDoWhileStatement(): DoWhileStatement {
+    this.consumeKeyword("do");
+    const body = this.parseBlock();
+    this.consumeKeyword("while");
+    const condition = this.parseExpression();
+    return { type: "DoWhileStatement", condition, body };
+  }
+
   private parseReturnStatement(): ReturnStatement {
     this.consumeKeyword("return");
     if (this.isAtEnd() || this.checkDelimiter("}")) {
@@ -214,6 +255,20 @@ export class Parser {
         } while (this.matchDelimiter(","));
       }
       this.consumeDelimiter("}", "Expected '}'");
+    } else if (this.checkOperator("*")) {
+      // import * as name from "module"
+      this.advance(); // *
+      // consume 'as' — it's an identifier, not a keyword
+      const asTok = this.peek();
+      if (asTok.type === TokenType.Identifier && asTok.value === "as") {
+        this.advance();
+      } else {
+        this.error(asTok, "Expected 'as' after '*'");
+      }
+      const tok = this.peek();
+      if (tok.type !== TokenType.Identifier) this.error(tok, "Expected module name");
+      defaultImport = `* as ${tok.value}`;
+      this.advance();
     } else {
       const tok = this.peek();
       if (tok.type !== TokenType.Identifier) this.error(tok, "Expected module name");
@@ -223,7 +278,9 @@ export class Parser {
 
     this.consumeKeyword("from");
     const srcTok = this.peek();
-    if (srcTok.type !== TokenType.String) this.error(srcTok, "Expected module source string");
+    if (srcTok.type !== TokenType.String && srcTok.type !== TokenType.RawString) {
+      this.error(srcTok, "Expected module source string");
+    }
     this.advance();
     return { type: "ImportDeclaration", defaultImport, namedImports, source: srcTok.value };
   }
@@ -239,9 +296,7 @@ export class Parser {
     const name = this.consumeIdentifier("Expected class name");
     let superClass: Identifier | null = null;
 
-    // class Foo extends Bar { ... }  →  we use < for extends to keep it clean
-    // Actually let's support both 'extends' as identifier and '<' operator
-    if (this.peek().type === TokenType.Identifier && this.peek().value === "extends") {
+    if (this.checkKeyword("extends")) {
       this.advance();
       superClass = this.consumeIdentifier("Expected superclass name");
     }
@@ -276,17 +331,29 @@ export class Parser {
   private parseTryCatch(): TryCatchStatement {
     this.consumeKeyword("try");
     const tryBlock = this.parseBlock();
-    this.consumeKeyword("catch");
+
     let catchParam: Identifier | null = null;
-    if (this.checkDelimiter("(")) {
-      this.advance();
-      catchParam = this.consumeIdentifier("Expected catch parameter");
-      this.consumeDelimiter(")", "Expected ')'");
-    } else if (this.peek().type === TokenType.Identifier) {
-      catchParam = this.consumeIdentifier("Expected catch parameter");
+    let catchBlock: Statement[] = [];
+    let finallyBlock: Statement[] | null = null;
+
+    if (this.checkKeyword("catch")) {
+      this.consumeKeyword("catch");
+      if (this.checkDelimiter("(")) {
+        this.advance();
+        catchParam = this.consumeIdentifier("Expected catch parameter");
+        this.consumeDelimiter(")", "Expected ')'");
+      } else if (this.peek().type === TokenType.Identifier) {
+        catchParam = this.consumeIdentifier("Expected catch parameter");
+      }
+      catchBlock = this.parseBlock();
     }
-    const catchBlock = this.parseBlock();
-    return { type: "TryCatchStatement", tryBlock, catchParam, catchBlock };
+
+    if (this.checkKeyword("finally")) {
+      this.advance();
+      finallyBlock = this.parseBlock();
+    }
+
+    return { type: "TryCatchStatement", tryBlock, catchParam, catchBlock, finallyBlock };
   }
 
   private parseThrowStatement(): ThrowStatement {
@@ -297,14 +364,59 @@ export class Parser {
 
   private parseConstDeclaration(): VariableDeclaration {
     this.consumeKeyword("const");
-    return this.parseVariableDeclaration(true);
+    return this.parseVariableDeclaration("const");
   }
 
-  private parseVariableDeclaration(constant: boolean): VariableDeclaration {
+  private parseLetDeclaration(): VariableDeclaration {
+    this.consumeKeyword("let");
+    return this.parseVariableDeclaration("let");
+  }
+
+  private parseVarDeclaration(): VariableDeclaration {
+    this.consumeKeyword("var");
+    return this.parseVariableDeclaration("var");
+  }
+
+  private parseVariableDeclaration(kind: "let" | "const" | "var"): VariableDeclaration {
     const name = this.consumeIdentifier("Expected variable name");
     this.consumeOperator("=", "Expected '=' in assignment");
     const value = this.parseExpression();
-    return { type: "VariableDeclaration", name, value, constant };
+    return { type: "VariableDeclaration", name, value, kind };
+  }
+
+  private parseSwitchStatement(): SwitchStatement {
+    this.consumeKeyword("switch");
+    const discriminant = this.parseExpression();
+    this.consumeDelimiter("{", "Expected '{'");
+    const cases: SwitchCase[] = [];
+
+    while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+      if (this.checkKeyword("case")) {
+        this.advance();
+        const test = this.parseExpression();
+        this.consumeDelimiter("{", "Expected '{'");
+        const consequent: Statement[] = [];
+        while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+          consequent.push(this.parseStatement());
+        }
+        this.consumeDelimiter("}", "Expected '}'");
+        cases.push({ type: "SwitchCase", test, consequent });
+      } else if (this.checkKeyword("default")) {
+        this.advance();
+        this.consumeDelimiter("{", "Expected '{'");
+        const consequent: Statement[] = [];
+        while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+          consequent.push(this.parseStatement());
+        }
+        this.consumeDelimiter("}", "Expected '}'");
+        cases.push({ type: "SwitchCase", test: null, consequent });
+      } else {
+        this.error(this.peek(), "Expected 'case' or 'default'");
+      }
+    }
+
+    this.consumeDelimiter("}", "Expected '}'");
+    return { type: "SwitchStatement", discriminant, cases };
   }
 
   private parseExpressionStatement(): ExpressionStatement {
@@ -314,13 +426,23 @@ export class Parser {
 
   // ── Expression Parsing (Pratt) ─────────────────────────────────────
 
-  private parseExpression(precedence = 0): Expression {
+  parseExpression(precedence = 0): Expression {
     let left = this.parseUnary();
 
     while (true) {
       const tok = this.peek();
 
-      // Assignment: x = expr  (only when at top-level precedence)
+      // Compound assignment: +=, -=, *=, /=, etc.
+      if (tok.type === TokenType.Operator && COMPOUND_ASSIGN.has(tok.value) && precedence === 0) {
+        if (left.type === "Identifier" || left.type === "MemberExpression") {
+          this.advance();
+          const right = this.parseExpression(0);
+          left = { type: "CompoundAssignmentExpression", operator: tok.value, left, right } as CompoundAssignmentExpression;
+          continue;
+        }
+      }
+
+      // Assignment: x = expr (only when at top-level precedence)
       if (tok.type === TokenType.Operator && tok.value === "=" && precedence === 0) {
         if (left.type === "Identifier" || left.type === "MemberExpression") {
           this.advance();
@@ -330,31 +452,54 @@ export class Parser {
         }
       }
 
+      // Postfix ++ and --
+      if (tok.type === TokenType.Operator && (tok.value === "++" || tok.value === "--")) {
+        if (left.type === "Identifier" || left.type === "MemberExpression") {
+          this.advance();
+          left = { type: "UpdateExpression", operator: tok.value as "++" | "--", argument: left, prefix: false } as UpdateExpression;
+          continue;
+        }
+      }
+
       // Binary operators
       if (tok.type === TokenType.Operator && PRECEDENCE[tok.value] !== undefined) {
         const opPrec = PRECEDENCE[tok.value];
         if (opPrec <= precedence) break;
         this.advance();
-        const right = this.parseExpression(opPrec);
+        const right = this.parseExpression(tok.value === "**" ? opPrec - 1 : opPrec); // ** is right-associative
         left = { type: "BinaryExpression", operator: tok.value, left, right } as BinaryExpression;
+        continue;
+      }
+
+      // instanceof as binary operator (keyword)
+      if (tok.type === TokenType.Keyword && tok.value === "instanceof") {
+        const opPrec = PRECEDENCE["instanceof"];
+        if (opPrec <= precedence) break;
+        this.advance();
+        const right = this.parseExpression(opPrec);
+        left = { type: "BinaryExpression", operator: "instanceof", left, right } as BinaryExpression;
         continue;
       }
 
       // Ternary: condition ? then : else
       if (tok.type === TokenType.Operator && tok.value === "?" && precedence === 0) {
+        // Check it's not ?. (optional chaining) — already handled below
+        const next = this.peekNext();
+        if (next && next.type === TokenType.Operator && next.value === ".") break; // let member access handle it
         this.advance();
         const consequent = this.parseExpression();
         this.consumeDelimiter(":", "Expected ':' in ternary");
         const alternate = this.parseExpression();
-        left = { type: "TernaryExpression", condition: left, consequent, alternate } as any;
+        left = { type: "TernaryExpression", condition: left, consequent, alternate } as TernaryExpression;
         continue;
       }
 
-      // Member access . and [
-      if (tok.type === TokenType.Operator && tok.value === ".") {
+      // Member access . and ?.
+      if (tok.type === TokenType.Operator && (tok.value === "." || tok.value === "?.")) {
+        const optional = tok.value === "?.";
         this.advance();
         const prop = this.consumeIdentifier("Expected property name");
-        left = { type: "MemberExpression", object: left, property: prop, computed: false } as MemberExpression;
+        left = { type: "MemberExpression", object: left, property: prop, computed: false, optional } as MemberExpression;
         // Check for call: obj.method(...)
         if (this.checkDelimiter("(")) {
           left = this.parseCallArguments(left);
@@ -362,17 +507,18 @@ export class Parser {
         continue;
       }
 
+      // Computed member access [
       if (tok.type === TokenType.Delimiter && tok.value === "[") {
         this.advance();
         const prop = this.parseExpression();
         this.consumeDelimiter("]", "Expected ']'");
-        left = { type: "MemberExpression", object: left, property: prop, computed: true } as MemberExpression;
+        left = { type: "MemberExpression", object: left, property: prop, computed: true, optional: false } as MemberExpression;
         continue;
       }
 
       // Function call: name(...)
       if (tok.type === TokenType.Delimiter && tok.value === "(") {
-        if (left.type === "Identifier" || left.type === "MemberExpression") {
+        if (left.type === "Identifier" || left.type === "MemberExpression" || left.type === "CallExpression") {
           left = this.parseCallArguments(left);
           continue;
         }
@@ -394,6 +540,42 @@ export class Parser {
       return { type: "AwaitExpression", argument } as AwaitExpression;
     }
 
+    // typeof expr
+    if (tok.type === TokenType.Keyword && tok.value === "typeof") {
+      this.advance();
+      const argument = this.parseUnary();
+      return { type: "TypeofExpression", argument } as TypeofExpression;
+    }
+
+    // void expr
+    if (tok.type === TokenType.Keyword && tok.value === "void") {
+      this.advance();
+      const argument = this.parseUnary();
+      return { type: "VoidExpression", argument } as VoidExpression;
+    }
+
+    // delete expr
+    if (tok.type === TokenType.Keyword && tok.value === "delete") {
+      this.advance();
+      const argument = this.parseUnary();
+      return { type: "DeleteExpression", argument } as DeleteExpression;
+    }
+
+    // yield / yield*
+    if (tok.type === TokenType.Keyword && tok.value === "yield") {
+      this.advance();
+      let delegate = false;
+      if (this.checkOperator("*")) {
+        this.advance();
+        delegate = true;
+      }
+      if (this.isAtEnd() || this.checkDelimiter("}") || this.checkDelimiter(")")) {
+        return { type: "YieldExpression", argument: null, delegate } as YieldExpression;
+      }
+      const argument = this.parseExpression();
+      return { type: "YieldExpression", argument, delegate } as YieldExpression;
+    }
+
     // new Constructor(...)
     if (tok.type === TokenType.Keyword && tok.value === "new") {
       this.advance();
@@ -402,7 +584,7 @@ export class Parser {
       while (this.checkOperator(".")) {
         this.advance();
         const prop = this.consumeIdentifier("Expected property name");
-        callee = { type: "MemberExpression", object: callee, property: prop, computed: false } as MemberExpression;
+        callee = { type: "MemberExpression", object: callee, property: prop, computed: false, optional: false } as MemberExpression;
       }
       const args: Expression[] = [];
       if (this.checkDelimiter("(")) {
@@ -421,8 +603,15 @@ export class Parser {
       return { type: "SpreadExpression", argument: this.parseUnary() } as SpreadExpression;
     }
 
-    // !expr or -expr (unary)
-    if (tok.type === TokenType.Operator && (tok.value === "!" || tok.value === "-")) {
+    // Prefix ++ and --
+    if (tok.type === TokenType.Operator && (tok.value === "++" || tok.value === "--")) {
+      this.advance();
+      const argument = this.parseUnary();
+      return { type: "UpdateExpression", operator: tok.value as "++" | "--", argument, prefix: true } as UpdateExpression;
+    }
+
+    // !expr, -expr, ~expr, +expr (unary)
+    if (tok.type === TokenType.Operator && (tok.value === "!" || tok.value === "-" || tok.value === "~" || tok.value === "+")) {
       this.advance();
       return { type: "UnaryExpression", operator: tok.value, argument: this.parseUnary() } as UnaryExpression;
     }
@@ -466,6 +655,24 @@ export class Parser {
       return { type: "Literal", value: null, literalType: "null" } as Literal;
     }
 
+    // undefined
+    if (token.type === TokenType.Keyword && token.value === "undefined") {
+      this.advance();
+      return { type: "Literal", value: undefined, literalType: "undefined" } as Literal;
+    }
+
+    // this
+    if (token.type === TokenType.Keyword && token.value === "this") {
+      this.advance();
+      return { type: "Identifier", name: "this" } as Identifier;
+    }
+
+    // super
+    if (token.type === TokenType.Keyword && token.value === "super") {
+      this.advance();
+      return { type: "Identifier", name: "super" } as Identifier;
+    }
+
     // Identifier or keyword used as identifier (print)
     if (token.type === TokenType.Identifier || (token.type === TokenType.Keyword && token.value === "print")) {
       this.advance();
@@ -478,10 +685,22 @@ export class Parser {
       return { type: "Literal", value: Number(token.value), literalType: "number" } as Literal;
     }
 
-    // String literal (with interpolation detection)
+    // Raw string literal (single-quoted, no interpolation)
+    if (token.type === TokenType.RawString) {
+      this.advance();
+      return { type: "Literal", value: token.value, literalType: "string" } as Literal;
+    }
+
+    // String literal (double-quoted, with interpolation detection)
     if (token.type === TokenType.String) {
       this.advance();
       return this.parseStringLiteral(token.value);
+    }
+
+    // Template literal from lexer (backtick strings)
+    if (token.type === TokenType.TemplateLiteral) {
+      this.advance();
+      return this.parseTemplateLiteral(token.value);
     }
 
     this.error(token, "Expected expression");
@@ -518,11 +737,14 @@ export class Parser {
       do {
         const keyTok = this.peek();
         let key: Identifier | Literal;
-        if (keyTok.type === TokenType.Identifier) {
+        if (keyTok.type === TokenType.Identifier || (keyTok.type === TokenType.Keyword)) {
           key = { type: "Identifier", name: keyTok.value };
           this.advance();
-        } else if (keyTok.type === TokenType.String) {
+        } else if (keyTok.type === TokenType.String || keyTok.type === TokenType.RawString) {
           key = { type: "Literal", value: keyTok.value, literalType: "string" };
+          this.advance();
+        } else if (keyTok.type === TokenType.Number) {
+          key = { type: "Literal", value: Number(keyTok.value), literalType: "number" };
           this.advance();
         } else {
           this.error(keyTok, "Expected property key");
@@ -580,6 +802,7 @@ export class Parser {
     return { type: "ArrowFunction", params, body: expr, async: isAsync };
   }
 
+  // Nodeon-style string interpolation: "Hello {name}" → template literal
   private parseStringLiteral(raw: string): Literal | TemplateLiteral {
     if (!raw.includes("{")) {
       return { type: "Literal", value: raw, literalType: "string" } as Literal;
@@ -589,6 +812,14 @@ export class Parser {
     let buffer = "";
     let i = 0;
     while (i < raw.length) {
+      if (raw[i] === "\\") {
+        // escaped brace — keep the literal char
+        if (i + 1 < raw.length && raw[i + 1] === "{") {
+          buffer += "{";
+          i += 2;
+          continue;
+        }
+      }
       if (raw[i] === "{") {
         if (buffer) {
           parts.push({ kind: "Text", value: buffer });
@@ -607,7 +838,6 @@ export class Parser {
           throw new SyntaxError("Unterminated interpolation in string literal");
         }
         // Parse the inner expression using a sub-lexer + sub-parser
-        const { Lexer } = require("@lexer/lexer");
         const innerTokens = new Lexer(inner).tokenize();
         const innerParser = new Parser(innerTokens);
         const expr = innerParser.parseExpression();
@@ -622,6 +852,45 @@ export class Parser {
       parts.push({ kind: "Text", value: buffer });
     }
     return { type: "TemplateLiteral", parts } as TemplateLiteral;
+  }
+
+  // JS-style template literal: `Hello ${name}` from backtick tokens
+  private parseTemplateLiteral(raw: string): TemplateLiteral {
+    const parts: Array<TemplatePartText | TemplatePartExpression> = [];
+    let buffer = "";
+    let i = 0;
+    while (i < raw.length) {
+      if (raw[i] === "$" && i + 1 < raw.length && raw[i + 1] === "{") {
+        if (buffer) {
+          parts.push({ kind: "Text", value: buffer });
+          buffer = "";
+        }
+        i += 2; // skip ${
+        let inner = "";
+        let braceDepth = 1;
+        while (i < raw.length && braceDepth > 0) {
+          if (raw[i] === "{") braceDepth++;
+          else if (raw[i] === "}") { braceDepth--; if (braceDepth === 0) break; }
+          inner += raw[i];
+          i++;
+        }
+        i++; // skip closing }
+        const innerTokens = new Lexer(inner).tokenize();
+        const innerParser = new Parser(innerTokens);
+        const expr = innerParser.parseExpression();
+        parts.push({ kind: "Expression", expression: expr });
+        continue;
+      }
+      buffer += raw[i];
+      i++;
+    }
+    if (buffer) {
+      parts.push({ kind: "Text", value: buffer });
+    }
+    if (parts.length === 0) {
+      parts.push({ kind: "Text", value: "" });
+    }
+    return { type: "TemplateLiteral", parts };
   }
 
   // ── Helpers ────────────────────────────────────────────────────────
@@ -652,7 +921,7 @@ export class Parser {
       return { type: "Identifier", name: tok.value };
     }
     // Allow some keywords to be used as identifiers in certain contexts
-    if (tok.type === TokenType.Keyword && ["print", "from", "async"].includes(tok.value)) {
+    if (tok.type === TokenType.Keyword && ["print", "from", "async", "of", "get", "set"].includes(tok.value)) {
       this.advance();
       return { type: "Identifier", name: tok.value };
     }
@@ -717,6 +986,10 @@ export class Parser {
   }
 
   private error(token: Token, message: string): never {
+    const loc = token.loc;
+    if (loc) {
+      throw new SyntaxError(`${message} at ${loc.line}:${loc.column}`);
+    }
     throw new SyntaxError(`${message} at position ${token.position}`);
   }
 }

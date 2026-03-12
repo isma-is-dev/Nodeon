@@ -23,7 +23,7 @@ class ApiClient {
 
   async get(path) {
     let url = this.buildUrl(path);
-    if (this.cache[url] != null) {
+    if (this.cache[url] !== null) {
       console.log(`Cache hit: ${url}`);
       return this.cache[url];
     }
@@ -72,7 +72,7 @@ if (clamped >= 90) {
 }
 let numbers = [1, 2, 3, 4, 5];
 let doubled = numbers.map(n => n * 2);
-let evens = numbers.filter(n => n % 2 == 0);
+let evens = numbers.filter(n => n % 2 === 0);
 console.log(`Doubled: ${doubled}`);
 console.log(`Evens: ${evens}`);
 let counter = 10;
