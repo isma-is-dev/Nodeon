@@ -1,6 +1,6 @@
 import { Token, TokenType } from "@language/tokens";
 import { KEYWORDS } from "@language/keywords";
-import { OPERATORS, TWO_CHAR_OPERATORS } from "@language/operators";
+import { OPERATORS, TWO_CHAR_OPERATORS, THREE_CHAR_OPERATORS } from "@language/operators";
 import { DELIMITERS } from "@language/symbols";
 
 export class Lexer {
@@ -80,8 +80,21 @@ export class Lexer {
     let value = "";
 
     while (!this.isAtEnd() && this.peek() !== quote) {
-      const ch = this.advance();
-      value += ch;
+      if (this.peek() === "\\" ) {
+        this.advance(); // skip backslash
+        const esc = this.advance();
+        switch (esc) {
+          case "n": value += "\n"; break;
+          case "t": value += "\t"; break;
+          case "r": value += "\r"; break;
+          case "\\": value += "\\"; break;
+          case "'": value += "'"; break;
+          case '"': value += '"'; break;
+          default: value += "\\" + esc; break;
+        }
+        continue;
+      }
+      value += this.advance();
     }
 
     if (this.isAtEnd()) {
@@ -94,7 +107,14 @@ export class Lexer {
 
   private readOperatorOrDelimiter(start: number): Token | null {
     const first = this.advance();
+    const potentialThree = first + this.peek() + this.peekAt(2);
     const potentialTwo = first + this.peek();
+
+    if (THREE_CHAR_OPERATORS.has(potentialThree)) {
+      this.advance();
+      this.advance();
+      return { type: TokenType.Operator, value: potentialThree, position: start };
+    }
 
     if (TWO_CHAR_OPERATORS.has(potentialTwo)) {
       this.advance();
@@ -154,6 +174,10 @@ export class Lexer {
 
   private peekNext(): string {
     return this.src[this.pos + 1] ?? "";
+  }
+
+  private peekAt(offset: number): string {
+    return this.src[this.pos + offset - 1] ?? "";
   }
 
   private advance(): string {

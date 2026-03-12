@@ -1,1 +1,1 @@
-export const DELIMITERS = new Set(["{", "}", "(", ")", ","]);
+export const DELIMITERS = new Set(["{", "}", "(", ")", ",", "[", "]", ":", ";"]);

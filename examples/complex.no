@@ -1,0 +1,122 @@
+# ──────────────────────────────────────────────────────────
+# Nodeon Complex Example: ApiClient class with fetch, error
+# handling, iteration, conditionals, and string interpolation
+# ──────────────────────────────────────────────────────────
+
+# ── Helper function with implicit return ──────────────────
+fn double(x) {
+    x * 2
+}
+
+# ── Function with default params and explicit return ──────
+fn clamp(value, min = 0, max = 100) {
+    if value < min {
+        return min
+    }
+    if value > max {
+        return max
+    }
+    return value
+}
+
+# ── Class with constructor, methods, async, and try/catch ─
+class ApiClient {
+    constructor(baseUrl) {
+        this.baseUrl = baseUrl
+        this.headers = { "Content-Type": "application/json" }
+        this.cache = {}
+    }
+
+    fn buildUrl(path) {
+        this.baseUrl + path
+    }
+
+    async fn get(path) {
+        url = this.buildUrl(path)
+
+        if this.cache[url] != null {
+            print("Cache hit: {url}")
+            return this.cache[url]
+        }
+
+        try {
+            response = fetch(url, { method: "GET", headers: this.headers })
+            data = response.json()
+            this.cache[url] = data
+            return data
+        } catch (err) {
+            print("Request failed: {err}")
+            throw new Error("GET {path} failed")
+        }
+    }
+
+    async fn post(path, body) {
+        url = this.buildUrl(path)
+        options = {
+            method: "POST",
+            headers: this.headers,
+            body: JSON.stringify(body)
+        }
+
+        try {
+            response = fetch(url, options)
+            return response.json()
+        } catch (err) {
+            print("POST failed: {err}")
+            return null
+        }
+    }
+}
+
+# ── Using the class ───────────────────────────────────────
+client = new ApiClient("https://api.example.com")
+
+# ── Iteration examples ────────────────────────────────────
+items = ["alpha", "beta", "gamma"]
+
+for item in items {
+    print("Item: {item}")
+}
+
+for i in 0..5 {
+    result = double(i)
+    print("double({i}) = {result}")
+}
+
+# ── Conditionals and comparisons ──────────────────────────
+score = 85
+clamped = clamp(score, 0, 100)
+
+if clamped >= 90 {
+    print("Grade: A")
+} else if clamped >= 80 {
+    print("Grade: B")
+} else if clamped >= 70 {
+    print("Grade: C")
+} else {
+    print("Grade: F")
+}
+
+# ── Arrow functions and array methods ─────────────────────
+numbers = [1, 2, 3, 4, 5]
+doubled = numbers.map((n) => n * 2)
+evens = numbers.filter((n) => n % 2 == 0)
+
+print("Doubled: {doubled}")
+print("Evens: {evens}")
+
+# ── While loop ────────────────────────────────────────────
+counter = 10
+while counter > 0 {
+    counter = counter - 1
+}
+print("Countdown done")
+
+# ── Object creation and access ────────────────────────────
+config = {
+    host: "localhost",
+    port: 3000,
+    debug: true
+}
+
+print("Server: {config.host}:{config.port}")
