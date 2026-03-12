@@ -4,37 +4,125 @@
     { "include": "#comments" },
     { "include": "#strings" },
     { "include": "#keywords" },
+    { "include": "#constants" },
     { "include": "#numbers" },
+    { "include": "#operators" },
+    { "include": "#function-call" },
     { "include": "#identifiers" }
   ],
   "repository": {
     "comments": {
       "patterns": [
+        { "name": "comment.line.hash.nodeon", "match": "#.*$" },
         { "name": "comment.line.double-slash.nodeon", "match": "//.*$" },
         { "name": "comment.block.nodeon", "begin": "/\\*", "end": "\\*/" }
       ]
     },
     "strings": {
       "patterns": [
-        { "name": "string.quoted.double.nodeon", "begin": "\"", "end": "\"", "patterns": [{ "name": "constant.character.escape.nodeon", "match": "\\\\." }] },
-        { "name": "string.quoted.single.nodeon", "begin": "'", "end": "'", "patterns": [{ "name": "constant.character.escape.nodeon", "match": "\\\\." }] },
-        { "name": "string.quoted.template.nodeon", "begin": "`", "end": "`", "patterns": [
-          { "name": "constant.character.escape.nodeon", "match": "\\\\." },
-          { "name": "meta.embedded.expression.nodeon", "begin": "\\${", "end": "}", "patterns": [{ "include": "#expressions" }] }
-        ] }
+        {
+          "name": "string.quoted.double.nodeon",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            { "name": "constant.character.escape.nodeon", "match": "\\\\." },
+            {
+              "name": "meta.embedded.expression.nodeon",
+              "begin": "\\{",
+              "end": "\\}",
+              "beginCaptures": { "0": { "name": "punctuation.section.interpolation.begin.nodeon" } },
+              "endCaptures": { "0": { "name": "punctuation.section.interpolation.end.nodeon" } },
+              "patterns": [{ "include": "#expressions" }]
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.nodeon",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            { "name": "constant.character.escape.nodeon", "match": "\\\\." }
+          ]
+        },
+        {
+          "name": "string.quoted.template.nodeon",
+          "begin": "`",
+          "end": "`",
+          "patterns": [
+            { "name": "constant.character.escape.nodeon", "match": "\\\\." },
+            {
+              "name": "meta.embedded.expression.nodeon",
+              "begin": "\\$\\{",
+              "end": "\\}",
+              "beginCaptures": { "0": { "name": "punctuation.section.interpolation.begin.nodeon" } },
+              "endCaptures": { "0": { "name": "punctuation.section.interpolation.end.nodeon" } },
+              "patterns": [{ "include": "#expressions" }]
+            }
+          ]
+        }
       ]
     },
     "keywords": {
       "patterns": [
         {
           "name": "keyword.control.nodeon",
-          "match": "\\b(if|else|for|while|return|break|continue|switch|case|default|try|catch|throw|class|extends|new|async|await|import|export|from|const|let|var|function|print)\\b"
+          "match": "\\b(if|else|for|in|of|while|do|return|break|continue|switch|case|default|try|catch|finally|throw|yield|debugger)\\b"
+        },
+        {
+          "name": "keyword.declaration.nodeon",
+          "match": "\\b(fn|async|class|extends|import|export|from)\\b"
+        },
+        {
+          "name": "storage.type.nodeon",
+          "match": "\\b(const|let|var)\\b"
+        },
+        {
+          "name": "keyword.operator.nodeon",
+          "match": "\\b(new|typeof|instanceof|void|delete|await)\\b"
+        },
+        {
+          "name": "support.function.builtin.nodeon",
+          "match": "\\b(print)\\b"
         }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        { "name": "constant.language.boolean.nodeon", "match": "\\b(true|false)\\b" },
+        { "name": "constant.language.null.nodeon", "match": "\\b(null|undefined)\\b" },
+        { "name": "variable.language.this.nodeon", "match": "\\b(this|super)\\b" }
       ]
     },
     "numbers": {
       "patterns": [
-        { "name": "constant.numeric.nodeon", "match": "\\b((0x[0-9A-Fa-f]+)|(0b[01]+)|(0o[0-7]+)|([0-9]+(\\.[0-9]+)?))\\b" }
+        { "name": "constant.numeric.hex.nodeon", "match": "\\b0[xX][0-9A-Fa-f]+n?\\b" },
+        { "name": "constant.numeric.binary.nodeon", "match": "\\b0[bB][01]+n?\\b" },
+        { "name": "constant.numeric.octal.nodeon", "match": "\\b0[oO][0-7]+n?\\b" },
+        { "name": "constant.numeric.decimal.nodeon", "match": "\\b[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?n?\\b" }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        { "name": "keyword.operator.comparison.nodeon", "match": "===|!==|==|!=|<=|>=|<|>" },
+        { "name": "keyword.operator.assignment.compound.nodeon", "match": "\\+=|-=|\\*=|/=|%=|\\*\\*=|&&=|\\|\\|=|\\?\\?=" },
+        { "name": "keyword.operator.arithmetic.nodeon", "match": "\\+\\+|--|\\*\\*|\\+|-|\\*|/|%" },
+        { "name": "keyword.operator.logical.nodeon", "match": "&&|\\|\\||!" },
+        { "name": "keyword.operator.nullish.nodeon", "match": "\\?\\?" },
+        { "name": "keyword.operator.spread.nodeon", "match": "\\.\\.\\." },
+        { "name": "keyword.operator.range.nodeon", "match": "\\.\\." },
+        { "name": "keyword.operator.arrow.nodeon", "match": "=>" },
+        { "name": "keyword.operator.pipe.nodeon", "match": "\\|>" },
+        { "name": "keyword.operator.optional-chaining.nodeon", "match": "\\?\\." }
+      ]
+    },
+    "function-call": {
+      "patterns": [
+        {
+          "match": "\\b([_$a-zA-Z][_$a-zA-Z0-9]*)\\s*(?=\\()",
+          "captures": {
+            "1": { "name": "entity.name.function.nodeon" }
+          }
+        }
       ]
     },
     "identifiers": {
@@ -47,7 +135,10 @@
         { "include": "#comments" },
         { "include": "#strings" },
         { "include": "#keywords" },
+        { "include": "#constants" },
         { "include": "#numbers" },
+        { "include": "#operators" },
+        { "include": "#function-call" },
         { "include": "#identifiers" }
       ]
     }

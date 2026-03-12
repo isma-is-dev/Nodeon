@@ -1,10 +1,41 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync } from "fs";
+import { readFileSync, writeFileSync, existsSync } from "fs";
 import { resolve, basename } from "path";
 import { compile } from "@compiler/compile";
 import vm from "vm";
 
 const VERSION = "0.1.0";
+
+// ── ANSI colors (no dependencies) ────────────────────────
+const RED = "\x1b[31m";
+const GREEN = "\x1b[32m";
+const YELLOW = "\x1b[33m";
+const CYAN = "\x1b[36m";
+const DIM = "\x1b[2m";
+const BOLD = "\x1b[1m";
+const RESET = "\x1b[0m";
+
+function formatError(file: string, source: string, err: Error): string {
+  const lines: string[] = [];
+  lines.push(`${RED}${BOLD}error${RESET}: ${err.message}`);
+
+  // Extract line:col from SyntaxError messages like "... at 3:5"
+  const match = err.message.match(/at (\d+):(\d+)$/);
+  if (match && source) {
+    const line = parseInt(match[1], 10);
+    const col = parseInt(match[2], 10);
+    const srcLines = source.split("\n");
+    const lineStr = srcLines[line - 1] ?? "";
+    const lineNum = String(line).padStart(4);
+    lines.push(`  ${DIM}-->${RESET} ${CYAN}${file}:${line}:${col}${RESET}`);
+    lines.push(`  ${DIM}${lineNum} |${RESET} ${lineStr}`);
+    lines.push(`  ${DIM}${" ".repeat(4)} |${RESET} ${" ".repeat(col - 1)}${RED}^${RESET}`);
+  } else {
+    lines.push(`  ${DIM}-->${RESET} ${CYAN}${file}${RESET}`);
+  }
+
+  return lines.join("\n");
+}
 
 function printHelp() {
   console.log(
@@ -36,28 +67,46 @@ interface CLICompileOptions {
 
 function compileFile(inputPath: string, outputPath?: string, opts: CLICompileOptions = { minify: false, write: true }) {
   const absIn = resolve(process.cwd(), inputPath);
-  const source = readFileSync(absIn, "utf8");
-  const { js: jsCode, ast } = compile(source, { minify: opts.minify });
 
-  let out: string | null = null;
-  if (opts.write) {
-    if (outputPath) {
-      out = resolve(process.cwd(), outputPath);
-    } else if (opts.minify) {
-      out = absIn.replace(/\.no$/, ".min.js");
-    } else {
-      out = absIn.replace(/\.no$/, ".js");
-    }
-    writeFileSync(out, jsCode, "utf8");
+  if (!existsSync(absIn)) {
+    console.error(`${RED}error${RESET}: file not found: ${CYAN}${inputPath}${RESET}`);
+    process.exit(1);
   }
 
-  return { ast, jsCode, out };
+  const source = readFileSync(absIn, "utf8");
+
+  try {
+    const { js: jsCode, ast } = compile(source, { minify: opts.minify });
+
+    let out: string | null = null;
+    if (opts.write) {
+      if (outputPath) {
+        out = resolve(process.cwd(), outputPath);
+      } else if (opts.minify) {
+        out = absIn.replace(/\.no$/, ".min.js");
+      } else {
+        out = absIn.replace(/\.no$/, ".js");
+      }
+      writeFileSync(out, jsCode, "utf8");
+    }
+
+    return { ast, jsCode, out };
+  } catch (err: any) {
+    console.error(formatError(inputPath, source, err));
+    process.exit(1);
+  }
 }
 
 function runFile(inputPath: string) {
-  const { jsCode } = compileFile(inputPath, undefined, { minify: false, write: false });
-  // Ejecución en un contexto aislado (Node runtime por ahora)
-  vm.runInNewContext(jsCode, { console }, { filename: basename(inputPath).replace(/\.no$/, ".js") });
+  const result = compileFile(inputPath, undefined, { minify: false, write: false });
+  if (!result) return;
+  const { jsCode } = result;
+  try {
+    vm.runInNewContext(jsCode, { console, setTimeout, setInterval, clearTimeout, clearInterval, JSON, Math, Date, RegExp, Error, TypeError, RangeError, parseInt, parseFloat, isNaN, isFinite, encodeURIComponent, decodeURIComponent, Array, Object, String, Number, Boolean, Map, Set, Promise, Symbol }, { filename: basename(inputPath).replace(/\.no$/, ".js") });
+  } catch (err: any) {
+    console.error(`${RED}${BOLD}runtime error${RESET}: ${err.message}`);
+    process.exit(1);
+  }
 }
 
 export function main(argv = process.argv) {
