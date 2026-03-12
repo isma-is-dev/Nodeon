@@ -45,6 +45,8 @@ import {
   ObjectPattern,
   ObjectPatternProperty,
   ArrayPattern,
+  MatchStatement,
+  MatchCase,
 } from "@ast/nodes";
 
 const BIN_PRECEDENCE: Record<string, number> = {
@@ -134,6 +136,8 @@ function emitStatement(stmt: Statement, ctx: GenContext): string {
       return "continue;";
     case "DestructuringDeclaration":
       return emitDestructuring(stmt, ctx);
+    case "MatchStatement":
+      return emitMatch(stmt, ctx);
     case "DebuggerStatement":
       return "debugger;";
     default:
@@ -311,6 +315,31 @@ function emitSwitch(stmt: SwitchStatement, ctx: GenContext): string {
     return `${header}${ctx.nl}${body}`;
   }).join(ctx.nl);
   return `switch${ctx.sp}(${disc})${ctx.sp}{${ctx.nl}${cases}${ctx.nl}${pad(ctx)}}`;
+}
+
+function emitMatch(stmt: MatchStatement, ctx: GenContext): string {
+  const inner = indented(ctx);
+  const disc = emitExpression(stmt.discriminant, ctx);
+  const parts: string[] = [];
+
+  for (let i = 0; i < stmt.cases.length; i++) {
+    const c = stmt.cases[i];
+    const body = c.body.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl);
+
+    if (c.pattern === null) {
+      // default case → else block
+      parts.push(`${ctx.sp}else${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`);
+    } else {
+      let cond = `${disc}${ctx.sp}===${ctx.sp}${emitExpression(c.pattern, ctx)}`;
+      if (c.guard) {
+        cond += `${ctx.sp}&&${ctx.sp}${emitExpression(c.guard, ctx)}`;
+      }
+      const keyword = i === 0 ? "if" : `${ctx.sp}else if`;
+      parts.push(`${keyword}${ctx.sp}(${cond})${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`);
+    }
+  }
+
+  return parts.join("");
 }
 
 function emitDestructuring(stmt: DestructuringDeclaration, ctx: GenContext): string {

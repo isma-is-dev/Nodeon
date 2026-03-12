@@ -41,4 +41,5 @@ export const KEYWORDS = new Set([
   "null",
   "undefined",
   "debugger",
+  "match",
 ]);

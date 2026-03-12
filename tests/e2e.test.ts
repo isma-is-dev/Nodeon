@@ -276,4 +276,30 @@ describe("End-to-end compilation", () => {
       expect(js).toContain("let p = fetch(\"url\");");
     });
   });
+
+  // ── Pattern Matching ──────────────────────────────────────
+  describe("pattern matching", () => {
+    it("compiles match to if/else if chain", () => {
+      const js = compileToJS('match x {\n  case 1 { print("one") }\n  case 2 { print("two") }\n}');
+      expect(js).toContain("if (x === 1)");
+      expect(js).toContain("else if (x === 2)");
+    });
+
+    it("compiles match with default to else", () => {
+      const js = compileToJS('match x {\n  case 1 { print("one") }\n  default { print("other") }\n}');
+      expect(js).toContain("if (x === 1)");
+      expect(js).toContain("else {");
+    });
+
+    it("compiles match with string patterns", () => {
+      const js = compileToJS('match color {\n  case "red" { print("stop") }\n  case "green" { print("go") }\n}');
+      expect(js).toContain('if (color === "red")');
+      expect(js).toContain('else if (color === "green")');
+    });
+
+    it("compiles match with guard clause", () => {
+      const js = compileToJS('match x {\n  case 1 if y > 0 { print("yes") }\n}');
+      expect(js).toContain("if (x === 1 && y > 0)");
+    });
+  });
 });

@@ -53,6 +53,8 @@ import {
   ObjectPatternProperty,
   ArrayPattern,
   TypeAnnotation,
+  MatchStatement,
+  MatchCase,
 } from "@ast/nodes";
 
 const PRECEDENCE: Record<string, number> = {
@@ -116,6 +118,7 @@ export class Parser {
         case "let": return this.parseLetDeclaration();
         case "var": return this.parseVarDeclaration();
         case "switch": return this.parseSwitchStatement();
+        case "match": return this.parseMatchStatement();
         case "break": { this.advance(); return { type: "BreakStatement" } as BreakStatement; }
         case "continue": { this.advance(); return { type: "ContinueStatement" } as ContinueStatement; }
         case "debugger": { this.advance(); return { type: "DebuggerStatement" } as DebuggerStatement; }
@@ -486,6 +489,37 @@ export class Parser {
 
     this.consumeDelimiter("}", "Expected '}'");
     return { type: "SwitchStatement", discriminant, cases };
+  }
+
+  private parseMatchStatement(): MatchStatement {
+    this.consumeKeyword("match");
+    const discriminant = this.parseExpression();
+    this.consumeDelimiter("{", "Expected '{'");
+    const cases: MatchCase[] = [];
+
+    while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+      if (this.checkKeyword("case")) {
+        this.advance();
+        const pattern = this.parseExpression();
+        // Optional guard: case x if x > 0 { ... }
+        let guard: Expression | undefined;
+        if (this.checkKeyword("if")) {
+          this.advance();
+          guard = this.parseExpression();
+        }
+        const body = this.parseBlock();
+        cases.push({ type: "MatchCase", pattern, guard, body });
+      } else if (this.checkKeyword("default")) {
+        this.advance();
+        const body = this.parseBlock();
+        cases.push({ type: "MatchCase", pattern: null, body });
+      } else {
+        this.error(this.peek(), "Expected 'case' or 'default' in match");
+      }
+    }
+
+    this.consumeDelimiter("}", "Expected '}'");
+    return { type: "MatchStatement", discriminant, cases };
   }
 
   private parseExpressionStatement(): ExpressionStatement {

@@ -34,7 +34,8 @@ export type Statement =
   | SwitchStatement
   | BreakStatement
   | ContinueStatement
-  | DebuggerStatement;
+  | DebuggerStatement
+  | MatchStatement;
 
 export type FunctionDeclaration = {
   type: "FunctionDeclaration";
@@ -168,6 +169,19 @@ export type ContinueStatement = {
 
 export type DebuggerStatement = {
   type: "DebuggerStatement";
+};
+
+export type MatchStatement = {
+  type: "MatchStatement";
+  discriminant: Expression;
+  cases: MatchCase[];
+};
+
+export type MatchCase = {
+  type: "MatchCase";
+  pattern: Expression | null; // null for default
+  guard?: Expression;         // optional: case x if x > 0 { ... }
+  body: Statement[];
 };
 
 // ── Expressions ──────────────────────────────────────────────────────

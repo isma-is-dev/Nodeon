@@ -566,4 +566,46 @@ describe("Parser", () => {
       expect(stmt.type).toBe("VariableDeclaration");
     });
   });
+
+  // ── Pattern Matching ────────────────────────────────────
+  describe("pattern matching", () => {
+    it("parses basic match statement", () => {
+      const stmt = firstStmt('match x {\n  case 1 { print("one") }\n  case 2 { print("two") }\n}');
+      expect(stmt.type).toBe("MatchStatement");
+      if (stmt.type === "MatchStatement") {
+        expect(stmt.cases).toHaveLength(2);
+        expect(stmt.cases[0].pattern?.type).toBe("Literal");
+      }
+    });
+
+    it("parses match with default", () => {
+      const stmt = firstStmt('match x {\n  case 1 { print("one") }\n  default { print("other") }\n}');
+      if (stmt.type === "MatchStatement") {
+        expect(stmt.cases).toHaveLength(2);
+        expect(stmt.cases[1].pattern).toBeNull();
+      }
+    });
+
+    it("parses match with string patterns", () => {
+      const stmt = firstStmt('match color {\n  case "red" { print("stop") }\n  case "green" { print("go") }\n}');
+      if (stmt.type === "MatchStatement") {
+        expect(stmt.cases[0].pattern?.type).toBe("Literal");
+      }
+    });
+
+    it("parses match with guard clause", () => {
+      const stmt = firstStmt('match x {\n  case 1 if y > 0 { print("positive") }\n}');
+      if (stmt.type === "MatchStatement") {
+        expect(stmt.cases[0].guard).toBeDefined();
+        expect(stmt.cases[0].guard?.type).toBe("BinaryExpression");
+      }
+    });
+
+    it("parses match discriminant expression", () => {
+      const stmt = firstStmt('match status {\n  case 200 { print("ok") }\n}');
+      if (stmt.type === "MatchStatement") {
+        expect(stmt.discriminant.type).toBe("Identifier");
+      }
+    });
+  });
 });
