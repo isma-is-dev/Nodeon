@@ -17,7 +17,8 @@
     "resolveJsonModule": true,
     "strict": false,
     "skipLibCheck": true,
-    "moduleResolution": "node"
+    "moduleResolution": "node",
+    "types": ["node"]
   },
   "include": ["src/**/*", "cli/**/*", "examples/**/*"],
   "exclude": ["node_modules", "dist"]

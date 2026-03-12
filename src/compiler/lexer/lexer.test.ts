@@ -1,5 +1,5 @@
-import { Lexer } from "./lexer";
-import { TokenType } from "../language/tokens";
+import { Lexer } from "@lexer/lexer";
+import { TokenType } from "@language/tokens";
 
 function assertEqual<T>(actual: T, expected: T, message?: string) {
   if (actual !== expected) {
