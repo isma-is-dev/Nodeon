@@ -156,7 +156,7 @@ function emitIf(stmt: IfStatement, ctx: GenContext): string {
 
   if (stmt.alternate) {
     if (stmt.alternate.length === 1 && stmt.alternate[0].type === "IfStatement") {
-      out += `${ctx.sp}else${ctx.sp}${emitStatement(stmt.alternate[0], ctx)}`;
+      out += `${ctx.sp}else ${emitStatement(stmt.alternate[0], ctx)}`;
     } else {
       const alt = stmt.alternate.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl);
       out += `${ctx.sp}else${ctx.sp}{${ctx.nl}${alt}${ctx.nl}${pad(ctx)}}`;
