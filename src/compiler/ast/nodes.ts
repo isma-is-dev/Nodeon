@@ -8,6 +8,7 @@ export type Program = {
 export type Statement =
   | FunctionDeclaration
   | VariableDeclaration
+  | DestructuringDeclaration
   | ExpressionStatement
   | IfStatement
   | ForStatement
@@ -35,6 +36,7 @@ export type FunctionDeclaration = {
 export type Param = {
   type: "Param";
   name: string;
+  pattern?: ObjectPattern | ArrayPattern;
   defaultValue?: Expression;
   rest?: boolean;
 };
@@ -42,6 +44,13 @@ export type Param = {
 export type VariableDeclaration = {
   type: "VariableDeclaration";
   name: Identifier;
+  value: Expression;
+  kind: "let" | "const" | "var";
+};
+
+export type DestructuringDeclaration = {
+  type: "DestructuringDeclaration";
+  pattern: ObjectPattern | ArrayPattern;
   value: Expression;
   kind: "let" | "const" | "var";
 };
@@ -60,7 +69,7 @@ export type IfStatement = {
 
 export type ForStatement = {
   type: "ForStatement";
-  variable: Identifier;
+  variable: Identifier | ObjectPattern | ArrayPattern;
   iterable: Expression;
   body: Statement[];
 };
@@ -168,7 +177,9 @@ export type Expression =
   | TypeofExpression
   | VoidExpression
   | DeleteExpression
-  | YieldExpression;
+  | YieldExpression
+  | ObjectPattern
+  | ArrayPattern;
 
 export type CallExpression = {
   type: "CallExpression";
@@ -309,4 +320,25 @@ export type TemplatePartExpression = {
 export type TemplateLiteral = {
   type: "TemplateLiteral";
   parts: Array<TemplatePartText | TemplatePartExpression>;
+};
+
+// ── Destructuring Patterns ──────────────────────────────────────────
+export type ObjectPatternProperty = {
+  type: "ObjectPatternProperty";
+  key: Identifier;
+  value: Identifier | ObjectPattern | ArrayPattern;
+  shorthand: boolean;
+  defaultValue?: Expression;
+};
+
+export type ObjectPattern = {
+  type: "ObjectPattern";
+  properties: ObjectPatternProperty[];
+  rest?: Identifier;
+};
+
+export type ArrayPattern = {
+  type: "ArrayPattern";
+  elements: Array<Identifier | ObjectPattern | ArrayPattern | null>;
+  rest?: Identifier;
 };

@@ -186,4 +186,52 @@ describe("End-to-end compilation", () => {
       expect(js).toContain("export function add(a, b)");
     });
   });
+
+  // ── Destructuring ─────────────────────────────────────────
+  describe("destructuring", () => {
+    it("compiles object destructuring", () => {
+      const js = compileToJS("const { name, age } = person");
+      expect(js).toContain("const { name, age } = person;");
+    });
+
+    it("compiles array destructuring", () => {
+      const js = compileToJS("const [first, second] = arr");
+      expect(js).toContain("const [first, second] = arr;");
+    });
+
+    it("compiles destructuring with rename", () => {
+      const js = compileToJS("const { name: n } = obj");
+      expect(js).toContain("name: n");
+    });
+
+    it("compiles destructuring with defaults", () => {
+      const js = compileToJS("const { x = 0 } = point");
+      expect(js).toContain("x = 0");
+    });
+
+    it("compiles destructuring with rest", () => {
+      const js = compileToJS("const { a, ...rest } = obj");
+      expect(js).toContain("...rest");
+    });
+
+    it("compiles array destructuring with rest", () => {
+      const js = compileToJS("const [head, ...tail] = arr");
+      expect(js).toContain("[head, ...tail]");
+    });
+
+    it("compiles nested destructuring", () => {
+      const js = compileToJS("const { user: { name } } = data");
+      expect(js).toContain("user: { name }");
+    });
+
+    it("compiles destructuring in for-in", () => {
+      const js = compileToJS("for { name } in users { print(name) }");
+      expect(js).toContain("for (const { name } of users)");
+    });
+
+    it("compiles destructuring in function params", () => {
+      const js = compileToJS("fn greet({ name }) { print(name) }");
+      expect(js).toContain("function greet({ name })");
+    });
+  });
 });

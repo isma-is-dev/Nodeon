@@ -375,4 +375,101 @@ describe("Parser", () => {
       }
     });
   });
+
+  // ── Destructuring ────────────────────────────────────────
+  describe("destructuring", () => {
+    it("parses object destructuring with const", () => {
+      const stmt = firstStmt("const { a, b } = obj");
+      expect(stmt.type).toBe("DestructuringDeclaration");
+      if (stmt.type === "DestructuringDeclaration") {
+        expect(stmt.kind).toBe("const");
+        expect(stmt.pattern.type).toBe("ObjectPattern");
+        if (stmt.pattern.type === "ObjectPattern") {
+          expect(stmt.pattern.properties).toHaveLength(2);
+          expect(stmt.pattern.properties[0].key.name).toBe("a");
+          expect(stmt.pattern.properties[0].shorthand).toBe(true);
+        }
+      }
+    });
+
+    it("parses array destructuring with let", () => {
+      const stmt = firstStmt("let [x, y] = arr");
+      expect(stmt.type).toBe("DestructuringDeclaration");
+      if (stmt.type === "DestructuringDeclaration") {
+        expect(stmt.kind).toBe("let");
+        expect(stmt.pattern.type).toBe("ArrayPattern");
+        if (stmt.pattern.type === "ArrayPattern") {
+          expect(stmt.pattern.elements).toHaveLength(2);
+        }
+      }
+    });
+
+    it("parses object destructuring with rename", () => {
+      const stmt = firstStmt("const { name: n, age: a } = person");
+      if (stmt.type === "DestructuringDeclaration" && stmt.pattern.type === "ObjectPattern") {
+        expect(stmt.pattern.properties[0].shorthand).toBe(false);
+        expect(stmt.pattern.properties[0].value).toEqual({ type: "Identifier", name: "n" });
+      }
+    });
+
+    it("parses object destructuring with defaults", () => {
+      const stmt = firstStmt("const { x = 0, y = 0 } = point");
+      if (stmt.type === "DestructuringDeclaration" && stmt.pattern.type === "ObjectPattern") {
+        expect(stmt.pattern.properties[0].defaultValue).toBeDefined();
+      }
+    });
+
+    it("parses object destructuring with rest", () => {
+      const stmt = firstStmt("const { a, ...rest } = obj");
+      if (stmt.type === "DestructuringDeclaration" && stmt.pattern.type === "ObjectPattern") {
+        expect(stmt.pattern.properties).toHaveLength(1);
+        expect(stmt.pattern.rest?.name).toBe("rest");
+      }
+    });
+
+    it("parses array destructuring with rest", () => {
+      const stmt = firstStmt("const [first, ...rest] = arr");
+      if (stmt.type === "DestructuringDeclaration" && stmt.pattern.type === "ArrayPattern") {
+        expect(stmt.pattern.elements).toHaveLength(1);
+        expect(stmt.pattern.rest?.name).toBe("rest");
+      }
+    });
+
+    it("parses nested destructuring", () => {
+      const stmt = firstStmt("const { user: { name, age } } = data");
+      if (stmt.type === "DestructuringDeclaration" && stmt.pattern.type === "ObjectPattern") {
+        const prop = stmt.pattern.properties[0];
+        expect(prop.value.type).toBe("ObjectPattern");
+      }
+    });
+
+    it("parses destructuring in for-in", () => {
+      const stmt = firstStmt("for { name, age } in users { print(name) }");
+      expect(stmt.type).toBe("ForStatement");
+      if (stmt.type === "ForStatement") {
+        expect(stmt.variable.type).toBe("ObjectPattern");
+      }
+    });
+
+    it("parses array destructuring in for-in", () => {
+      const stmt = firstStmt("for [key, value] in entries { print(key) }");
+      if (stmt.type === "ForStatement") {
+        expect(stmt.variable.type).toBe("ArrayPattern");
+      }
+    });
+
+    it("parses destructuring in function params", () => {
+      const stmt = firstStmt("fn process({ name, age }) { print(name) }");
+      if (stmt.type === "FunctionDeclaration") {
+        expect(stmt.params[0].pattern?.type).toBe("ObjectPattern");
+      }
+    });
+
+    it("parses array destructuring in function params", () => {
+      const stmt = firstStmt("fn first([head, ...tail]) { return head }");
+      if (stmt.type === "FunctionDeclaration") {
+        expect(stmt.params[0].pattern?.type).toBe("ArrayPattern");
+      }
+    });
+  });
 });

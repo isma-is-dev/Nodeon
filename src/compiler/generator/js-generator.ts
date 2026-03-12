@@ -41,6 +41,10 @@ import {
   DeleteExpression,
   YieldExpression,
   Param,
+  DestructuringDeclaration,
+  ObjectPattern,
+  ObjectPatternProperty,
+  ArrayPattern,
 } from "@ast/nodes";
 
 const BIN_PRECEDENCE: Record<string, number> = {
@@ -128,6 +132,8 @@ function emitStatement(stmt: Statement, ctx: GenContext): string {
       return "break;";
     case "ContinueStatement":
       return "continue;";
+    case "DestructuringDeclaration":
+      return emitDestructuring(stmt, ctx);
     case "DebuggerStatement":
       return "debugger;";
     default:
@@ -155,7 +161,11 @@ function emitFunction(fn: FunctionDeclaration, ctx: GenContext): string {
 function emitParam(p: Param, ctx: GenContext): string {
   let out = "";
   if (p.rest) out += "...";
-  out += p.name;
+  if (p.pattern) {
+    out += emitPattern(p.pattern, ctx);
+  } else {
+    out += p.name;
+  }
   if (p.defaultValue) out += `${ctx.sp}=${ctx.sp}${emitExpression(p.defaultValue, ctx)}`;
   return out;
 }
@@ -190,12 +200,18 @@ function emitIf(stmt: IfStatement, ctx: GenContext): string {
 
 function emitFor(stmt: ForStatement, ctx: GenContext): string {
   const forScope = childScope(indented(ctx));
-  forScope.declaredVars.add(stmt.variable.name);
-  const body = stmt.body.map((s) => pad(forScope) + emitStatement(s, forScope)).join(ctx.nl);
   const iter = stmt.iterable;
+  const varStr = stmt.variable.type === "Identifier"
+    ? stmt.variable.name
+    : emitPattern(stmt.variable, ctx);
+
+  if (stmt.variable.type === "Identifier") {
+    forScope.declaredVars.add(stmt.variable.name);
+  }
+  const body = stmt.body.map((s) => pad(forScope) + emitStatement(s, forScope)).join(ctx.nl);
 
   // Range: for i in 0..10 → for (let i = 0; i <= 10; i++)
-  if (iter.type === "BinaryExpression" && iter.operator === "..") {
+  if (iter.type === "BinaryExpression" && iter.operator === ".." && stmt.variable.type === "Identifier") {
     const start = emitExpression(iter.left, ctx);
     const end = emitExpression(iter.right, ctx);
     const v = stmt.variable.name;
@@ -203,7 +219,7 @@ function emitFor(stmt: ForStatement, ctx: GenContext): string {
   }
 
   // Iterable: for item in collection → for (const item of collection)
-  return `for${ctx.sp}(const ${stmt.variable.name} of ${emitExpression(iter, ctx)})${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`;
+  return `for${ctx.sp}(const ${varStr} of ${emitExpression(iter, ctx)})${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`;
 }
 
 function emitWhile(stmt: WhileStatement, ctx: GenContext): string {
@@ -297,6 +313,44 @@ function emitSwitch(stmt: SwitchStatement, ctx: GenContext): string {
   return `switch${ctx.sp}(${disc})${ctx.sp}{${ctx.nl}${cases}${ctx.nl}${pad(ctx)}}`;
 }
 
+function emitDestructuring(stmt: DestructuringDeclaration, ctx: GenContext): string {
+  const pat = emitPattern(stmt.pattern, ctx);
+  return `${stmt.kind} ${pat}${ctx.sp}=${ctx.sp}${emitExpression(stmt.value, ctx)};`;
+}
+
+function emitPattern(pattern: ObjectPattern | ArrayPattern, ctx: GenContext): string {
+  if (pattern.type === "ObjectPattern") return emitObjectPattern(pattern, ctx);
+  return emitArrayPattern(pattern, ctx);
+}
+
+function emitObjectPattern(pat: ObjectPattern, ctx: GenContext): string {
+  const props = pat.properties.map((p) => {
+    let out = "";
+    if (p.shorthand) {
+      out = p.key.name;
+    } else {
+      const val = p.value.type === "Identifier" ? p.value.name : emitPattern(p.value as ObjectPattern | ArrayPattern, ctx);
+      out = `${p.key.name}:${ctx.sp}${val}`;
+    }
+    if (p.defaultValue) {
+      out += `${ctx.sp}=${ctx.sp}${emitExpression(p.defaultValue, ctx)}`;
+    }
+    return out;
+  });
+  if (pat.rest) props.push(`...${pat.rest.name}`);
+  return `{${ctx.sp}${props.join("," + ctx.sp)}${ctx.sp}}`;
+}
+
+function emitArrayPattern(pat: ArrayPattern, ctx: GenContext): string {
+  const els = pat.elements.map((e) => {
+    if (e === null) return "";
+    if (e.type === "Identifier") return e.name;
+    return emitPattern(e as ObjectPattern | ArrayPattern, ctx);
+  });
+  if (pat.rest) els.push(`...${pat.rest.name}`);
+  return `[${els.join("," + ctx.sp)}]`;
+}
+
 // ── Expressions ────────────────────────────────────────────────────
 
 function emitExpression(expr: Expression, ctx: GenContext): string {
@@ -348,6 +402,10 @@ function emitExpression(expr: Expression, ctx: GenContext): string {
       if (!expr.argument) return `yield${delegate}`;
       return `yield${delegate} ${emitExpression(expr.argument, ctx)}`;
     }
+    case "ObjectPattern":
+      return emitObjectPattern(expr, ctx);
+    case "ArrayPattern":
+      return emitArrayPattern(expr, ctx);
     default:
       throw new Error(`Unsupported expression type: ${(expr as any).type}`);
   }

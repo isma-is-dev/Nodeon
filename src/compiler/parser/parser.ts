@@ -48,6 +48,10 @@ import {
   DeleteExpression,
   YieldExpression,
   Param,
+  DestructuringDeclaration,
+  ObjectPattern,
+  ObjectPatternProperty,
+  ArrayPattern,
 } from "@ast/nodes";
 
 const PRECEDENCE: Record<string, number> = {
@@ -167,6 +171,27 @@ export class Parser {
         this.advance();
         rest = true;
       }
+      // Destructuring param: fn process({ name, age }) { ... }
+      if (this.checkDelimiter("{")) {
+        const pattern = this.parseObjectPattern();
+        let defaultValue: Expression | undefined;
+        if (this.checkOperator("=")) {
+          this.advance();
+          defaultValue = this.parseExpression();
+        }
+        params.push({ type: "Param", name: "__destructured", pattern, defaultValue, rest });
+        continue;
+      }
+      if (this.checkDelimiter("[")) {
+        const pattern = this.parseArrayPattern();
+        let defaultValue: Expression | undefined;
+        if (this.checkOperator("=")) {
+          this.advance();
+          defaultValue = this.parseExpression();
+        }
+        params.push({ type: "Param", name: "__destructured", pattern, defaultValue, rest });
+        continue;
+      }
       const tok = this.peek();
       if (tok.type !== TokenType.Identifier) this.error(tok, "Expected parameter name");
       this.advance();
@@ -208,7 +233,14 @@ export class Parser {
 
   private parseForStatement(): ForStatement {
     this.consumeKeyword("for");
-    const variable = this.consumeIdentifier("Expected loop variable");
+    let variable: Identifier | ObjectPattern | ArrayPattern;
+    if (this.checkDelimiter("{")) {
+      variable = this.parseObjectPattern();
+    } else if (this.checkDelimiter("[")) {
+      variable = this.parseArrayPattern();
+    } else {
+      variable = this.consumeIdentifier("Expected loop variable");
+    }
     this.consumeKeyword("in");
     const iterable = this.parseExpression();
     const body = this.parseBlock();
@@ -362,19 +394,36 @@ export class Parser {
     return { type: "ThrowStatement", value };
   }
 
-  private parseConstDeclaration(): VariableDeclaration {
+  private parseConstDeclaration(): VariableDeclaration | DestructuringDeclaration {
     this.consumeKeyword("const");
-    return this.parseVariableDeclaration("const");
+    return this.parseVariableOrDestructuring("const");
   }
 
-  private parseLetDeclaration(): VariableDeclaration {
+  private parseLetDeclaration(): VariableDeclaration | DestructuringDeclaration {
     this.consumeKeyword("let");
-    return this.parseVariableDeclaration("let");
+    return this.parseVariableOrDestructuring("let");
   }
 
-  private parseVarDeclaration(): VariableDeclaration {
+  private parseVarDeclaration(): VariableDeclaration | DestructuringDeclaration {
     this.consumeKeyword("var");
-    return this.parseVariableDeclaration("var");
+    return this.parseVariableOrDestructuring("var");
+  }
+
+  private parseVariableOrDestructuring(kind: "let" | "const" | "var"): VariableDeclaration | DestructuringDeclaration {
+    // Check for destructuring: { a, b } = ... or [x, y] = ...
+    if (this.checkDelimiter("{")) {
+      const pattern = this.parseObjectPattern();
+      this.consumeOperator("=", "Expected '=' after destructuring pattern");
+      const value = this.parseExpression();
+      return { type: "DestructuringDeclaration", pattern, value, kind };
+    }
+    if (this.checkDelimiter("[")) {
+      const pattern = this.parseArrayPattern();
+      this.consumeOperator("=", "Expected '=' after destructuring pattern");
+      const value = this.parseExpression();
+      return { type: "DestructuringDeclaration", pattern, value, kind };
+    }
+    return this.parseVariableDeclaration(kind);
   }
 
   private parseVariableDeclaration(kind: "let" | "const" | "var"): VariableDeclaration {
@@ -891,6 +940,90 @@ export class Parser {
       parts.push({ kind: "Text", value: "" });
     }
     return { type: "TemplateLiteral", parts };
+  }
+
+  // ── Destructuring Patterns ────────────────────────────────────────
+
+  private parseObjectPattern(): ObjectPattern {
+    this.consumeDelimiter("{", "Expected '{'");
+    const properties: ObjectPatternProperty[] = [];
+    let rest: Identifier | undefined;
+
+    while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+      // ...rest
+      if (this.checkOperator("...")) {
+        this.advance();
+        rest = this.consumeIdentifier("Expected rest identifier");
+        break;
+      }
+
+      const key = this.consumeIdentifier("Expected property name");
+      let value: Identifier | ObjectPattern | ArrayPattern = key;
+      let shorthand = true;
+      let defaultValue: Expression | undefined;
+
+      // { key: alias } or { key: { nested } } or { key: [nested] }
+      if (this.checkDelimiter(":")) {
+        this.advance();
+        shorthand = false;
+        if (this.checkDelimiter("{")) {
+          value = this.parseObjectPattern();
+        } else if (this.checkDelimiter("[")) {
+          value = this.parseArrayPattern();
+        } else {
+          value = this.consumeIdentifier("Expected alias name");
+        }
+      }
+
+      // { key = defaultValue }
+      if (this.checkOperator("=")) {
+        this.advance();
+        defaultValue = this.parseExpression();
+      }
+
+      properties.push({ type: "ObjectPatternProperty", key, value, shorthand, defaultValue });
+
+      if (!this.matchDelimiter(",")) break;
+    }
+
+    this.consumeDelimiter("}", "Expected '}'");
+    return { type: "ObjectPattern", properties, rest };
+  }
+
+  private parseArrayPattern(): ArrayPattern {
+    this.consumeDelimiter("[", "Expected '['");
+    const elements: Array<Identifier | ObjectPattern | ArrayPattern | null> = [];
+    let rest: Identifier | undefined;
+
+    while (!this.checkDelimiter("]") && !this.isAtEnd()) {
+      // ...rest
+      if (this.checkOperator("...")) {
+        this.advance();
+        rest = this.consumeIdentifier("Expected rest identifier");
+        break;
+      }
+
+      // Holes: [, , x]
+      if (this.checkDelimiter(",")) {
+        elements.push(null);
+        this.advance();
+        continue;
+      }
+
+      // Nested destructuring
+      if (this.checkDelimiter("{")) {
+        elements.push(this.parseObjectPattern());
+      } else if (this.checkDelimiter("[")) {
+        elements.push(this.parseArrayPattern());
+      } else {
+        elements.push(this.consumeIdentifier("Expected element name"));
+      }
+
+      if (!this.matchDelimiter(",")) break;
+    }
+
+    this.consumeDelimiter("]", "Expected ']'");
+    return { type: "ArrayPattern", elements, rest };
   }
 
   // ── Helpers ────────────────────────────────────────────────────────
