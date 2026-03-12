@@ -113,8 +113,8 @@ export class Parser {
   private parsePrimary(): Expression {
     const token = this.peek();
 
-    if (token.type === TokenType.Identifier) {
-      // Could be call or identifier
+    if (token.type === TokenType.Identifier || (token.type === TokenType.Keyword && token.value === "print")) {
+      // Could be call or identifier (allow 'print' keyword as callable)
       if (this.peekNext()?.type === TokenType.Delimiter && this.peekNext()?.value === "(") {
         return this.parseCallExpression();
       }
@@ -136,7 +136,9 @@ export class Parser {
   }
 
   private parseCallExpression(): CallExpression {
-    const calleeTok = this.consumeIdentifier("Expected callee name");
+    const calleeTok = this.peek().type === TokenType.Keyword && this.peek().value === "print"
+      ? ({ type: "Identifier", name: this.advance().value } as Identifier)
+      : this.consumeIdentifier("Expected callee name");
     this.consumeDelimiter("(", "Expected '('");
     const args: Expression[] = [];
     if (!this.checkDelimiter(")")) {
