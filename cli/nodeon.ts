@@ -28,33 +28,35 @@ Examples:
 
 interface CompileOptions {
   minify: boolean;
+  write: boolean;
 }
 
-function compileFile(inputPath: string, outputPath?: string, opts: CompileOptions = { minify: false }) {
+function compileFile(inputPath: string, outputPath?: string, opts: CompileOptions = { minify: false, write: true }) {
   const absIn = resolve(process.cwd(), inputPath);
   const source = readFileSync(absIn, "utf8");
   const tokens = new Lexer(source).tokenize();
   const ast = new Parser(tokens).parseProgram();
   const jsCode = generateJS(ast, opts.minify);
 
-  let out: string;
-  if (outputPath) {
-    out = resolve(process.cwd(), outputPath);
-  } else if (opts.minify) {
-    out = absIn.replace(/\.no$/, ".min.js");
-  } else {
-    out = absIn.replace(/\.no$/, ".js");
+  let out: string | null = null;
+  if (opts.write) {
+    if (outputPath) {
+      out = resolve(process.cwd(), outputPath);
+    } else if (opts.minify) {
+      out = absIn.replace(/\.no$/, ".min.js");
+    } else {
+      out = absIn.replace(/\.no$/, ".js");
+    }
+    writeFileSync(out, jsCode, "utf8");
   }
 
-  writeFileSync(out, jsCode, "utf8");
   return { ast, jsCode, out };
 }
 
 function runFile(inputPath: string) {
-  const { jsCode, out } = compileFile(inputPath);
-  console.log(`Compiled → ${basename(out)}`);
+  const { jsCode } = compileFile(inputPath, undefined, { minify: false, write: false });
   // Ejecución en un contexto aislado (Node runtime por ahora)
-  vm.runInNewContext(jsCode, { console }, { filename: out });
+  vm.runInNewContext(jsCode, { console }, { filename: basename(inputPath).replace(/\.no$/, ".js") });
 }
 
 export function main(argv = process.argv) {
@@ -78,8 +80,8 @@ export function main(argv = process.argv) {
 
     const input = positional[0];
     const output = positional[1];
-    const { out } = compileFile(input, output, { minify });
-    console.log(`✓ ${basename(input)} → ${basename(out)}${minify ? " (minified)" : ""}`);
+    const { out } = compileFile(input, output, { minify, write: true });
+    console.log(`✓ ${basename(input)} → ${basename(out!)}${minify ? " (minified)" : ""}`);
     return;
   }
 
