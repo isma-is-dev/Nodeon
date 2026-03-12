@@ -11,5 +11,15 @@
     "url": "git@github-home:isma-is-dev/Nodeon.git"
   },
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "bin": {
+    "nodeon": "./cli/bin.js"
+  },
+  "dependencies": {
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0"
+  }
 }
