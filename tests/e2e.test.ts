@@ -234,4 +234,46 @@ describe("End-to-end compilation", () => {
       expect(js).toContain("function greet({ name })");
     });
   });
+
+  // ── Type Annotations (stripped in output) ─────────────────
+  describe("type annotations", () => {
+    it("strips type from variable declaration", () => {
+      const js = compileToJS("let x: number = 42");
+      expect(js).toContain("let x = 42;");
+      expect(js).not.toContain("number");
+    });
+
+    it("strips type from const declaration", () => {
+      const js = compileToJS("const name: string = 'hello'");
+      expect(js).toContain('const name = "hello";');
+      expect(js).not.toContain(": string");
+    });
+
+    it("strips param types from function", () => {
+      const js = compileToJS("fn add(a: number, b: number) { return a + b }");
+      expect(js).toContain("function add(a, b)");
+      expect(js).not.toContain("number");
+    });
+
+    it("strips return type from function", () => {
+      const js = compileToJS("fn greet(name: string): string { return name }");
+      expect(js).toContain("function greet(name)");
+      expect(js).not.toContain(": string");
+    });
+
+    it("strips array type annotation", () => {
+      const js = compileToJS("let items: number[] = [1, 2, 3]");
+      expect(js).toContain("let items = [1, 2, 3];");
+    });
+
+    it("strips union type annotation", () => {
+      const js = compileToJS("let value: string | number = 42");
+      expect(js).toContain("let value = 42;");
+    });
+
+    it("strips generic type annotation", () => {
+      const js = compileToJS("let p: Promise<string> = fetch('url')");
+      expect(js).toContain("let p = fetch(\"url\");");
+    });
+  });
 });

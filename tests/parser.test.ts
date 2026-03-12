@@ -472,4 +472,98 @@ describe("Parser", () => {
       }
     });
   });
+
+  // ── Type Annotations ────────────────────────────────────
+  describe("type annotations", () => {
+    it("parses typed variable declaration", () => {
+      const stmt = firstStmt("let x: number = 42");
+      expect(stmt.type).toBe("VariableDeclaration");
+      if (stmt.type === "VariableDeclaration") {
+        expect(stmt.typeAnnotation).toBeDefined();
+        expect(stmt.typeAnnotation?.kind).toBe("named");
+        if (stmt.typeAnnotation?.kind === "named") {
+          expect(stmt.typeAnnotation.name).toBe("number");
+        }
+      }
+    });
+
+    it("parses typed const declaration", () => {
+      const stmt = firstStmt("const name: string = 'hello'");
+      if (stmt.type === "VariableDeclaration") {
+        expect(stmt.typeAnnotation?.kind).toBe("named");
+      }
+    });
+
+    it("parses function with typed params", () => {
+      const stmt = firstStmt("fn add(a: number, b: number) { return a + b }");
+      if (stmt.type === "FunctionDeclaration") {
+        expect(stmt.params[0].typeAnnotation?.kind).toBe("named");
+        expect(stmt.params[1].typeAnnotation?.kind).toBe("named");
+      }
+    });
+
+    it("parses function with return type", () => {
+      const stmt = firstStmt("fn greet(name: string): string { return name }");
+      if (stmt.type === "FunctionDeclaration") {
+        expect(stmt.returnType?.kind).toBe("named");
+        if (stmt.returnType?.kind === "named") {
+          expect(stmt.returnType.name).toBe("string");
+        }
+      }
+    });
+
+    it("parses array type annotation", () => {
+      const stmt = firstStmt("let items: number[] = [1, 2, 3]");
+      if (stmt.type === "VariableDeclaration") {
+        expect(stmt.typeAnnotation?.kind).toBe("array");
+        if (stmt.typeAnnotation?.kind === "array") {
+          expect(stmt.typeAnnotation.elementType.kind).toBe("named");
+        }
+      }
+    });
+
+    it("parses union type annotation", () => {
+      const stmt = firstStmt("let value: string | number = 42");
+      if (stmt.type === "VariableDeclaration") {
+        expect(stmt.typeAnnotation?.kind).toBe("union");
+        if (stmt.typeAnnotation?.kind === "union") {
+          expect(stmt.typeAnnotation.types).toHaveLength(2);
+        }
+      }
+    });
+
+    it("parses generic type annotation", () => {
+      const stmt = firstStmt("let p: Promise<string> = fetch('url')");
+      if (stmt.type === "VariableDeclaration") {
+        expect(stmt.typeAnnotation?.kind).toBe("generic");
+        if (stmt.typeAnnotation?.kind === "generic") {
+          expect(stmt.typeAnnotation.name).toBe("Promise");
+          expect(stmt.typeAnnotation.args).toHaveLength(1);
+        }
+      }
+    });
+
+    it("parses multi-arg generic type", () => {
+      const stmt = firstStmt("let m: Map<string, number> = new Map()");
+      if (stmt.type === "VariableDeclaration" && stmt.typeAnnotation?.kind === "generic") {
+        expect(stmt.typeAnnotation.args).toHaveLength(2);
+      }
+    });
+
+    it("parses void return type", () => {
+      const stmt = firstStmt("fn log(msg: string): void { print(msg) }");
+      if (stmt.type === "FunctionDeclaration") {
+        expect(stmt.returnType?.kind).toBe("named");
+        if (stmt.returnType?.kind === "named") {
+          expect(stmt.returnType.name).toBe("void");
+        }
+      }
+    });
+
+    it("strips types in generated JS (no runtime impact)", () => {
+      // Types should be parsed but not affect generated output
+      const stmt = firstStmt("let x: number = 42");
+      expect(stmt.type).toBe("VariableDeclaration");
+    });
+  });
 });

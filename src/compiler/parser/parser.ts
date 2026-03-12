@@ -52,6 +52,7 @@ import {
   ObjectPattern,
   ObjectPatternProperty,
   ArrayPattern,
+  TypeAnnotation,
 } from "@ast/nodes";
 
 const PRECEDENCE: Record<string, number> = {
@@ -150,16 +151,23 @@ export class Parser {
     const params = this.parseParamList();
     this.consumeDelimiter(")", "Expected ')'");
 
+    // Optional return type: fn add(a, b): number { ... }
+    let returnType: TypeAnnotation | undefined;
+    if (this.checkDelimiter(":")) {
+      this.advance();
+      returnType = this.parseTypeAnnotation();
+    }
+
     // expression-style: fn sum(a,b) = a + b
     if (this.checkOperator("=")) {
       this.advance(); // consume =
       const expr = this.parseExpression();
       const body: Statement[] = [{ type: "ExpressionStatement", expression: expr }];
-      return { type: "FunctionDeclaration", name, params, body, async: isAsync };
+      return { type: "FunctionDeclaration", name, params, body, async: isAsync, returnType };
     }
 
     const body = this.parseBlock();
-    return { type: "FunctionDeclaration", name, params, body, async: isAsync };
+    return { type: "FunctionDeclaration", name, params, body, async: isAsync, returnType };
   }
 
   private parseParamList(): Param[] {
@@ -195,12 +203,18 @@ export class Parser {
       const tok = this.peek();
       if (tok.type !== TokenType.Identifier) this.error(tok, "Expected parameter name");
       this.advance();
+      // Optional type annotation: fn add(a: number, b: number) { ... }
+      let typeAnnotation: TypeAnnotation | undefined;
+      if (this.checkDelimiter(":")) {
+        this.advance();
+        typeAnnotation = this.parseTypeAnnotation();
+      }
       let defaultValue: Expression | undefined;
       if (this.checkOperator("=")) {
         this.advance();
         defaultValue = this.parseExpression();
       }
-      params.push({ type: "Param", name: tok.value, defaultValue, rest });
+      params.push({ type: "Param", name: tok.value, typeAnnotation, defaultValue, rest });
     } while (this.matchDelimiter(","));
     return params;
   }
@@ -428,9 +442,15 @@ export class Parser {
 
   private parseVariableDeclaration(kind: "let" | "const" | "var"): VariableDeclaration {
     const name = this.consumeIdentifier("Expected variable name");
+    // Optional type annotation: let x: number = 42
+    let typeAnnotation: TypeAnnotation | undefined;
+    if (this.checkDelimiter(":")) {
+      this.advance();
+      typeAnnotation = this.parseTypeAnnotation();
+    }
     this.consumeOperator("=", "Expected '=' in assignment");
     const value = this.parseExpression();
-    return { type: "VariableDeclaration", name, value, kind };
+    return { type: "VariableDeclaration", name, value, kind, typeAnnotation };
   }
 
   private parseSwitchStatement(): SwitchStatement {
@@ -940,6 +960,89 @@ export class Parser {
       parts.push({ kind: "Text", value: "" });
     }
     return { type: "TemplateLiteral", parts };
+  }
+
+  // ── Type Annotation Parsing ──────────────────────────────────────
+
+  private parseTypeAnnotation(): TypeAnnotation {
+    let type = this.parseTypePrimary();
+
+    // Array type: number[]
+    while (this.checkDelimiter("[")) {
+      const next = this.peekNext();
+      if (next && next.type === TokenType.Delimiter && next.value === "]") {
+        this.advance(); // [
+        this.advance(); // ]
+        type = { kind: "array", elementType: type };
+      } else {
+        break;
+      }
+    }
+
+    // Union type: string | number (only if | is not ||)
+    if (this.checkOperator("|") && !this.checkOperator("||")) {
+      const types: TypeAnnotation[] = [type];
+      while (this.checkOperator("|") && !this.checkOperator("||")) {
+        this.advance();
+        let next = this.parseTypePrimary();
+        while (this.checkDelimiter("[")) {
+          const n2 = this.peekNext();
+          if (n2 && n2.type === TokenType.Delimiter && n2.value === "]") {
+            this.advance();
+            this.advance();
+            next = { kind: "array", elementType: next };
+          } else {
+            break;
+          }
+        }
+        types.push(next);
+      }
+      type = { kind: "union", types };
+    }
+
+    return type;
+  }
+
+  private parseTypePrimary(): TypeAnnotation {
+    const tok = this.peek();
+
+    // Parenthesized type or function type: (number, string) => boolean
+    if (tok.type === TokenType.Delimiter && tok.value === "(") {
+      this.advance();
+      const params: TypeAnnotation[] = [];
+      if (!this.checkDelimiter(")")) {
+        do {
+          params.push(this.parseTypeAnnotation());
+        } while (this.matchDelimiter(","));
+      }
+      this.consumeDelimiter(")", "Expected ')' in function type");
+      this.consumeOperator("=>", "Expected '=>' in function type");
+      const returnType = this.parseTypeAnnotation();
+      return { kind: "function", params, returnType };
+    }
+
+    // Named type: number, string, Promise, etc.
+    if (tok.type === TokenType.Identifier || (tok.type === TokenType.Keyword && ["void", "null", "undefined"].includes(tok.value))) {
+      const name = tok.value;
+      this.advance();
+
+      // Generic type: Promise<string>, Map<string, number>
+      if (this.checkOperator("<")) {
+        this.advance();
+        const args: TypeAnnotation[] = [];
+        if (!this.checkOperator(">")) {
+          do {
+            args.push(this.parseTypeAnnotation());
+          } while (this.matchDelimiter(","));
+        }
+        this.consumeOperator(">", "Expected '>' after generic type arguments");
+        return { kind: "generic", name, args };
+      }
+
+      return { kind: "named", name };
+    }
+
+    this.error(tok, "Expected type annotation");
   }
 
   // ── Destructuring Patterns ────────────────────────────────────────

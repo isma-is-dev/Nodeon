@@ -1,3 +1,14 @@
+// ── Type Annotations ─────────────────────────────────────────────────
+export type TypeAnnotation =
+  | { kind: "named"; name: string }                              // number, string, boolean, void, any, etc.
+  | { kind: "array"; elementType: TypeAnnotation }                // number[], string[]
+  | { kind: "union"; types: TypeAnnotation[] }                    // string | number
+  | { kind: "generic"; name: string; args: TypeAnnotation[] }     // Promise<string>, Map<string, number>
+  | { kind: "function"; params: TypeAnnotation[]; returnType: TypeAnnotation } // (a: number) => string
+  | { kind: "object"; properties: { key: string; value: TypeAnnotation; optional?: boolean }[] } // { name: string, age?: number }
+  | { kind: "tuple"; elements: TypeAnnotation[] }                 // [string, number]
+  | { kind: "literal"; value: string | number | boolean };        // "hello", 42, true
+
 // ── Program ──────────────────────────────────────────────────────────
 export type Program = {
   type: "Program";
@@ -31,12 +42,14 @@ export type FunctionDeclaration = {
   params: Param[];
   body: Statement[];
   async: boolean;
+  returnType?: TypeAnnotation;
 };
 
 export type Param = {
   type: "Param";
   name: string;
   pattern?: ObjectPattern | ArrayPattern;
+  typeAnnotation?: TypeAnnotation;
   defaultValue?: Expression;
   rest?: boolean;
 };
@@ -46,6 +59,7 @@ export type VariableDeclaration = {
   name: Identifier;
   value: Expression;
   kind: "let" | "const" | "var";
+  typeAnnotation?: TypeAnnotation;
 };
 
 export type DestructuringDeclaration = {
@@ -116,6 +130,7 @@ export type ClassMethod = {
   params: Param[];
   body: Statement[];
   async: boolean;
+  returnType?: TypeAnnotation;
 };
 
 export type TryCatchStatement = {
@@ -237,6 +252,7 @@ export type ArrowFunction = {
   params: Param[];
   body: Statement[] | Expression;
   async: boolean;
+  returnType?: TypeAnnotation;
 };
 
 export type AssignmentExpression = {
