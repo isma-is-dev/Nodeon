@@ -1,4 +1,4 @@
-import { Token, TokenType } from "../../language/tokens";
+import { Token, TokenType } from "@language/tokens";
 import {
   Program,
   Statement,
@@ -13,7 +13,7 @@ import {
   TemplateLiteral,
   TemplatePartText,
   TemplatePartExpression,
-} from "../ast/nodes";
+} from "@ast/nodes";
 
 const PRECEDENCE: Record<string, number> = {
   "*": 2,

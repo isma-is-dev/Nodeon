@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "CommonJS",
+    "rootDir": "./",
+    "baseUrl": "./",
+    "paths": {
+      "@language/*": ["src/language/*"],
+      "@lexer/*": ["src/compiler/lexer/*"],
+      "@parser/*": ["src/compiler/parser/*"],
+      "@compiler/*": ["src/compiler/*"],
+      "@ast/*": ["src/compiler/ast/*"],
+      "@cli/*": ["cli/*"],
+      "@src/*": ["src/*"]
+    },
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "strict": false,
+    "skipLibCheck": true,
+    "moduleResolution": "node"
+  },
+  "include": ["src/**/*", "cli/**/*", "examples/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

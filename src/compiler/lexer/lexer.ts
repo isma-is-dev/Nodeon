@@ -1,7 +1,7 @@
-import { Token, TokenType } from "../../language/tokens";
-import { KEYWORDS } from "../../language/keywords";
-import { OPERATORS, TWO_CHAR_OPERATORS } from "../../language/operators";
-import { DELIMITERS } from "../../language/symbols";
+import { Token, TokenType } from "@language/tokens";
+import { KEYWORDS } from "@language/keywords";
+import { OPERATORS, TWO_CHAR_OPERATORS } from "@language/operators";
+import { DELIMITERS } from "@language/symbols";
 
 export class Lexer {
   private src: string;

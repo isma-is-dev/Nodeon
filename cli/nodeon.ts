@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { readFileSync, writeFileSync } from "fs";
 import { resolve } from "path";
-import { Lexer } from "../src/lexer/lexer";
-import { Parser } from "../src/compiler/parser/parser";
-import { TokenType } from "../src/language/tokens";
+import { Lexer } from "@lexer/lexer";
+import { Parser } from "@parser/parser";
+import { TokenType } from "@language/tokens";
 
 function printHelp() {
   console.log(`nodeon <command> [file]\n\nCommands:\n  build <input> [output]  Compile .no to .js (placeholder writes AST)\n  run <input>             Compile and execute (prints AST for ahora)\n  help                    Show this help`);
