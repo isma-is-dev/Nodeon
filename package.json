@@ -1,21 +1,21 @@
 {
   "name": "nodeon",
-  "version": "0.1",
-  "description": "",
-  "main": "main.js",
+  "version": "0.1.0",
+  "description": "Nodeon programming language — compiles to JavaScript with optional typing and clean syntax",
+  "main": "src/compiler/compile.ts",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "postinstall": "npm install --prefix language-server && npm install --prefix vscode-extension",
-    "build:lsp": "npm run build --prefix language-server",
-    "build:ext": "npm run build --prefix vscode-extension",
+    "postinstall": "npm install --prefix packages/language-server && npm install --prefix packages/vscode-extension",
+    "build:lsp": "npm run build --prefix packages/language-server",
+    "build:ext": "npm run build --prefix packages/vscode-extension",
     "build:all": "npm run build:lsp && npm run build:ext"
   },
   "repository": {
     "type": "git",
     "url": "git@github-home:isma-is-dev/Nodeon.git"
   },
-  "author": "",
-  "license": "ISC",
+  "author": "isma-is-dev",
+  "license": "MIT",
   "bin": {
     "nodeon": "./cli/bin.js"
   },

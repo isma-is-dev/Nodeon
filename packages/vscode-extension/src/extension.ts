@@ -7,6 +7,7 @@ let client: LanguageClient | undefined;
 export function activate(context: vscode.ExtensionContext) {
   // Resolve server module relative to workspace root structure
   const serverModule = context.asAbsolutePath(path.join('..', 'language-server', 'dist', 'server.js'));
+  // NOTE: When running from packages/vscode-extension, the language-server is a sibling directory
 
   const serverOptions: ServerOptions = {
     run: { module: serverModule, transport: TransportKind.ipc },

@@ -1,19 +1,22 @@
 #!/usr/bin/env node
 import { readFileSync, writeFileSync } from "fs";
 import { resolve, basename } from "path";
-import { Lexer } from "@lexer/lexer";
-import { Parser } from "@parser/parser";
-import { generateJS } from "@compiler/generator/js-generator";
+import { compile } from "@compiler/compile";
 import vm from "vm";
+
+const VERSION = "0.1.0";
 
 function printHelp() {
   console.log(
-`nodeon <command> [options] <file>
+`nodeon v${VERSION}
+
+Usage: nodeon <command> [options] <file>
 
 Commands:
   build [options] <input> [output]   Compile .no → .js
   run <input>                        Compile and execute
   help                               Show this help
+  version                            Show version
 
 Build Options:
   -min, --minify    Minified output (e.g. nodeon build -min hello.no)
@@ -26,17 +29,15 @@ Examples:
   );
 }
 
-interface CompileOptions {
+interface CLICompileOptions {
   minify: boolean;
   write: boolean;
 }
 
-function compileFile(inputPath: string, outputPath?: string, opts: CompileOptions = { minify: false, write: true }) {
+function compileFile(inputPath: string, outputPath?: string, opts: CLICompileOptions = { minify: false, write: true }) {
   const absIn = resolve(process.cwd(), inputPath);
   const source = readFileSync(absIn, "utf8");
-  const tokens = new Lexer(source).tokenize();
-  const ast = new Parser(tokens).parseProgram();
-  const jsCode = generateJS(ast, opts.minify);
+  const { js: jsCode, ast } = compile(source, { minify: opts.minify });
 
   let out: string | null = null;
   if (opts.write) {
@@ -65,6 +66,11 @@ export function main(argv = process.argv) {
 
   if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") {
     printHelp();
+    return;
+  }
+
+  if (cmd === "version" || cmd === "--version" || cmd === "-v") {
+    console.log(`nodeon v${VERSION}`);
     return;
   }
 
