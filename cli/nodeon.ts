@@ -3,7 +3,8 @@ import { readFileSync, writeFileSync } from "fs";
 import { resolve } from "path";
 import { Lexer } from "@lexer/lexer";
 import { Parser } from "@parser/parser";
-import { TokenType } from "@language/tokens";
+import { generateJS } from "@compiler/generator/js-generator";
+import vm from "vm";
 
 function printHelp() {
   console.log(`nodeon <command> [file]\n\nCommands:\n  build <input> [output]  Compile .no to .js (placeholder writes AST)\n  run <input>             Compile and execute (prints AST for ahora)\n  help                    Show this help`);
@@ -13,19 +14,18 @@ function compileFile(inputPath: string, outputPath?: string) {
   const absIn = resolve(process.cwd(), inputPath);
   const source = readFileSync(absIn, "utf8");
   const tokens = new Lexer(source).tokenize();
-  if (tokens[tokens.length - 1].type !== TokenType.EOF) {
-    tokens.push({ type: TokenType.EOF, value: "", position: source.length });
-  }
   const ast = new Parser(tokens).parseProgram();
-  const out = outputPath ? resolve(process.cwd(), outputPath) : absIn.replace(/\.no$/, ".ast.json");
-  writeFileSync(out, JSON.stringify(ast, null, 2), "utf8");
-  return { ast, out };
+  const jsCode = generateJS(ast);
+  const out = outputPath ? resolve(process.cwd(), outputPath) : absIn.replace(/\.no$/, ".js");
+  writeFileSync(out, jsCode, "utf8");
+  return { ast, jsCode, out };
 }
 
 function runFile(inputPath: string) {
-  const { ast, out } = compileFile(inputPath);
-  console.log(`Compiled to AST at ${out}`);
-  console.log(JSON.stringify(ast, null, 2));
+  const { jsCode, out } = compileFile(inputPath);
+  console.log(`Compiled to JS at ${out}`);
+  // Ejecución en un contexto aislado (Node runtime por ahora)
+  vm.runInNewContext(jsCode, { console }, { filename: out });
 }
 
 export function main(argv = process.argv) {
