@@ -8,7 +8,7 @@ import {
   Diagnostic,
   DiagnosticSeverity,
   TextDocumentChangeEvent
-} from 'vscode-languageserver';
+} from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 
 const connection = createConnection(ProposedFeatures.all);

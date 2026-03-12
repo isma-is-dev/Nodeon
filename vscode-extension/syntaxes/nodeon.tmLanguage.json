@@ -1,0 +1,55 @@
+{
+  "scopeName": "source.nodeon",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#keywords" },
+    { "include": "#numbers" },
+    { "include": "#identifiers" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "name": "comment.line.double-slash.nodeon", "match": "//.*$" },
+        { "name": "comment.block.nodeon", "begin": "/\\*", "end": "\\*/" }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        { "name": "string.quoted.double.nodeon", "begin": "\"", "end": "\"", "patterns": [{ "name": "constant.character.escape.nodeon", "match": "\\\\." }] },
+        { "name": "string.quoted.single.nodeon", "begin": "'", "end": "'", "patterns": [{ "name": "constant.character.escape.nodeon", "match": "\\\\." }] },
+        { "name": "string.quoted.template.nodeon", "begin": "`", "end": "`", "patterns": [
+          { "name": "constant.character.escape.nodeon", "match": "\\\\." },
+          { "name": "meta.embedded.expression.nodeon", "begin": "\\${", "end": "}", "patterns": [{ "include": "#expressions" }] }
+        ] }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.nodeon",
+          "match": "\\b(if|else|for|while|return|break|continue|switch|case|default|try|catch|throw|class|extends|new|async|await|import|export|from|const|let|var|function|print)\\b"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        { "name": "constant.numeric.nodeon", "match": "\\b((0x[0-9A-Fa-f]+)|(0b[01]+)|(0o[0-7]+)|([0-9]+(\\.[0-9]+)?))\\b" }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        { "name": "variable.other.nodeon", "match": "\\b[_$a-zA-Z][_$a-zA-Z0-9]*\\b" }
+      ]
+    },
+    "expressions": {
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#strings" },
+        { "include": "#keywords" },
+        { "include": "#numbers" },
+        { "include": "#identifiers" }
+      ]
+    }
+  }
+}
