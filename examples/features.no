@@ -92,3 +92,46 @@ if a == b {
 # ── Backtick template literals ────────────────────────────
 greeting = `Hello ${name}, you have ${counter} items`
 print(greeting)
+
+# ── Destructuring ───────────────────────────────────────
+const { host, port } = config.db
+print("Host: {host}")
+
+let [first, second, ...rest] = [1, 2, 3, 4, 5]
+print("First: {first}, Rest: {rest}")
+
+# ── Type Annotations (stripped in JS output) ────────────
+let count: number = 42
+const label: string = "items"
+
+fn add(a: number, b: number): number {
+  return a + b
+}
+print("Sum: {add(count, 8)}")
+
+# ── Pattern Matching ────────────────────────────────────
+match color {
+  case "red" {
+    print("Match: Stop!")
+  }
+  case "green" {
+    print("Match: Go!")
+  }
+  default {
+    print("Match: Unknown")
+  }
+}
+
+# ── Match with guard clauses ────────────────────────────
+let score = 85
+match score {
+  case 100 {
+    print("Perfect!")
+  }
+  case 90 if score > 89 {
+    print("Excellent")
+  }
+  default {
+    print("Score: {score}")
+  }
+}
