@@ -25,7 +25,7 @@ const KEYWORDS = new Set([
   "print",
 ]);
 
-const SINGLE_CHAR_OPERATORS = new Set([
+const OPERATORS = new Set([
   "+",
   "-",
   "*",
@@ -34,17 +34,11 @@ const SINGLE_CHAR_OPERATORS = new Set([
   "<",
   ">",
   "!",
-  ".",
-  ",",
-  "{",
-  "}",
-  "(",
-  ")",
 ]);
 
-const DELIMITERS = new Set(["{", "}", "(", ")", ","]);
-
 const TWO_CHAR_OPERATORS = new Set(["==", "!=", "<=", ">=", ".."]);
+
+const DELIMITERS = new Set(["{", "}", "(", ")", ","]);
 
 export class Lexer {
   private src: string;
@@ -58,7 +52,7 @@ export class Lexer {
     const tokens: Token[] = [];
 
     while (!this.isAtEnd()) {
-      this.skipWhitespace();
+      this.skipWhitespaceAndComments();
       if (this.isAtEnd()) break;
 
       const char = this.peek();
@@ -128,7 +122,7 @@ export class Lexer {
     }
 
     if (this.isAtEnd()) {
-      throw new SyntaxError(`Unterminated string starting at position ${start}`);
+      throw new SyntaxError(`Unterminated string at position ${start}`);
     }
 
     this.advance(); // closing quote
@@ -144,24 +138,38 @@ export class Lexer {
       return { type: TokenType.Operator, value: potentialTwo, position: start };
     }
 
-    if (SINGLE_CHAR_OPERATORS.has(first)) {
-      if (DELIMITERS.has(first)) {
-        return { type: TokenType.Delimiter, value: first, position: start };
-      }
+    if (OPERATORS.has(first)) {
       return { type: TokenType.Operator, value: first, position: start };
+    }
+
+    if (DELIMITERS.has(first)) {
+      return { type: TokenType.Delimiter, value: first, position: start };
     }
 
     return null;
   }
 
-  private skipWhitespace(): void {
+  private skipWhitespaceAndComments(): void {
     while (!this.isAtEnd()) {
       const ch = this.peek();
+
       if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r") {
         this.advance();
-      } else {
-        break;
+        continue;
       }
+
+      if (ch === "#") {
+        this.skipComment();
+        continue;
+      }
+
+      break;
+    }
+  }
+
+  private skipComment(): void {
+    while (!this.isAtEnd() && this.peek() !== "\n") {
+      this.advance();
     }
   }
 
