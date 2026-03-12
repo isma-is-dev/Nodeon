@@ -1,0 +1,43 @@
+{
+  "name": "nodeon-vscode-extension",
+  "displayName": "Nodeon",
+  "description": "Syntax highlighting y LSP client para Nodeon (.no)",
+  "version": "0.0.1",
+  "publisher": "nodeon",
+  "engines": { "vscode": "^1.84.0" },
+  "categories": ["Programming Languages"],
+  "main": "dist/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "nodeon",
+        "aliases": ["Nodeon", "nodeon"],
+        "extensions": [".no"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "nodeon",
+        "scopeName": "source.nodeon",
+        "path": "./syntaxes/nodeon.tmLanguage.json"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "tsc -p ./",
+    "watch": "tsc -w -p ./",
+    "package": "vsce package",
+    "publish": "vsce publish"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.25",
+    "typescript": "^5.3.3",
+    "vsce": "^2.15.0",
+    "vscode": "^1.1.37"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}
