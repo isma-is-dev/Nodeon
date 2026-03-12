@@ -9,14 +9,18 @@ export type TypeAnnotation =
   | { kind: "tuple"; elements: TypeAnnotation[] }                 // [string, number]
   | { kind: "literal"; value: string | number | boolean };        // "hello", 42, true
 
+// ── Source Location (for source maps) ────────────────────────────────
+export type SourceLoc = { line: number; column: number };
+
 // ── Program ──────────────────────────────────────────────────────────
 export type Program = {
   type: "Program";
   body: Statement[];
+  source?: string; // original source filename
 };
 
 // ── Statements ───────────────────────────────────────────────────────
-export type Statement =
+export type Statement = (
   | FunctionDeclaration
   | VariableDeclaration
   | DestructuringDeclaration
@@ -35,7 +39,8 @@ export type Statement =
   | BreakStatement
   | ContinueStatement
   | DebuggerStatement
-  | MatchStatement;
+  | MatchStatement
+) & { loc?: SourceLoc };
 
 export type FunctionDeclaration = {
   type: "FunctionDeclaration";

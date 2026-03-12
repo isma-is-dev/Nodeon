@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { compile } from "@compiler/compile";
+import { compile, compileWithSourceMap } from "@compiler/compile";
 
 describe("End-to-end compilation", () => {
   function compileToJS(src: string, minify = false): string {
@@ -300,6 +300,34 @@ describe("End-to-end compilation", () => {
     it("compiles match with guard clause", () => {
       const js = compileToJS('match x {\n  case 1 if y > 0 { print("yes") }\n}');
       expect(js).toContain("if (x === 1 && y > 0)");
+    });
+  });
+
+  // ── Source Maps ───────────────────────────────────────────
+  describe("source maps", () => {
+    it("generates a valid v3 source map", () => {
+      const result = compileWithSourceMap("let x = 42", "test.no", "test.js");
+      expect(result.sourceMap.version).toBe(3);
+      expect(result.sourceMap.sources).toContain("test.no");
+      expect(result.sourceMap.file).toBe("test.js");
+      expect(typeof result.sourceMap.mappings).toBe("string");
+    });
+
+    it("includes sourceMappingURL comment", () => {
+      const result = compileWithSourceMap("let x = 42", "test.no", "test.js");
+      expect(result.js).toContain("//# sourceMappingURL=test.js.map");
+    });
+
+    it("includes source content in source map", () => {
+      const src = "let x = 42\nlet y = 10";
+      const result = compileWithSourceMap(src, "test.no", "test.js");
+      expect(result.sourceMap.sourcesContent[0]).toBe(src);
+    });
+
+    it("generates mappings for multi-line source", () => {
+      const src = "let x = 42\nlet y = 10\nprint(x + y)";
+      const result = compileWithSourceMap(src, "test.no", "test.js");
+      expect(result.sourceMap.mappings.length).toBeGreaterThan(0);
     });
   });
 });

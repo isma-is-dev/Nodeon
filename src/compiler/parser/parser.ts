@@ -99,43 +99,52 @@ export class Parser {
 
   private parseStatement(): Statement {
     const tok = this.peek();
+    const loc = tok.loc ? { line: tok.loc.line, column: tok.loc.column } : undefined;
+
+    let stmt: Statement;
 
     if (tok.type === TokenType.Keyword) {
       switch (tok.value) {
-        case "fn": return this.parseFunctionDeclaration(false);
-        case "async": return this.parseAsync();
-        case "if": return this.parseIfStatement();
-        case "for": return this.parseForStatement();
-        case "while": return this.parseWhileStatement();
-        case "do": return this.parseDoWhileStatement();
-        case "return": return this.parseReturnStatement();
-        case "import": return this.parseImportDeclaration();
-        case "export": return this.parseExportDeclaration();
-        case "class": return this.parseClassDeclaration();
-        case "try": return this.parseTryCatch();
-        case "throw": return this.parseThrowStatement();
-        case "const": return this.parseConstDeclaration();
-        case "let": return this.parseLetDeclaration();
-        case "var": return this.parseVarDeclaration();
-        case "switch": return this.parseSwitchStatement();
-        case "match": return this.parseMatchStatement();
-        case "break": { this.advance(); return { type: "BreakStatement" } as BreakStatement; }
-        case "continue": { this.advance(); return { type: "ContinueStatement" } as ContinueStatement; }
-        case "debugger": { this.advance(); return { type: "DebuggerStatement" } as DebuggerStatement; }
+        case "fn": stmt = this.parseFunctionDeclaration(false); break;
+        case "async": stmt = this.parseAsync(); break;
+        case "if": stmt = this.parseIfStatement(); break;
+        case "for": stmt = this.parseForStatement(); break;
+        case "while": stmt = this.parseWhileStatement(); break;
+        case "do": stmt = this.parseDoWhileStatement(); break;
+        case "return": stmt = this.parseReturnStatement(); break;
+        case "import": stmt = this.parseImportDeclaration(); break;
+        case "export": stmt = this.parseExportDeclaration(); break;
+        case "class": stmt = this.parseClassDeclaration(); break;
+        case "try": stmt = this.parseTryCatch(); break;
+        case "throw": stmt = this.parseThrowStatement(); break;
+        case "const": stmt = this.parseConstDeclaration(); break;
+        case "let": stmt = this.parseLetDeclaration(); break;
+        case "var": stmt = this.parseVarDeclaration(); break;
+        case "switch": stmt = this.parseSwitchStatement(); break;
+        case "match": stmt = this.parseMatchStatement(); break;
+        case "break": this.advance(); stmt = { type: "BreakStatement" } as BreakStatement; break;
+        case "continue": this.advance(); stmt = { type: "ContinueStatement" } as ContinueStatement; break;
+        case "debugger": this.advance(); stmt = { type: "DebuggerStatement" } as DebuggerStatement; break;
+        default: stmt = this.parseExpressionStatement(); break;
       }
-    }
-
-    if (tok.type === TokenType.Identifier) {
+    } else if (tok.type === TokenType.Identifier) {
       const next = this.peekNext();
       if (next?.type === TokenType.Operator && next.value === "=") {
         const afterEq = this.peekAt(2);
         if (afterEq?.type !== TokenType.Operator || (afterEq.value !== "=" && afterEq.value !== ">")) {
-          return this.parseVariableDeclaration("let");
+          stmt = this.parseVariableDeclaration("let");
+        } else {
+          stmt = this.parseExpressionStatement();
         }
+      } else {
+        stmt = this.parseExpressionStatement();
       }
+    } else {
+      stmt = this.parseExpressionStatement();
     }
 
-    return this.parseExpressionStatement();
+    if (loc) stmt.loc = loc;
+    return stmt;
   }
 
   private parseAsync(): Statement {

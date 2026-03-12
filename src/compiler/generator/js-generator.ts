@@ -48,6 +48,7 @@ import {
   MatchStatement,
   MatchCase,
 } from "@ast/nodes";
+import { SourceMapBuilder } from "./source-map";
 
 const BIN_PRECEDENCE: Record<string, number> = {
   "..": 1,
@@ -74,6 +75,55 @@ export function generateJS(program: Program, minify = false): string {
   const ctx: GenContext = { minify, nl, sp, indentLevel: 0, indentSize: 2, declaredVars: new Set() };
   const lines = program.body.map((stmt) => emitStatement(stmt, ctx));
   return lines.join(nl);
+}
+
+export interface GenerateResult {
+  js: string;
+  sourceMap: import("./source-map").SourceMap;
+}
+
+export function generateJSWithSourceMap(
+  program: Program,
+  sourceFile: string,
+  sourceContent: string,
+  outputFile: string,
+  minify = false,
+): GenerateResult {
+  const builder = new SourceMapBuilder();
+  const sourceIndex = builder.addSource(sourceFile, sourceContent);
+
+  const nl = minify ? "" : "\n";
+  const sp = minify ? "" : " ";
+  const ctx: GenContext = { minify, nl, sp, indentLevel: 0, indentSize: 2, declaredVars: new Set() };
+
+  const outputLines: string[] = [];
+  for (const stmt of program.body) {
+    const code = emitStatement(stmt, ctx);
+    const genLine = outputLines.length + 1;
+
+    // Record source mapping if the statement has loc info
+    if (stmt.loc) {
+      builder.addLineMapping(stmt.loc.line, genLine, sourceIndex);
+    }
+
+    outputLines.push(code);
+
+    // For multi-line output (functions, classes, etc.), map inner lines too
+    const codeLines = code.split("\n");
+    if (codeLines.length > 1 && stmt.loc) {
+      for (let i = 1; i < codeLines.length; i++) {
+        builder.addLineMapping(stmt.loc.line, genLine + i, sourceIndex);
+      }
+      // Adjust outputLines: replace the single entry with first line, push rest
+      outputLines.pop();
+      outputLines.push(...codeLines);
+    }
+  }
+
+  const js = outputLines.join(nl) + nl + `//# sourceMappingURL=${outputFile}.map`;
+  const sourceMap = builder.toJSON(outputFile);
+
+  return { js, sourceMap };
 }
 
 type GenContext = {

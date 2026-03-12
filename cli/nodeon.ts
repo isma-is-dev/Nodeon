@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { resolve, basename } from "path";
-import { compile } from "@compiler/compile";
+import { compile, compileWithSourceMap } from "@compiler/compile";
 import vm from "vm";
 
 const VERSION = "0.1.0";
@@ -51,6 +51,7 @@ Commands:
 
 Build Options:
   -min, --minify    Minified output (e.g. nodeon build -min hello.no)
+  --map             Generate source map (.js.map)
 
 Examples:
   nodeon build hello.no              → hello.js
@@ -63,6 +64,7 @@ Examples:
 interface CLICompileOptions {
   minify: boolean;
   write: boolean;
+  sourceMap?: boolean;
 }
 
 function compileFile(inputPath: string, outputPath?: string, opts: CLICompileOptions = { minify: false, write: true }) {
@@ -76,8 +78,6 @@ function compileFile(inputPath: string, outputPath?: string, opts: CLICompileOpt
   const source = readFileSync(absIn, "utf8");
 
   try {
-    const { js: jsCode, ast } = compile(source, { minify: opts.minify });
-
     let out: string | null = null;
     if (opts.write) {
       if (outputPath) {
@@ -87,9 +87,18 @@ function compileFile(inputPath: string, outputPath?: string, opts: CLICompileOpt
       } else {
         out = absIn.replace(/\.no$/, ".js");
       }
-      writeFileSync(out, jsCode, "utf8");
     }
 
+    if (opts.sourceMap && out) {
+      const outFile = basename(out);
+      const { js: jsCode, ast, sourceMap } = compileWithSourceMap(source, inputPath, outFile, { minify: opts.minify });
+      writeFileSync(out, jsCode, "utf8");
+      writeFileSync(out + ".map", JSON.stringify(sourceMap), "utf8");
+      return { ast, jsCode, out };
+    }
+
+    const { js: jsCode, ast } = compile(source, { minify: opts.minify });
+    if (out) writeFileSync(out, jsCode, "utf8");
     return { ast, jsCode, out };
   } catch (err: any) {
     console.error(formatError(inputPath, source, err));
@@ -126,6 +135,7 @@ export function main(argv = process.argv) {
   if (cmd === "build") {
     const flags = args.slice(1);
     const minify = flags.includes("-min") || flags.includes("--minify");
+    const sourceMap = flags.includes("--map");
     const positional = flags.filter((f) => !f.startsWith("-"));
 
     if (positional.length === 0) {
@@ -135,8 +145,9 @@ export function main(argv = process.argv) {
 
     const input = positional[0];
     const output = positional[1];
-    const { out } = compileFile(input, output, { minify, write: true });
-    console.log(`✓ ${basename(input)} → ${basename(out!)}${minify ? " (minified)" : ""}`);
+    const { out } = compileFile(input, output, { minify, write: true, sourceMap });
+    const extra = [minify ? "minified" : "", sourceMap ? "+map" : ""].filter(Boolean).join(", ");
+    console.log(`✓ ${basename(input)} → ${basename(out!)}${extra ? ` (${extra})` : ""}`);
     return;
   }
 
