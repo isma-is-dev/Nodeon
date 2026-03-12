@@ -2,7 +2,7 @@
 import { readFileSync, writeFileSync } from "fs";
 import { resolve } from "path";
 import { Lexer } from "../src/lexer/lexer";
-import { Parser } from "../src/parser/parser";
+import { Parser } from "../src/compiler/parser/parser";
 import { TokenType } from "../src/language/tokens";
 
 function printHelp() {

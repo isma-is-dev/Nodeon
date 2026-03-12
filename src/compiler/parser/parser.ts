@@ -1,4 +1,4 @@
-import { Token, TokenType } from "../language/tokens";
+import { Token, TokenType } from "../../language/tokens";
 import {
   Program,
   Statement,
