@@ -608,4 +608,130 @@ describe("Parser", () => {
       }
     });
   });
+
+  // ── Enums ────────────────────────────────────────────────────
+  describe("enum declarations", () => {
+    it("parses basic enum", () => {
+      const stmt = firstStmt("enum Color { Red, Green, Blue }");
+      expect(stmt.type).toBe("EnumDeclaration");
+      if (stmt.type === "EnumDeclaration") {
+        expect(stmt.name.name).toBe("Color");
+        expect(stmt.members).toHaveLength(3);
+        expect(stmt.members[0].name.name).toBe("Red");
+        expect(stmt.members[1].name.name).toBe("Green");
+        expect(stmt.members[2].name.name).toBe("Blue");
+      }
+    });
+
+    it("parses enum with custom values", () => {
+      const stmt = firstStmt("enum Status { OK = 200, NotFound = 404, Error = 500 }");
+      expect(stmt.type).toBe("EnumDeclaration");
+      if (stmt.type === "EnumDeclaration") {
+        expect(stmt.members).toHaveLength(3);
+        expect(stmt.members[0].value).not.toBeNull();
+        expect(stmt.members[1].name.name).toBe("NotFound");
+      }
+    });
+
+    it("parses enum with string values", () => {
+      const stmt = firstStmt('enum Direction { Up = "UP", Down = "DOWN" }');
+      expect(stmt.type).toBe("EnumDeclaration");
+      if (stmt.type === "EnumDeclaration") {
+        expect(stmt.members).toHaveLength(2);
+        expect(stmt.members[0].value?.type).toBe("Literal");
+      }
+    });
+
+    it("parses enum with mixed auto and custom values", () => {
+      const stmt = firstStmt("enum Level { Low, Medium = 5, High }");
+      expect(stmt.type).toBe("EnumDeclaration");
+      if (stmt.type === "EnumDeclaration") {
+        expect(stmt.members).toHaveLength(3);
+        expect(stmt.members[0].value).toBeNull();
+        expect(stmt.members[1].value).not.toBeNull();
+        expect(stmt.members[2].value).toBeNull();
+      }
+    });
+  });
+
+  // ── Pipe Operator ────────────────────────────────────────────
+  describe("pipe operator", () => {
+    it("parses single pipe", () => {
+      const stmt = firstStmt("x |> double");
+      expect(stmt.type).toBe("ExpressionStatement");
+      if (stmt.type === "ExpressionStatement") {
+        expect(stmt.expression.type).toBe("BinaryExpression");
+        if (stmt.expression.type === "BinaryExpression") {
+          expect(stmt.expression.operator).toBe("|>");
+          expect(stmt.expression.left.type).toBe("Identifier");
+          expect(stmt.expression.right.type).toBe("Identifier");
+        }
+      }
+    });
+
+    it("parses chained pipes (left-to-right)", () => {
+      const stmt = firstStmt("x |> double |> toString");
+      expect(stmt.type).toBe("ExpressionStatement");
+      if (stmt.type === "ExpressionStatement") {
+        const expr = stmt.expression;
+        expect(expr.type).toBe("BinaryExpression");
+        if (expr.type === "BinaryExpression") {
+          expect(expr.operator).toBe("|>");
+          expect(expr.right.type).toBe("Identifier");
+          // Left should also be a pipe expression
+          expect(expr.left.type).toBe("BinaryExpression");
+        }
+      }
+    });
+
+    it("pipe has lower precedence than arithmetic", () => {
+      const stmt = firstStmt("x + 1 |> double");
+      if (stmt.type === "ExpressionStatement" && stmt.expression.type === "BinaryExpression") {
+        expect(stmt.expression.operator).toBe("|>");
+        expect(stmt.expression.left.type).toBe("BinaryExpression");
+      }
+    });
+  });
+
+  // ── Interfaces ───────────────────────────────────────────────
+  describe("interface declarations", () => {
+    it("parses basic interface with properties", () => {
+      const stmt = firstStmt("interface User { name: string, age: number }");
+      expect(stmt.type).toBe("InterfaceDeclaration");
+      if (stmt.type === "InterfaceDeclaration") {
+        expect(stmt.name.name).toBe("User");
+        expect(stmt.properties).toHaveLength(2);
+        expect(stmt.properties[0].name.name).toBe("name");
+        expect(stmt.properties[1].name.name).toBe("age");
+      }
+    });
+
+    it("parses interface with method signatures", () => {
+      const stmt = firstStmt("interface Shape { area(): number }");
+      expect(stmt.type).toBe("InterfaceDeclaration");
+      if (stmt.type === "InterfaceDeclaration") {
+        expect(stmt.properties).toHaveLength(1);
+        expect(stmt.properties[0].method).toBe(true);
+        expect(stmt.properties[0].name.name).toBe("area");
+      }
+    });
+
+    it("parses interface with optional properties", () => {
+      const stmt = firstStmt("interface Config { host: string, port?: number }");
+      expect(stmt.type).toBe("InterfaceDeclaration");
+      if (stmt.type === "InterfaceDeclaration") {
+        expect(stmt.properties[0].optional).toBe(false);
+        expect(stmt.properties[1].optional).toBe(true);
+      }
+    });
+
+    it("parses interface with extends", () => {
+      const stmt = firstStmt("interface Admin extends User { role: string }");
+      expect(stmt.type).toBe("InterfaceDeclaration");
+      if (stmt.type === "InterfaceDeclaration") {
+        expect(stmt.extends).toHaveLength(1);
+        expect(stmt.extends![0].name).toBe("User");
+      }
+    });
+  });
 });

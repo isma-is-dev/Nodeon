@@ -55,9 +55,14 @@ import {
   TypeAnnotation,
   MatchStatement,
   MatchCase,
+  EnumDeclaration,
+  EnumMember,
+  InterfaceDeclaration,
+  InterfaceProperty,
 } from "@ast/nodes";
 
 const PRECEDENCE: Record<string, number> = {
+  "|>": 1,
   "..": 1,
   "??": 2,
   "||": 3,
@@ -71,7 +76,6 @@ const PRECEDENCE: Record<string, number> = {
   "+": 10, "-": 10,
   "*": 11, "/": 11, "%": 11,
   "**": 12,
-  "|>": 13,
 };
 
 const COMPOUND_ASSIGN = new Set([
@@ -122,6 +126,8 @@ export class Parser {
         case "var": stmt = this.parseVarDeclaration(); break;
         case "switch": stmt = this.parseSwitchStatement(); break;
         case "match": stmt = this.parseMatchStatement(); break;
+        case "enum": stmt = this.parseEnumDeclaration(); break;
+        case "interface": stmt = this.parseInterfaceDeclaration(); break;
         case "break": this.advance(); stmt = { type: "BreakStatement" } as BreakStatement; break;
         case "continue": this.advance(); stmt = { type: "ContinueStatement" } as ContinueStatement; break;
         case "debugger": this.advance(); stmt = { type: "DebuggerStatement" } as DebuggerStatement; break;
@@ -529,6 +535,122 @@ export class Parser {
 
     this.consumeDelimiter("}", "Expected '}'");
     return { type: "MatchStatement", discriminant, cases };
+  }
+
+  private parseEnumDeclaration(): EnumDeclaration {
+    this.consumeKeyword("enum");
+    const nameTok = this.advance();
+    if (nameTok.type !== TokenType.Identifier) {
+      this.error(nameTok, "Expected enum name");
+    }
+    const name: Identifier = { type: "Identifier", name: nameTok.value };
+    this.consumeDelimiter("{", "Expected '{' after enum name");
+    const members: EnumMember[] = [];
+
+    while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+      const memberTok = this.advance();
+      if (memberTok.type !== TokenType.Identifier && memberTok.type !== TokenType.Keyword) {
+        this.error(memberTok, "Expected enum member name");
+      }
+      const memberName: Identifier = { type: "Identifier", name: memberTok.value };
+      let value: Expression | null = null;
+
+      if (this.checkOperator("=")) {
+        this.advance();
+        value = this.parseExpression();
+      }
+
+      members.push({ type: "EnumMember", name: memberName, value });
+
+      // Optional comma separator
+      if (this.checkDelimiter(",")) {
+        this.advance();
+      }
+    }
+
+    this.consumeDelimiter("}", "Expected '}' after enum body");
+    return { type: "EnumDeclaration", name, members };
+  }
+
+  private parseInterfaceDeclaration(): InterfaceDeclaration {
+    this.consumeKeyword("interface");
+    const nameTok = this.advance();
+    if (nameTok.type !== TokenType.Identifier) {
+      this.error(nameTok, "Expected interface name");
+    }
+    const name: Identifier = { type: "Identifier", name: nameTok.value };
+
+    // Optional: interface Foo extends Bar, Baz { ... }
+    let extendsIds: Identifier[] | undefined;
+    if (this.checkKeyword("extends")) {
+      this.advance();
+      extendsIds = [];
+      do {
+        const extTok = this.advance();
+        if (extTok.type !== TokenType.Identifier) {
+          this.error(extTok, "Expected interface name after 'extends'");
+        }
+        extendsIds.push({ type: "Identifier", name: extTok.value });
+      } while (this.checkDelimiter(",") && this.advance());
+    }
+
+    this.consumeDelimiter("{", "Expected '{' after interface name");
+    const properties: InterfaceProperty[] = [];
+
+    while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+      const propTok = this.advance();
+      if (propTok.type !== TokenType.Identifier) {
+        this.error(propTok, "Expected property name in interface");
+      }
+      const propName: Identifier = { type: "Identifier", name: propTok.value };
+
+      let optional = false;
+      if (this.checkOperator("?")) {
+        this.advance();
+        optional = true;
+      }
+
+      // Method signature: name(params): ReturnType
+      if (this.checkDelimiter("(")) {
+        this.advance(); // consume (
+        const params: TypeAnnotation[] = [];
+        while (!this.checkDelimiter(")") && !this.isAtEnd()) {
+          // param: Type
+          this.advance(); // param name (skip)
+          if (this.checkDelimiter(":")) {
+            this.advance();
+            params.push(this.parseTypeAnnotation());
+          }
+          if (this.checkDelimiter(",")) this.advance();
+        }
+        this.consumeDelimiter(")", "Expected ')' in method signature");
+        let returnType: TypeAnnotation = { kind: "named", name: "void" };
+        if (this.checkDelimiter(":")) {
+          this.advance();
+          returnType = this.parseTypeAnnotation();
+        }
+        properties.push({
+          type: "InterfaceProperty", name: propName, valueType: returnType,
+          optional, method: true, params,
+        });
+      } else {
+        // Property: name: Type
+        this.consumeDelimiter(":", "Expected ':' after property name");
+        const valueType = this.parseTypeAnnotation();
+        properties.push({
+          type: "InterfaceProperty", name: propName, valueType,
+          optional, method: false,
+        });
+      }
+
+      // Optional comma/semicolon separator
+      if (this.checkDelimiter(",") || this.checkDelimiter(";")) {
+        this.advance();
+      }
+    }
+
+    this.consumeDelimiter("}", "Expected '}' after interface body");
+    return { type: "InterfaceDeclaration", name, properties, extends: extendsIds };
   }
 
   private parseExpressionStatement(): ExpressionStatement {

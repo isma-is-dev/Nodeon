@@ -42,4 +42,6 @@ export const KEYWORDS = new Set([
   "undefined",
   "debugger",
   "match",
+  "enum",
+  "interface",
 ]);

@@ -47,10 +47,14 @@ import {
   ArrayPattern,
   MatchStatement,
   MatchCase,
+  EnumDeclaration,
+  EnumMember,
+  InterfaceDeclaration,
 } from "@ast/nodes";
 import { SourceMapBuilder } from "./source-map";
 
 const BIN_PRECEDENCE: Record<string, number> = {
+  "|>": 1,
   "..": 1,
   "??": 2,
   "||": 3,
@@ -64,7 +68,6 @@ const BIN_PRECEDENCE: Record<string, number> = {
   "+": 10, "-": 10,
   "*": 11, "/": 11, "%": 11,
   "**": 12,
-  "|>": 13,
 };
 
 // ── Public API ─────────────────────────────────────────────────────
@@ -188,6 +191,10 @@ function emitStatement(stmt: Statement, ctx: GenContext): string {
       return emitDestructuring(stmt, ctx);
     case "MatchStatement":
       return emitMatch(stmt, ctx);
+    case "EnumDeclaration":
+      return emitEnum(stmt, ctx);
+    case "InterfaceDeclaration":
+      return ""; // Type-only declaration, stripped from JS output
     case "DebuggerStatement":
       return "debugger;";
     default:
@@ -392,6 +399,31 @@ function emitMatch(stmt: MatchStatement, ctx: GenContext): string {
   return parts.join("");
 }
 
+function emitEnum(stmt: EnumDeclaration, ctx: GenContext): string {
+  const inner = indented(ctx);
+  const entries: string[] = [];
+  let autoValue = 0;
+
+  for (const member of stmt.members) {
+    if (member.value !== null) {
+      const val = emitExpression(member.value, ctx);
+      entries.push(`${pad(inner)}${member.name.name}:${ctx.sp}${val}`);
+      // If the value is a numeric literal, update autoValue for next member
+      if (member.value.type === "Literal" && typeof member.value.value === "number") {
+        autoValue = (member.value.value as number) + 1;
+      } else {
+        autoValue++;
+      }
+    } else {
+      entries.push(`${pad(inner)}${member.name.name}:${ctx.sp}${autoValue}`);
+      autoValue++;
+    }
+  }
+
+  const body = entries.join(`,${ctx.nl}`);
+  return `const ${stmt.name.name}${ctx.sp}=${ctx.sp}Object.freeze({${ctx.nl}${body}${ctx.nl}${pad(ctx)}});`;
+}
+
 function emitDestructuring(stmt: DestructuringDeclaration, ctx: GenContext): string {
   const pat = emitPattern(stmt.pattern, ctx);
   return `${stmt.kind} ${pat}${ctx.sp}=${ctx.sp}${emitExpression(stmt.value, ctx)};`;
@@ -513,6 +545,13 @@ function emitCall(call: CallExpression, ctx: GenContext): string {
 }
 
 function emitBinary(bin: BinaryExpression, ctx: GenContext): string {
+  // Pipe operator: a |> fn  → fn(a)
+  if (bin.operator === "|>") {
+    const arg = emitExpression(bin.left, ctx);
+    const fn = emitExpression(bin.right, ctx);
+    return `${fn}(${arg})`;
+  }
+
   // Nodeon == compiles to JS ===, and != to !==
   let op = bin.operator;
   if (op === "==") op = "===";

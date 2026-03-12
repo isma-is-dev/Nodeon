@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync, existsSync } from "fs";
 import { resolve, basename } from "path";
 import { compile, compileWithSourceMap } from "@compiler/compile";
 import vm from "vm";
+import readline from "readline";
 
 const VERSION = "0.1.0";
 
@@ -46,6 +47,7 @@ Usage: nodeon <command> [options] <file>
 Commands:
   build [options] <input> [output]   Compile .no → .js
   run <input>                        Compile and execute
+  repl                               Interactive REPL
   help                               Show this help
   version                            Show version
 
@@ -57,7 +59,8 @@ Examples:
   nodeon build hello.no              → hello.js
   nodeon build -min hello.no         → hello.min.js
   nodeon build hello.no out.js       → out.js
-  nodeon run hello.no                → compile & execute`
+  nodeon run hello.no                → compile & execute
+  nodeon repl                        → interactive mode`
   );
 }
 
@@ -118,6 +121,117 @@ function runFile(inputPath: string) {
   }
 }
 
+function startRepl() {
+  console.log(`${CYAN}${BOLD}Nodeon REPL${RESET} v${VERSION}`);
+  console.log(`${DIM}Type .help for commands, .exit to quit${RESET}\n`);
+
+  const sandbox: Record<string, any> = {
+    console, setTimeout, setInterval, clearTimeout, clearInterval,
+    JSON, Math, Date, RegExp, Error, TypeError, RangeError,
+    parseInt, parseFloat, isNaN, isFinite,
+    encodeURIComponent, decodeURIComponent,
+    Array, Object, String, Number, Boolean, Map, Set, Promise, Symbol,
+  };
+  const ctx = vm.createContext(sandbox);
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    prompt: `${GREEN}nodeon>${RESET} `,
+    terminal: true,
+  });
+
+  let buffer = "";
+  let multiLine = false;
+
+  function evalInput(input: string) {
+    try {
+      const { js } = compile(input);
+      const result = vm.runInContext(js, ctx, { filename: "repl.js" });
+      if (result !== undefined) {
+        console.log(`${CYAN}${formatValue(result)}${RESET}`);
+      }
+    } catch (err: any) {
+      console.error(`${RED}${err.message}${RESET}`);
+    }
+  }
+
+  function formatValue(val: any): string {
+    if (val === null) return "null";
+    if (val === undefined) return "undefined";
+    if (typeof val === "string") return `"${val}"`;
+    if (typeof val === "object") {
+      try { return JSON.stringify(val, null, 2); } catch { return String(val); }
+    }
+    return String(val);
+  }
+
+  function hasUnclosedBraces(src: string): boolean {
+    let depth = 0;
+    for (const ch of src) {
+      if (ch === "{" || ch === "(" || ch === "[") depth++;
+      else if (ch === "}" || ch === ")" || ch === "]") depth--;
+    }
+    return depth > 0;
+  }
+
+  rl.prompt();
+
+  rl.on("line", (line: string) => {
+    const trimmed = line.trim();
+
+    // REPL commands
+    if (!multiLine) {
+      if (trimmed === ".exit" || trimmed === ".quit") {
+        console.log(`${DIM}Bye!${RESET}`);
+        rl.close();
+        return;
+      }
+      if (trimmed === ".help") {
+        console.log(`${BOLD}REPL Commands:${RESET}`);
+        console.log(`  ${CYAN}.help${RESET}   Show this help`);
+        console.log(`  ${CYAN}.exit${RESET}   Exit the REPL`);
+        console.log(`  ${CYAN}.clear${RESET}  Clear the context\n`);
+        console.log(`${DIM}Enter Nodeon code to compile and execute.${RESET}`);
+        console.log(`${DIM}Multi-line input auto-detects unclosed { ( [${RESET}\n`);
+        rl.prompt();
+        return;
+      }
+      if (trimmed === ".clear") {
+        for (const key of Object.keys(ctx)) {
+          if (!(key in sandbox)) {
+            delete (ctx as any)[key];
+          }
+        }
+        console.log(`${YELLOW}Context cleared${RESET}`);
+        rl.prompt();
+        return;
+      }
+    }
+
+    buffer += (buffer ? "\n" : "") + line;
+
+    if (hasUnclosedBraces(buffer)) {
+      multiLine = true;
+      rl.setPrompt(`${DIM}...${RESET}   `);
+      rl.prompt();
+      return;
+    }
+
+    if (buffer.trim().length > 0) {
+      evalInput(buffer);
+    }
+    buffer = "";
+    multiLine = false;
+    rl.setPrompt(`${GREEN}nodeon>${RESET} `);
+    rl.prompt();
+  });
+
+  rl.on("close", () => {
+    process.exit(0);
+  });
+}
+
 export function main(argv = process.argv) {
   const args = argv.slice(2);
   const cmd = args[0];
@@ -158,6 +272,11 @@ export function main(argv = process.argv) {
       process.exit(1);
     }
     runFile(input);
+    return;
+  }
+
+  if (cmd === "repl") {
+    startRepl();
     return;
   }
 

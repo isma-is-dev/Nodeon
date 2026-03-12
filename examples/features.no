@@ -135,3 +135,29 @@ match score {
     print("Score: {score}")
   }
 }
+
+# ── Enums ───────────────────────────────────────────────
+enum Color { Red, Green, Blue }
+print("Red = {Color.Red}")
+
+enum Status { OK = 200, NotFound = 404, Error = 500 }
+print("OK = {Status.OK}")
+
+# ── Pipe Operator ───────────────────────────────────────
+fn double(x) { return x * 2 }
+fn increment(x) { return x + 1 }
+
+let result = 5 |> double |> increment
+print("5 |> double |> increment = {result}")
+
+# ── Interfaces (type-only, stripped from JS) ────────────
+interface Shape {
+  area(): number,
+  perimeter(): number
+}
+
+interface User {
+  name: string,
+  age: number,
+  email?: string
+}

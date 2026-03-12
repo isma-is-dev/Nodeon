@@ -40,6 +40,8 @@ export type Statement = (
   | ContinueStatement
   | DebuggerStatement
   | MatchStatement
+  | EnumDeclaration
+  | InterfaceDeclaration
 ) & { loc?: SourceLoc };
 
 export type FunctionDeclaration = {
@@ -187,6 +189,34 @@ export type MatchCase = {
   pattern: Expression | null; // null for default
   guard?: Expression;         // optional: case x if x > 0 { ... }
   body: Statement[];
+};
+
+export type EnumDeclaration = {
+  type: "EnumDeclaration";
+  name: Identifier;
+  members: EnumMember[];
+};
+
+export type EnumMember = {
+  type: "EnumMember";
+  name: Identifier;
+  value: Expression | null; // null = auto-increment (0, 1, 2, ...)
+};
+
+export type InterfaceDeclaration = {
+  type: "InterfaceDeclaration";
+  name: Identifier;
+  properties: InterfaceProperty[];
+  extends?: Identifier[];
+};
+
+export type InterfaceProperty = {
+  type: "InterfaceProperty";
+  name: Identifier;
+  valueType: TypeAnnotation;
+  optional: boolean;
+  method: boolean; // true if fn signature: area(): number
+  params?: TypeAnnotation[];
 };
 
 // ── Expressions ──────────────────────────────────────────────────────

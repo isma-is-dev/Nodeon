@@ -330,4 +330,71 @@ describe("End-to-end compilation", () => {
       expect(result.sourceMap.mappings.length).toBeGreaterThan(0);
     });
   });
+
+  // ── Enums ───────────────────────────────────────────────────
+  describe("enums", () => {
+    it("compiles basic enum to Object.freeze", () => {
+      const js = compileToJS("enum Color { Red, Green, Blue }");
+      expect(js).toContain("const Color = Object.freeze(");
+      expect(js).toContain("Red: 0");
+      expect(js).toContain("Green: 1");
+      expect(js).toContain("Blue: 2");
+    });
+
+    it("compiles enum with custom values", () => {
+      const js = compileToJS("enum Status { OK = 200, NotFound = 404 }");
+      expect(js).toContain("OK: 200");
+      expect(js).toContain("NotFound: 404");
+    });
+
+    it("compiles enum with string values", () => {
+      const js = compileToJS('enum Dir { Up = "UP", Down = "DOWN" }');
+      expect(js).toContain('Up: "UP"');
+      expect(js).toContain('Down: "DOWN"');
+    });
+
+    it("auto-increments after custom value", () => {
+      const js = compileToJS("enum Level { Low, Medium = 5, High }");
+      expect(js).toContain("Low: 0");
+      expect(js).toContain("Medium: 5");
+      expect(js).toContain("High: 6");
+    });
+  });
+
+  // ── Pipe Operator ──────────────────────────────────────────
+  describe("pipe operator", () => {
+    it("compiles single pipe to function call", () => {
+      const js = compileToJS("x |> double");
+      expect(js).toContain("double(x)");
+    });
+
+    it("compiles chained pipes to nested calls", () => {
+      const js = compileToJS("x |> double |> toString");
+      expect(js).toContain("toString(double(x))");
+    });
+
+    it("compiles pipe with expression on left", () => {
+      const js = compileToJS("x + 1 |> double");
+      expect(js).toContain("double(x + 1)");
+    });
+  });
+
+  // ── Interfaces ─────────────────────────────────────────────
+  describe("interfaces", () => {
+    it("strips interface declarations from JS output", () => {
+      const js = compileToJS("interface User { name: string, age: number }");
+      expect(js.trim()).toBe("");
+    });
+
+    it("strips interface but keeps other statements", () => {
+      const js = compileToJS("interface Shape { area(): number }\nlet x = 42");
+      expect(js).not.toContain("interface");
+      expect(js).toContain("let x = 42");
+    });
+
+    it("strips interface with extends", () => {
+      const js = compileToJS("interface Admin extends User { role: string }");
+      expect(js.trim()).toBe("");
+    });
+  });
 });

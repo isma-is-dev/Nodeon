@@ -16,7 +16,9 @@ import {
   DefinitionParams,
   Location,
   Range,
-  Position
+  Position,
+  TextEdit,
+  DocumentFormattingParams
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { Lexer } from '@lexer/lexer';
@@ -42,7 +44,7 @@ connection.onInitialize((_params: InitializeParams): InitializeResult => {
         resolveProvider: false
       },
       definitionProvider: true,
-      documentFormattingProvider: false
+      documentFormattingProvider: true
     }
   };
 });
@@ -202,6 +204,88 @@ connection.onDefinition((params: DefinitionParams): Location | null => {
   return null;
 });
 
+// ── Formatting ──────────────────────────────────────────────────────
+
+connection.onDocumentFormatting((params: DocumentFormattingParams): TextEdit[] => {
+  const doc = documents.get(params.textDocument.uri);
+  if (!doc) return [];
+
+  const source = doc.getText();
+  const formatted = formatNodeon(source, params.options.tabSize ?? 2);
+  if (formatted === source) return [];
+
+  // Replace entire document
+  const lastLine = doc.lineCount - 1;
+  const lastChar = doc.getText(Range.create(lastLine, 0, lastLine + 1, 0)).length;
+  return [TextEdit.replace(Range.create(0, 0, lastLine, lastChar), formatted)];
+});
+
+function formatNodeon(source: string, tabSize: number): string {
+  const indent = ' '.repeat(tabSize);
+  const lines = source.split('\n');
+  const result: string[] = [];
+  let depth = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i].trim();
+
+    // Skip empty lines (preserve them)
+    if (line.length === 0) {
+      result.push('');
+      continue;
+    }
+
+    // Decrease indent for closing braces
+    if (line.startsWith('}') || line.startsWith(']') || line.startsWith(')')) {
+      depth = Math.max(0, depth - 1);
+    }
+    // Handle `} else {`, `} catch`, `} finally`, `} while` on same line
+    if (/^}\s*(else|catch|finally|while)/.test(line)) {
+      // Already decreased above, don't decrease again
+    }
+
+    // Apply indentation
+    const indented = indent.repeat(depth) + line;
+    result.push(indented);
+
+    // Count net brace changes for next line
+    let netOpen = 0;
+    let inString = false;
+    let stringChar = '';
+    for (let j = 0; j < line.length; j++) {
+      const ch = line[j];
+      if (inString) {
+        if (ch === '\\') { j++; continue; }
+        if (ch === stringChar) inString = false;
+        continue;
+      }
+      if (ch === '"' || ch === "'" || ch === '`') {
+        inString = true;
+        stringChar = ch;
+        continue;
+      }
+      // Skip line comments
+      if (ch === '#') break;
+      if (ch === '/' && j + 1 < line.length && line[j + 1] === '/') break;
+      if (ch === '{' || ch === '(' && isBlockParen(line, j) || ch === '[') {
+        if (ch === '{') netOpen++;
+      }
+      if (ch === '}') netOpen--;
+    }
+    depth = Math.max(0, depth + netOpen);
+  }
+
+  // Trim trailing empty lines, ensure single trailing newline
+  while (result.length > 0 && result[result.length - 1] === '') {
+    result.pop();
+  }
+  return result.join('\n') + '\n';
+}
+
+function isBlockParen(_line: string, _pos: number): boolean {
+  return false; // Don't increase indent for parentheses
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────
 
 interface DocSymbol {
@@ -323,6 +407,8 @@ const KEYWORD_DOCS: Record<string, string> = {
   null: 'Null literal',
   undefined: 'Undefined literal',
   debugger: 'Debugger breakpoint statement',
+  enum: 'Enum declaration: `enum Color { Red, Green, Blue }` — compiles to `Object.freeze({...})`',
+  interface: 'Interface declaration: `interface Shape { area(): number }` — type-only, stripped from JS output',
 };
 
 // ── Start ───────────────────────────────────────────────────────────
