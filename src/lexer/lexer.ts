@@ -1,44 +1,7 @@
-export enum TokenType {
-  Identifier = "Identifier",
-  Number = "Number",
-  String = "String",
-  Keyword = "Keyword",
-  Operator = "Operator",
-  Delimiter = "Delimiter",
-  EOF = "EOF",
-}
-
-export interface Token {
-  type: TokenType;
-  value: string;
-  position: number;
-}
-
-const KEYWORDS = new Set([
-  "fn",
-  "if",
-  "else",
-  "for",
-  "in",
-  "import",
-  "return",
-  "print",
-]);
-
-const OPERATORS = new Set([
-  "+",
-  "-",
-  "*",
-  "/",
-  "=",
-  "<",
-  ">",
-  "!",
-]);
-
-const TWO_CHAR_OPERATORS = new Set(["==", "!=", "<=", ">=", ".."]);
-
-const DELIMITERS = new Set(["{", "}", "(", ")", ","]);
+import { Token, TokenType } from "../language/tokens";
+import { KEYWORDS } from "../language/keywords";
+import { OPERATORS, TWO_CHAR_OPERATORS } from "../language/operators";
+import { DELIMITERS } from "../language/symbols";
 
 export class Lexer {
   private src: string;
