@@ -633,4 +633,23 @@ describe("End-to-end compilation", () => {
       expect(js).toContain("break;");
     });
   });
+
+  // ── Private Fields ──────────────────────────────────────────
+  describe("private fields", () => {
+    it("compiles private class field", () => {
+      const js = compileToJS("class Counter {\n  #count = 0\n}");
+      expect(js).toContain("#count = 0;");
+    });
+
+    it("compiles private field access", () => {
+      const js = compileToJS("class Box {\n  #value = 0\n  fn get() {\n    return this.#value\n  }\n}");
+      expect(js).toContain("#value = 0;");
+      expect(js).toContain("this.#value");
+    });
+
+    it("compiles static private field", () => {
+      const js = compileToJS("class Registry {\n  static #instances = 0\n}");
+      expect(js).toContain("static #instances");
+    });
+  });
 });

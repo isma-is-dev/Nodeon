@@ -43,6 +43,14 @@ export class Lexer {
         continue;
       }
 
+      // Private field: #identifier
+      if (char === "#" && this.pos + 1 < this.src.length && (this.isAlpha(this.src[this.pos + 1]) || this.src[this.pos + 1] === "_")) {
+        this.advance(); // skip #
+        const ident = this.readIdentifier(loc);
+        tokens.push(this.makeToken(TokenType.Identifier, "#" + ident.value, loc));
+        continue;
+      }
+
       // Regex literal: /pattern/flags
       // Must distinguish from division operator based on context
       // Also check lookahead: regex patterns never start with space/*/=
@@ -309,13 +317,7 @@ export class Lexer {
         continue;
       }
 
-      // # line comment (Nodeon style)
-      if (ch === "#") {
-        this.skipLineComment();
-        continue;
-      }
-
-      // // line comment (JS style)
+      // // line comment (JS style — also Nodeon's primary comment)
       if (ch === "/" && this.peekNext() === "/") {
         this.skipLineComment();
         continue;

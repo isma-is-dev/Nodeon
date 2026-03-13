@@ -166,10 +166,10 @@ describe("Lexer", () => {
 
   // ── Comments ─────────────────────────────────────────────
   describe("comments", () => {
-    it("skips # comments", () => {
-      const tokens = tokenize("x = 1 # comment\ny = 2");
-      const ids = tokens.filter((t) => t.type === TokenType.Identifier).map((t) => t.value);
-      expect(ids).toEqual(["x", "y"]);
+    it("lexes #identifier as private field", () => {
+      const tokens = tokenize("#name");
+      expect(tokens[0].type).toBe(TokenType.Identifier);
+      expect(tokens[0].value).toBe("#name");
     });
 
     it("skips // comments", () => {
