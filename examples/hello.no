@@ -2,7 +2,7 @@ fn greet(name) {
     print("Hello {name}")
 }
 
-greet("Ismael{")
+greet("Ismael")
 
 x = 3
 print("x = {x}")

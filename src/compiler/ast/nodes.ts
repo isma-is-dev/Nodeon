@@ -7,7 +7,8 @@ export type TypeAnnotation =
   | { kind: "function"; params: TypeAnnotation[]; returnType: TypeAnnotation } // (a: number) => string
   | { kind: "object"; properties: { key: string; value: TypeAnnotation; optional?: boolean }[] } // { name: string, age?: number }
   | { kind: "tuple"; elements: TypeAnnotation[] }                 // [string, number]
-  | { kind: "literal"; value: string | number | boolean };        // "hello", 42, true
+  | { kind: "literal"; value: string | number | boolean }         // "hello", 42, true
+  | { kind: "intersection"; types: TypeAnnotation[] };            // A & B
 
 // ── Source Location (for source maps) ────────────────────────────────
 export type SourceLoc = { line: number; column: number };
@@ -269,6 +270,7 @@ export type Expression =
   | VoidExpression
   | DeleteExpression
   | YieldExpression
+  | AsExpression
   | ObjectPattern
   | ArrayPattern;
 
@@ -394,6 +396,12 @@ export type YieldExpression = {
   type: "YieldExpression";
   argument: Expression | null;
   delegate: boolean;
+};
+
+export type AsExpression = {
+  type: "AsExpression";
+  expression: Expression;
+  typeAnnotation: TypeAnnotation;
 };
 
 export type Identifier = {

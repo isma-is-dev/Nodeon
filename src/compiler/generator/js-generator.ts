@@ -533,6 +533,8 @@ function emitExpression(expr: Expression, ctx: GenContext): string {
       return emitArrayPattern(expr, ctx);
     case "RegExpLiteral":
       return expr.flags ? `/${expr.pattern}/${expr.flags}` : `/${expr.pattern}/`;
+    case "AsExpression":
+      return emitExpression(expr.expression, ctx); // type-only — strip assertion
     default:
       throw new Error(`Unsupported expression type: ${(expr as any).type}`);
   }

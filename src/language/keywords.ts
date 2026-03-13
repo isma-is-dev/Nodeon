@@ -45,4 +45,5 @@ export const KEYWORDS = new Set([
   "match",
   "enum",
   "interface",
+  "as",
 ]);

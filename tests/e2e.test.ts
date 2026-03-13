@@ -665,4 +665,39 @@ describe("End-to-end compilation", () => {
       expect(js).toContain("import(path)");
     });
   });
+
+  // ── Type System ─────────────────────────────────────────────
+  describe("type system", () => {
+    it("strips variable type annotations", () => {
+      const js = compileToJS('let name: string = "hello"');
+      expect(js).toContain('let name = "hello"');
+      expect(js).not.toContain("string");
+    });
+
+    it("strips function return type", () => {
+      const js = compileToJS("fn add(a: number, b: number): number {\n  return a + b\n}");
+      expect(js).toContain("function add(a, b)");
+      expect(js).not.toContain("number");
+    });
+
+    it("strips as type assertion", () => {
+      const js = compileToJS("const el = document.getElementById('app') as HTMLElement");
+      expect(js).toContain("document.getElementById");
+      expect(js).not.toContain("as");
+      expect(js).not.toContain("HTMLElement");
+    });
+
+    it("strips generic type annotations", () => {
+      const js = compileToJS("const items: Array<string> = []");
+      expect(js).toContain("const items = []");
+      expect(js).not.toContain("Array");
+      expect(js).not.toContain("string");
+    });
+
+    it("strips union type annotations", () => {
+      const js = compileToJS("let value: string | number = 42");
+      expect(js).toContain("let value = 42");
+      expect(js).not.toContain("|");
+    });
+  });
 });

@@ -64,6 +64,7 @@ import {
   InterfaceDeclaration,
   InterfaceProperty,
   LabeledStatement,
+  AsExpression,
 } from "@ast/nodes";
 
 // PRECEDENCE and COMPOUND_ASSIGN imported from @language/precedence
@@ -829,6 +830,14 @@ export class Parser extends ParserBase {
         continue;
       }
 
+      // Type assertion: value as Type (stripped in output)
+      if (tok.type === TokenType.Keyword && tok.value === "as") {
+        this.advance(); // consume 'as'
+        const typeAnnotation = this.parseTypeAnnotation();
+        left = { type: "AsExpression", expression: left, typeAnnotation } as AsExpression;
+        continue;
+      }
+
       // Ternary: condition ? then : else
       if (tok.type === TokenType.Operator && tok.value === "?" && precedence === 0) {
         // Check it's not ?. (optional chaining) — already handled below
@@ -1324,6 +1333,27 @@ export class Parser extends ParserBase {
         types.push(next);
       }
       type = { kind: "union", types };
+    }
+
+    // Intersection type: A & B (only if & is not &&)
+    if (this.checkOperator("&") && !this.checkOperator("&&")) {
+      const types: TypeAnnotation[] = [type];
+      while (this.checkOperator("&") && !this.checkOperator("&&")) {
+        this.advance();
+        let next = this.parseTypePrimary();
+        while (this.checkDelimiter("[")) {
+          const n2 = this.peekNext();
+          if (n2 && n2.type === TokenType.Delimiter && n2.value === "]") {
+            this.advance();
+            this.advance();
+            next = { kind: "array", elementType: next };
+          } else {
+            break;
+          }
+        }
+        types.push(next);
+      }
+      type = { kind: "intersection", types };
     }
 
     return type;
