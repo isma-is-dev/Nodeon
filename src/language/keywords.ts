@@ -11,6 +11,7 @@ export const KEYWORDS = new Set([
   "return",
   "print",
   "class",
+  "static",
   "extends",
   "new",
   "while",

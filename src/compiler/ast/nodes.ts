@@ -129,16 +129,29 @@ export type ClassDeclaration = {
   type: "ClassDeclaration";
   name: Identifier;
   superClass: Identifier | null;
-  body: ClassMethod[];
+  body: ClassMember[];
 };
+
+export type ClassMember = ClassMethod | ClassField;
 
 export type ClassMethod = {
   type: "ClassMethod";
-  name: Identifier;
+  name: Identifier | Expression;
   params: Param[];
   body: Statement[];
   async: boolean;
+  static: boolean;
+  kind: "method" | "get" | "set" | "constructor";
+  computed: boolean;
   returnType?: TypeAnnotation;
+};
+
+export type ClassField = {
+  type: "ClassField";
+  name: Identifier | Expression;
+  value: Expression | null;
+  static: boolean;
+  computed: boolean;
 };
 
 export type TryCatchStatement = {
@@ -227,6 +240,7 @@ export type Expression =
   | UpdateExpression
   | TemplateLiteral
   | Literal
+  | RegExpLiteral
   | Identifier
   | MemberExpression
   | ArrayExpression
@@ -291,9 +305,16 @@ export type ObjectExpression = {
 
 export type ObjectProperty = {
   type: "ObjectProperty";
-  key: Identifier | Literal;
+  key: Identifier | Literal | Expression;
   value: Expression;
   shorthand: boolean;
+  computed: boolean;
+};
+
+export type RegExpLiteral = {
+  type: "RegExpLiteral";
+  pattern: string;
+  flags: string;
 };
 
 export type ArrowFunction = {

@@ -43,6 +43,17 @@ export class Lexer {
         continue;
       }
 
+      // Regex literal: /pattern/flags
+      // Must distinguish from division operator based on context
+      // Also check lookahead: regex patterns never start with space/*/=
+      if (char === "/" && this.isRegexStart(tokens)) {
+        const nextCh = this.pos + 1 < this.src.length ? this.src[this.pos + 1] : "";
+        if (nextCh !== " " && nextCh !== "\t" && nextCh !== "=" && nextCh !== "*") {
+          tokens.push(this.readRegExp(loc));
+          continue;
+        }
+      }
+
       const opToken = this.readOperatorOrDelimiter(loc);
       if (opToken) {
         tokens.push(opToken);
@@ -373,6 +384,65 @@ export class Lexer {
 
   private isAtEnd(): boolean {
     return this.pos >= this.src.length;
+  }
+
+  // ── Regex literal support ─────────────────────────────────
+
+  /**
+   * Determines if '/' should be treated as the start of a regex literal
+   * based on the previous token. Division follows value-producing tokens;
+   * regex follows everything else.
+   */
+  private isRegexStart(tokens: Token[]): boolean {
+    if (tokens.length === 0) return true;
+    const prev = tokens[tokens.length - 1];
+    // After these tokens, '/' is division, not regex
+    if (prev.type === TokenType.Identifier) return false;
+    if (prev.type === TokenType.Number) return false;
+    if (prev.type === TokenType.String || prev.type === TokenType.RawString) return false;
+    if (prev.type === TokenType.TemplateLiteral) return false;
+    if (prev.type === TokenType.RegExp) return false;
+    if (prev.type === TokenType.Delimiter && (prev.value === ")" || prev.value === "]")) return false;
+    if (prev.type === TokenType.Operator && (prev.value === "++" || prev.value === "--")) return false;
+    // After keywords that produce values
+    if (prev.type === TokenType.Keyword && (prev.value === "this" || prev.value === "super" || prev.value === "true" || prev.value === "false" || prev.value === "null" || prev.value === "undefined")) return false;
+    return true;
+  }
+
+  private readRegExp(loc: SourceLocation): Token {
+    this.advance(); // skip opening /
+    let pattern = "";
+    let inCharClass = false;
+
+    while (!this.isAtEnd()) {
+      const ch = this.peek();
+      if (ch === "\\" && !this.isAtEnd()) {
+        pattern += this.advance(); // backslash
+        if (!this.isAtEnd()) pattern += this.advance(); // escaped char
+        continue;
+      }
+      if (ch === "[") inCharClass = true;
+      if (ch === "]") inCharClass = false;
+      if (ch === "/" && !inCharClass) break;
+      if (ch === "\n") {
+        this.errorAt(loc, "Unterminated regex literal");
+      }
+      pattern += this.advance();
+    }
+
+    if (this.isAtEnd()) {
+      this.errorAt(loc, "Unterminated regex literal");
+    }
+    this.advance(); // skip closing /
+
+    // Read flags: g, i, m, s, u, y, d
+    let flags = "";
+    while (!this.isAtEnd() && /[gimsuydn]/.test(this.peek())) {
+      flags += this.advance();
+    }
+
+    const value = flags ? `/${pattern}/${flags}` : `/${pattern}/`;
+    return this.makeToken(TokenType.RegExp, value, loc);
   }
 
   private error(message: string): never {

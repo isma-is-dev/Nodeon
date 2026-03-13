@@ -23,6 +23,9 @@ import {
   ExportDeclaration,
   ClassDeclaration,
   ClassMethod,
+  ClassField,
+  ClassMember,
+  RegExpLiteral,
   TryCatchStatement,
   ThrowStatement,
   SwitchStatement,
@@ -304,25 +307,45 @@ function emitExport(stmt: ExportDeclaration, ctx: GenContext): string {
 function emitClass(cls: ClassDeclaration, ctx: GenContext): string {
   const inner = indented(ctx);
   const ext = cls.superClass ? ` extends ${cls.superClass.name}` : "";
-  const methods = cls.body.map((m) => pad(inner) + emitMethod(m, inner)).join(ctx.nl + ctx.nl);
-  return `class ${cls.name.name}${ext}${ctx.sp}{${ctx.nl}${methods}${ctx.nl}${pad(ctx)}}`;
+  const members = cls.body.map((m) => {
+    if (m.type === "ClassField") return pad(inner) + emitClassField(m, inner);
+    return pad(inner) + emitMethod(m, inner);
+  }).join(ctx.nl + ctx.nl);
+  return `class ${cls.name.name}${ext}${ctx.sp}{${ctx.nl}${members}${ctx.nl}${pad(ctx)}}`;
+}
+
+function emitClassField(f: ClassField, ctx: GenContext): string {
+  const staticPrefix = f.static ? "static " : "";
+  const name = f.computed ? `[${emitExpression(f.name as Expression, ctx)}]` : (f.name as Identifier).name;
+  if (f.value) {
+    return `${staticPrefix}${name}${ctx.sp}=${ctx.sp}${emitExpression(f.value, ctx)};`;
+  }
+  return `${staticPrefix}${name};`;
 }
 
 function emitMethod(m: ClassMethod, ctx: GenContext): string {
-  const async = m.async ? "async " : "";
+  const parts: string[] = [];
+  if (m.static) parts.push("static");
+  if (m.async) parts.push("async");
+  if (m.kind === "get") parts.push("get");
+  if (m.kind === "set") parts.push("set");
+
+  const name = m.computed ? `[${emitExpression(m.name as Expression, ctx)}]` : (m.name as Identifier).name;
+  const prefix = parts.length > 0 ? parts.join(" ") + " " : "";
   const params = m.params.map((p) => emitParam(p, ctx)).join("," + ctx.sp);
   const methScope = childScope(indented(ctx));
   m.params.forEach((p) => methScope.declaredVars.add(p.name));
 
   // implicit return for single-expression methods (except constructor)
   let body: string;
-  if (m.name.name !== "constructor" && m.body.length === 1 && m.body[0].type === "ExpressionStatement") {
+  const isConstructor = m.kind === "constructor";
+  if (!isConstructor && m.body.length === 1 && m.body[0].type === "ExpressionStatement") {
     body = pad(methScope) + `return ${emitExpression((m.body[0] as ExpressionStatement).expression, methScope)};`;
   } else {
     body = m.body.map((s) => pad(methScope) + emitStatement(s, methScope)).join(ctx.nl);
   }
 
-  return `${async}${m.name.name}(${params})${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`;
+  return `${prefix}${name}(${params})${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`;
 }
 
 function emitTryCatch(stmt: TryCatchStatement, ctx: GenContext): string {
@@ -501,6 +524,8 @@ function emitExpression(expr: Expression, ctx: GenContext): string {
       return emitObjectPattern(expr, ctx);
     case "ArrayPattern":
       return emitArrayPattern(expr, ctx);
+    case "RegExpLiteral":
+      return expr.flags ? `/${expr.pattern}/${expr.flags}` : `/${expr.pattern}/`;
     default:
       throw new Error(`Unsupported expression type: ${(expr as any).type}`);
   }
@@ -582,8 +607,15 @@ function emitObject(obj: ObjectExpression, ctx: GenContext): string {
   if (obj.properties.length === 0) return "{}";
   const props = obj.properties.map((p) => {
     if (p.shorthand) return (p.key as Identifier).name;
-    const key = p.key.type === "Identifier" ? p.key.name : JSON.stringify(p.key.value);
-    return `${key}:${ctx.sp}${emitExpression(p.value, ctx)}`;
+    let keyStr: string;
+    if (p.computed) {
+      keyStr = `[${emitExpression(p.key as Expression, ctx)}]`;
+    } else if (p.key.type === "Identifier") {
+      keyStr = p.key.name;
+    } else {
+      keyStr = JSON.stringify((p.key as Literal).value);
+    }
+    return `${keyStr}:${ctx.sp}${emitExpression(p.value, ctx)}`;
   }).join("," + ctx.sp);
   return `{${ctx.sp}${props}${ctx.sp}}`;
 }

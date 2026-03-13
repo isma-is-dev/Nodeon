@@ -26,6 +26,8 @@ import {
   ExportDeclaration,
   ClassDeclaration,
   ClassMethod,
+  ClassField,
+  RegExpLiteral,
   TryCatchStatement,
   ThrowStatement,
   SwitchStatement,
@@ -347,26 +349,97 @@ export class Parser {
     }
 
     this.consumeDelimiter("{", "Expected '{'");
-    const body: ClassMethod[] = [];
+    const body: (ClassMethod | ClassField)[] = [];
 
     while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+      let isStatic = false;
       let isAsync = false;
-      if (this.checkKeyword("async")) {
+      let kind: "method" | "get" | "set" | "constructor" = "method";
+
+      // Check for 'static' modifier
+      if (this.checkKeyword("static")) {
+        isStatic = true;
         this.advance();
-        isAsync = true;
       }
 
-      // method name: could be 'fn methodName(...)' or just 'methodName(...)'
+      // Check for 'async'
+      if (this.checkKeyword("async")) {
+        isAsync = true;
+        this.advance();
+      }
+
+      // Check for 'get' or 'set' — but only if followed by identifier/computed
+      if (this.peek().type === TokenType.Identifier && (this.peek().value === "get" || this.peek().value === "set")) {
+        const next = this.peekNext();
+        if (next && (next.type === TokenType.Identifier || (next.type === TokenType.Delimiter && next.value === "["))) {
+          kind = this.peek().value as "get" | "set";
+          this.advance();
+        }
+      }
+
+      // Skip 'fn' keyword if present
       if (this.checkKeyword("fn")) {
         this.advance();
       }
 
-      const methodName = this.consumeIdentifier("Expected method name");
-      this.consumeDelimiter("(", "Expected '('");
-      const params = this.parseParamList();
-      this.consumeDelimiter(")", "Expected ')'");
-      const methodBody = this.parseBlock();
-      body.push({ type: "ClassMethod", name: methodName, params, body: methodBody, async: isAsync });
+      // Parse member name (identifier or computed [expr])
+      let memberName: Identifier | Expression;
+      let computed = false;
+
+      if (this.checkDelimiter("[")) {
+        computed = true;
+        this.advance(); // skip [
+        memberName = this.parseExpression();
+        this.consumeDelimiter("]", "Expected ']'");
+      } else {
+        memberName = this.consumeIdentifier("Expected member name");
+      }
+
+      // Detect constructor
+      if (!computed && (memberName as Identifier).name === "constructor") {
+        kind = "constructor";
+      }
+
+      // Method: name(...) { ... }
+      if (this.checkDelimiter("(")) {
+        this.consumeDelimiter("(", "Expected '('");
+        const params = this.parseParamList();
+        this.consumeDelimiter(")", "Expected ')'");
+
+        // Optional return type
+        let returnType: TypeAnnotation | undefined;
+        if (this.checkDelimiter(":")) {
+          this.advance();
+          returnType = this.parseTypeAnnotation();
+        }
+
+        const methodBody = this.parseBlock();
+        body.push({
+          type: "ClassMethod",
+          name: memberName,
+          params,
+          body: methodBody,
+          async: isAsync,
+          static: isStatic,
+          kind,
+          computed,
+          returnType,
+        });
+      } else {
+        // Class field: name = value or just name
+        let value: Expression | null = null;
+        if (this.checkOperator("=")) {
+          this.advance();
+          value = this.parseExpression();
+        }
+        body.push({
+          type: "ClassField",
+          name: memberName,
+          value,
+          static: isStatic,
+          computed,
+        });
+      }
     }
 
     this.consumeDelimiter("}", "Expected '}'");
@@ -918,6 +991,17 @@ export class Parser {
       return this.parseTemplateLiteral(token.value, token.loc);
     }
 
+    // Regex literal
+    if (token.type === TokenType.RegExp) {
+      this.advance();
+      // Parse /pattern/flags into parts
+      const regexStr = token.value;
+      const lastSlash = regexStr.lastIndexOf("/");
+      const pattern = regexStr.slice(1, lastSlash);
+      const flags = regexStr.slice(lastSlash + 1);
+      return { type: "RegExpLiteral", pattern, flags } as RegExpLiteral;
+    }
+
     this.error(token, "Expected expression");
   }
 
@@ -951,8 +1035,16 @@ export class Parser {
     if (!this.checkDelimiter("}")) {
       do {
         const keyTok = this.peek();
-        let key: Identifier | Literal;
-        if (keyTok.type === TokenType.Identifier || (keyTok.type === TokenType.Keyword)) {
+        let key: Identifier | Literal | Expression;
+        let computed = false;
+
+        // Computed property name: { [expr]: value }
+        if (keyTok.type === TokenType.Delimiter && keyTok.value === "[") {
+          computed = true;
+          this.advance(); // skip [
+          key = this.parseExpression();
+          this.consumeDelimiter("]", "Expected ']'");
+        } else if (keyTok.type === TokenType.Identifier || (keyTok.type === TokenType.Keyword)) {
           key = { type: "Identifier", name: keyTok.value };
           this.advance();
         } else if (keyTok.type === TokenType.String || keyTok.type === TokenType.RawString) {
@@ -966,17 +1058,18 @@ export class Parser {
         }
 
         // Shorthand: { name } → { name: name }
-        if (!this.checkDelimiter(":")) {
+        if (!computed && !this.checkDelimiter(":")) {
           properties.push({
             type: "ObjectProperty",
             key,
             value: { type: "Identifier", name: (key as Identifier).name },
             shorthand: true,
+            computed: false,
           });
         } else {
-          this.advance(); // consume ':'
+          if (this.checkDelimiter(":")) this.advance();
           const value = this.parseExpression();
-          properties.push({ type: "ObjectProperty", key, value, shorthand: false });
+          properties.push({ type: "ObjectProperty", key, value, shorthand: false, computed });
         }
       } while (this.matchDelimiter(","));
     }

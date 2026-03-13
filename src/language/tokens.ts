@@ -4,6 +4,7 @@ export enum TokenType {
   String = "String",
   RawString = "RawString",
   TemplateLiteral = "TemplateLiteral",
+  RegExp = "RegExp",
   Keyword = "Keyword",
   Operator = "Operator",
   Delimiter = "Delimiter",

@@ -256,17 +256,22 @@ function analyzeSemantics(ast: Program, source: string): Diagnostic[] {
         if (stmt.superClass) reference(stmt.superClass.name, line);
         pushScope();
         declare('this', line, 'param'); // 'this' is always available inside class
-        for (const method of stmt.body) {
-          pushScope();
-          for (const p of method.params) {
-            if (p.pattern) {
-              declarePattern(p.pattern, getLine(method), 'param');
-            } else {
-              declare(p.name, getLine(method), 'param');
-            }
-            if (p.defaultValue) walkExpression(p.defaultValue, getLine(method));
+        for (const member of stmt.body) {
+          if (member.type === 'ClassField') {
+            if (member.value) walkExpression(member.value, getLine(member));
+            continue;
           }
-          walkStatements(method.body);
+          // ClassMethod
+          pushScope();
+          for (const p of member.params) {
+            if (p.pattern) {
+              declarePattern(p.pattern, getLine(member), 'param');
+            } else {
+              declare(p.name, getLine(member), 'param');
+            }
+            if (p.defaultValue) walkExpression(p.defaultValue, getLine(member));
+          }
+          walkStatements(member.body);
           popScope();
         }
         popScope();
