@@ -1,5 +1,5 @@
-import { existsSync } from "fs";
-import { basename, join, resolve } from "path";
+import { existsSync, watch } from "fs";
+import { basename, join, resolve, dirname } from "path";
 import { compileFile } from "../utils/compile";
 import { runInSandbox } from "../utils/runtime";
 import { RED, BOLD, RESET, CYAN } from "../utils/colors";
@@ -23,7 +23,6 @@ export function resolveNodeonFile(input: string): string {
 
 function suggestClosestFile(input: string): string | null {
   const parsed = basename(input);
-  const { dirname } = require("path") as typeof import("path");
   const { readdirSync } = require("fs") as typeof import("fs");
   const dir = dirname(input) === "." ? "." : dirname(input);
   const desired = parsed.includes(".") ? parsed : `${parsed}.no`;
@@ -40,7 +39,10 @@ function suggestClosestFile(input: string): string | null {
 }
 
 export function runRun(args: string[]) {
-  const input = args[0];
+  const watchMode = args.includes("-w") || args.includes("--watch");
+  const positional = args.filter((f) => !f.startsWith("-"));
+  const input = positional[0];
+
   if (!input) {
     console.error("run requires an input .no file");
     process.exit(1);
@@ -54,14 +56,54 @@ export function runRun(args: string[]) {
     process.exit(1);
   }
 
-  const result = compileFile(resolvedInput, undefined, { minify: false, write: false });
-  if (!result) return;
-  const { jsCode } = result;
-  try {
-    runInSandbox(jsCode, basename(resolvedInput).replace(/\.no$/, ".js"));
-  } catch (err: any) {
-    console.error(`${RED}${BOLD}runtime error${RESET}: ${err.message}`);
-    process.exit(1);
+  // Initial run
+  executeFile(resolvedInput);
+
+  // Watch mode: re-run on changes
+  if (watchMode) {
+    console.log(`\n${CYAN}👀${RESET} Watching ${basename(resolvedInput)} for changes... (Ctrl+C to stop)`);
+    watchAndRun(resolvedInput);
   }
 }
 
+function executeFile(resolvedInput: string): boolean {
+  try {
+    const result = compileFile(resolvedInput, undefined, { minify: false, write: false });
+    if (!result) return false;
+    const { jsCode } = result;
+    runInSandbox(jsCode, basename(resolvedInput).replace(/\.no$/, ".js"));
+    return true;
+  } catch (err: any) {
+    if (err instanceof SyntaxError || err.name === "SyntaxError") {
+      console.error(`${RED}error${RESET}: ${err.message}`);
+    } else {
+      console.error(`${RED}${BOLD}runtime error${RESET}: ${err.message}`);
+    }
+    return false;
+  }
+}
+
+function watchAndRun(resolvedInput: string): void {
+  const absInput = resolve(resolvedInput);
+  const dir = dirname(absInput);
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const watcher = watch(dir, (eventType, filename) => {
+    if (!filename || !filename.endsWith(".no")) return;
+
+    // Debounce rapid file changes
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      console.log(`\n${CYAN}↻${RESET} Change detected: ${filename}`);
+      console.log("─".repeat(40));
+      executeFile(resolvedInput);
+      console.log(`\n${CYAN}👀${RESET} Waiting for changes...`);
+    }, 150);
+  });
+
+  process.on("SIGINT", () => {
+    watcher.close();
+    console.log(`\n${CYAN}✓${RESET} Watch stopped.`);
+    process.exit(0);
+  });
+}
