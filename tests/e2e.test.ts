@@ -509,4 +509,46 @@ describe("End-to-end compilation", () => {
       expect(js).toContain("[Symbol.iterator]()");
     });
   });
+
+  // ── Optional Call and Index ─────────────────────────────────
+  describe("optional call and index", () => {
+    it("compiles optional call ?.()", () => {
+      const js = compileToJS("const result = callback?.(1, 2)");
+      expect(js).toContain("callback?.(1, 2)");
+    });
+
+    it("compiles optional index ?.[]", () => {
+      const js = compileToJS('const val = obj?.["key"]');
+      expect(js).toContain('obj?.["key"]');
+    });
+
+    it("compiles chained optional operations", () => {
+      const js = compileToJS("const x = a?.b?.c");
+      expect(js).toContain("a?.b?.c");
+    });
+
+    it("compiles optional property access (already existed)", () => {
+      const js = compileToJS("const x = user?.name");
+      expect(js).toContain("user?.name");
+    });
+  });
+
+  // ── Export Default ──────────────────────────────────────────
+  describe("export default", () => {
+    it("compiles export default function", () => {
+      const js = compileToJS("export default fn add(a, b) { return a + b }");
+      expect(js).toContain("export default function add(a, b)");
+    });
+
+    it("compiles export default class", () => {
+      const js = compileToJS("export default class App {}");
+      expect(js).toContain("export default class App");
+    });
+
+    it("compiles regular export (not default)", () => {
+      const js = compileToJS("export const PI = 3.14");
+      expect(js).toContain("export const PI");
+      expect(js).not.toContain("default");
+    });
+  });
 });

@@ -334,8 +334,13 @@ export class Parser {
 
   private parseExportDeclaration(): ExportDeclaration {
     this.consumeKeyword("export");
+    let isDefault = false;
+    if (this.checkKeyword("default")) {
+      this.advance();
+      isDefault = true;
+    }
     const declaration = this.parseStatement();
-    return { type: "ExportDeclaration", declaration };
+    return { type: "ExportDeclaration", declaration, isDefault };
   }
 
   private parseClassDeclaration(): ClassDeclaration {
@@ -782,15 +787,31 @@ export class Parser {
         continue;
       }
 
-      // Member access . and ?.
+      // Member access . and ?. (property, call, index)
       if (tok.type === TokenType.Operator && (tok.value === "." || tok.value === "?.")) {
         const optional = tok.value === "?.";
         this.advance();
+
+        // Optional call: obj?.(args)
+        if (optional && this.checkDelimiter("(")) {
+          left = this.parseCallArguments(left, true);
+          continue;
+        }
+
+        // Optional index: obj?.[expr]
+        if (optional && this.checkDelimiter("[")) {
+          this.advance(); // skip [
+          const prop = this.parseExpression();
+          this.consumeDelimiter("]", "Expected ']'");
+          left = { type: "MemberExpression", object: left, property: prop, computed: true, optional: true } as MemberExpression;
+          continue;
+        }
+
         const prop = this.consumeIdentifier("Expected property name");
         left = { type: "MemberExpression", object: left, property: prop, computed: false, optional } as MemberExpression;
         // Check for call: obj.method(...)
         if (this.checkDelimiter("(")) {
-          left = this.parseCallArguments(left);
+          left = this.parseCallArguments(left, false);
         }
         continue;
       }
@@ -807,7 +828,7 @@ export class Parser {
       // Function call: name(...)
       if (tok.type === TokenType.Delimiter && tok.value === "(") {
         if (left.type === "Identifier" || left.type === "MemberExpression" || left.type === "CallExpression") {
-          left = this.parseCallArguments(left);
+          left = this.parseCallArguments(left, false);
           continue;
         }
       }
@@ -1005,7 +1026,7 @@ export class Parser {
     this.error(token, "Expected expression");
   }
 
-  private parseCallArguments(callee: Expression): CallExpression {
+  private parseCallArguments(callee: Expression, optional = false): CallExpression {
     this.consumeDelimiter("(", "Expected '('");
     const args: Expression[] = [];
     if (!this.checkDelimiter(")")) {
@@ -1014,7 +1035,7 @@ export class Parser {
       } while (this.matchDelimiter(","));
     }
     this.consumeDelimiter(")", "Expected ')'");
-    return { type: "CallExpression", callee, arguments: args };
+    return { type: "CallExpression", callee, arguments: args, optional };
   }
 
   private parseArrayExpression(): ArrayExpression {

@@ -123,6 +123,7 @@ export type ImportDeclaration = {
 export type ExportDeclaration = {
   type: "ExportDeclaration";
   declaration: Statement;
+  isDefault: boolean;
 };
 
 export type ClassDeclaration = {
@@ -263,6 +264,7 @@ export type CallExpression = {
   type: "CallExpression";
   callee: Expression;
   arguments: Expression[];
+  optional: boolean;
 };
 
 export type BinaryExpression = {

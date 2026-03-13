@@ -301,7 +301,8 @@ function emitImport(stmt: ImportDeclaration, ctx: GenContext): string {
 }
 
 function emitExport(stmt: ExportDeclaration, ctx: GenContext): string {
-  return `export ${emitStatement(stmt.declaration, ctx)}`;
+  const kw = stmt.isDefault ? "export default" : "export";
+  return `${kw} ${emitStatement(stmt.declaration, ctx)}`;
 }
 
 function emitClass(cls: ClassDeclaration, ctx: GenContext): string {
@@ -550,6 +551,7 @@ function emitCall(call: CallExpression, ctx: GenContext): string {
     callee = emitExpression(call.callee, ctx);
   }
   const args = call.arguments.map((a) => emitExpression(a, ctx)).join("," + ctx.sp);
+  if (call.optional) return `${callee}?.(${args})`;
   return `${callee}(${args})`;
 }
 
@@ -593,7 +595,10 @@ function emitTemplate(t: TemplateLiteral, ctx: GenContext): string {
 
 function emitMember(m: MemberExpression, ctx: GenContext): string {
   const obj = emitExpression(m.object, ctx);
-  if (m.computed) return `${obj}[${emitExpression(m.property, ctx)}]`;
+  if (m.computed) {
+    const bracket = m.optional ? "?.[" : "[";
+    return `${obj}${bracket}${emitExpression(m.property, ctx)}]`;
+  }
   const dot = m.optional ? "?." : ".";
   return `${obj}${dot}${emitExpression(m.property, ctx)}`;
 }
