@@ -92,7 +92,12 @@ export class Parser {
 
     if (tok.type === TokenType.Keyword) {
       switch (tok.value) {
-        case "fn": stmt = this.parseFunctionDeclaration(false); break;
+        case "fn": {
+          // Check for fn* (generator)
+          const next = this.peekNext();
+          stmt = this.parseFunctionDeclaration(false, next?.type === TokenType.Operator && next?.value === "*");
+          break;
+        }
         case "async": stmt = this.parseAsync(); break;
         case "if": stmt = this.parseIfStatement(); break;
         case "for": stmt = this.parseForStatement(); break;
@@ -140,13 +145,18 @@ export class Parser {
     this.consumeKeyword("async");
     const tok = this.peek();
     if (tok.type === TokenType.Keyword && tok.value === "fn") {
-      return this.parseFunctionDeclaration(true);
+      const next = this.peekNext();
+      return this.parseFunctionDeclaration(true, next?.type === TokenType.Operator && next?.value === "*");
     }
     this.error(tok, "Expected 'fn' after 'async'");
   }
 
-  private parseFunctionDeclaration(isAsync: boolean): FunctionDeclaration {
+  private parseFunctionDeclaration(isAsync: boolean, isGenerator = false): FunctionDeclaration {
     this.consumeKeyword("fn");
+    // Consume * for generators: fn* name()
+    if (isGenerator && this.checkOperator("*")) {
+      this.advance();
+    }
     const name = this.consumeIdentifier("Expected function name");
     this.consumeDelimiter("(", "Expected '('");
     const params = this.parseParamList();
@@ -161,14 +171,14 @@ export class Parser {
 
     // expression-style: fn sum(a,b) = a + b
     if (this.checkOperator("=")) {
-      this.advance(); // consume =
+      this.advance();
       const expr = this.parseExpression();
       const body: Statement[] = [{ type: "ExpressionStatement", expression: expr }];
-      return { type: "FunctionDeclaration", name, params, body, async: isAsync, returnType };
+      return { type: "FunctionDeclaration", name, params, body, async: isAsync, generator: isGenerator, returnType };
     }
 
     const body = this.parseBlock();
-    return { type: "FunctionDeclaration", name, params, body, async: isAsync, returnType };
+    return { type: "FunctionDeclaration", name, params, body, async: isAsync, generator: isGenerator, returnType };
   }
 
   private parseParamList(): Param[] {
@@ -389,9 +399,14 @@ export class Parser {
         }
       }
 
-      // Skip 'fn' keyword if present
+      // Skip 'fn' keyword if present, detect fn*
+      let isGenerator = false;
       if (this.checkKeyword("fn")) {
         this.advance();
+        if (this.checkOperator("*")) {
+          isGenerator = true;
+          this.advance();
+        }
       }
 
       // Parse member name (identifier or computed [expr])
@@ -432,6 +447,7 @@ export class Parser {
           params,
           body: methodBody,
           async: isAsync,
+          generator: isGenerator,
           static: isStatic,
           kind,
           computed,

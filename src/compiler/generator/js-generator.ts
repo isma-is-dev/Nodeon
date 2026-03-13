@@ -191,19 +191,20 @@ function emitStatement(stmt: Statement, ctx: GenContext): string {
 
 function emitFunction(fn: FunctionDeclaration, ctx: GenContext): string {
   const async = fn.async ? "async " : "";
+  const star = fn.generator ? "*" : "";
   const params = fn.params.map((p) => emitParam(p, ctx)).join("," + ctx.sp);
   const fnScope = childScope(indented(ctx));
   fn.params.forEach((p) => fnScope.declaredVars.add(p.name));
 
-  // implicit return rule
+  // implicit return rule (disabled for generators — they use yield)
   let body: string;
-  if (fn.body.length === 1 && fn.body[0].type === "ExpressionStatement") {
+  if (!fn.generator && fn.body.length === 1 && fn.body[0].type === "ExpressionStatement") {
     body = pad(fnScope) + `return ${emitExpression((fn.body[0] as ExpressionStatement).expression, fnScope)};`;
   } else {
     body = fn.body.map((s) => pad(fnScope) + emitStatement(s, fnScope)).join(ctx.nl);
   }
 
-  return `${async}function ${fn.name.name}(${params})${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`;
+  return `${async}function${star} ${fn.name.name}(${params})${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`;
 }
 
 function emitParam(p: Param, ctx: GenContext): string {
@@ -333,6 +334,7 @@ function emitMethod(m: ClassMethod, ctx: GenContext): string {
   if (m.kind === "get") parts.push("get");
   if (m.kind === "set") parts.push("set");
 
+  const star = m.generator ? "*" : "";
   const name = m.computed ? `[${emitExpression(m.name as Expression, ctx)}]` : (m.name as Identifier).name;
   const prefix = parts.length > 0 ? parts.join(" ") + " " : "";
   const params = m.params.map((p) => emitParam(p, ctx)).join("," + ctx.sp);
@@ -348,7 +350,7 @@ function emitMethod(m: ClassMethod, ctx: GenContext): string {
     body = m.body.map((s) => pad(methScope) + emitStatement(s, methScope)).join(ctx.nl);
   }
 
-  return `${prefix}${name}(${params})${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`;
+  return `${prefix}${star}${name}(${params})${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`;
 }
 
 function emitTryCatch(stmt: TryCatchStatement, ctx: GenContext): string {

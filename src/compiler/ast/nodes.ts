@@ -50,6 +50,7 @@ export type FunctionDeclaration = {
   params: Param[];
   body: Statement[];
   async: boolean;
+  generator: boolean;
   returnType?: TypeAnnotation;
 };
 
@@ -142,6 +143,7 @@ export type ClassMethod = {
   params: Param[];
   body: Statement[];
   async: boolean;
+  generator: boolean;
   static: boolean;
   kind: "method" | "get" | "set" | "constructor";
   computed: boolean;

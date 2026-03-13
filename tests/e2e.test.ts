@@ -587,4 +587,30 @@ describe("End-to-end compilation", () => {
       expect(js).toContain("<<=");
     });
   });
+
+  // ── Generator Functions ─────────────────────────────────────
+  describe("generator functions", () => {
+    it("compiles fn* as function*", () => {
+      const js = compileToJS("fn* range(n) {\n  for i in 0..n {\n    yield i\n  }\n}");
+      expect(js).toContain("function* range(n)");
+    });
+
+    it("compiles yield expression", () => {
+      const js = compileToJS("fn* gen() {\n  yield 1\n  yield 2\n}");
+      expect(js).toContain("function* gen()");
+      expect(js).toContain("yield 1");
+      expect(js).toContain("yield 2");
+    });
+
+    it("compiles yield* delegate", () => {
+      const js = compileToJS("fn* combined() {\n  yield* gen1()\n  yield* gen2()\n}");
+      expect(js).toContain("function* combined()");
+      expect(js).toContain("yield* gen1()");
+    });
+
+    it("compiles async fn* as async function*", () => {
+      const js = compileToJS("async fn* stream() {\n  yield 1\n}");
+      expect(js).toContain("async function* stream()");
+    });
+  });
 });
