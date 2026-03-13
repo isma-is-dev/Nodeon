@@ -9,6 +9,7 @@
       "@lexer/*": ["src/compiler/lexer/*"],
       "@parser/*": ["src/compiler/parser/*"],
       "@compiler/*": ["src/compiler/*"],
+      "@commands/*": ["src/cli/commands/*"],
       "@ast/*": ["src/compiler/ast/*"],
       "@cli/*": ["cli/*"],
       "@src/*": ["src/*"]

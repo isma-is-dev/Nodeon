@@ -19,7 +19,7 @@
   "author": "isma-is-dev",
   "license": "MIT",
   "bin": {
-    "nodeon": "./cli/bin.js"
+    "nodeon": "./bin/nodeon.js"
   },
   "dependencies": {
     "ts-node": "10.9.2",
