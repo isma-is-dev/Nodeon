@@ -9,7 +9,8 @@
     "postinstall": "npm install --prefix packages/language-server && npm install --prefix packages/vscode-extension",
     "build:lsp": "npm run build --prefix packages/language-server",
     "build:ext": "npm run build --prefix packages/vscode-extension",
-    "build:all": "npm run build:lsp && npm run build:ext"
+    "build:all": "npm run build:lsp && npm run build:ext",
+    "package:ext": "npm run package --prefix packages/vscode-extension"
   },
   "repository": {
     "type": "git",
@@ -27,6 +28,6 @@
   },
   "devDependencies": {
     "@types/node": "20.11.0",
-    "vitest": "^4.1.0"
+    "vitest": "4.1.0"
   }
 }

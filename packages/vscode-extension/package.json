@@ -4,8 +4,13 @@
   "description": "Syntax highlighting y LSP client para Nodeon (.no)",
   "version": "0.0.1",
   "publisher": "nodeon",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/isma-is-dev/Nodeon.git"
+  },
   "engines": { "vscode": "^1.84.0" },
   "categories": ["Programming Languages"],
+  "license": "MIT",
   "main": "dist/extension.js",
   "activationEvents": ["onLanguage:nodeon"],
   "contributes": {

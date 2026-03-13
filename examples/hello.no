@@ -3,3 +3,6 @@ fn greet(name) {
 }
 
 greet("Ismael")
+
+x = 3
+print("x = {x}")
