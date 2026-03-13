@@ -34,6 +34,16 @@ export async function main(argv = process.argv) {
     return;
   }
 
+  const knownCommands = ["build", "run", "repl", "help", "version"] as const;
+  const suggestion = suggestCommand(cmd, knownCommands);
+  const { printHelp } = await import("@commands/help");
+  console.error(`Unknown command '${cmd}'`);
+  if (suggestion) {
+    console.error(`did you mean: ${suggestion} ?`);
+    printHelp();
+    process.exit(1);
+  }
+
   // Fallback: treat the first arg as a file to run (extensionless allowed).
   {
     const { runRun, resolveNodeonFile } = await import("@commands/run");
@@ -41,11 +51,38 @@ export async function main(argv = process.argv) {
     runRun([resolved, ...args.slice(1)]);
     return;
   }
+}
 
-  const { printHelp } = await import("@commands/help");
-  console.error(`Unknown command '${cmd}'`);
-  printHelp();
-  process.exit(1);
+function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  const dp = new Array(n + 1);
+  for (let j = 0; j <= n; j++) dp[j] = j;
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const temp = dp[j];
+      dp[j] = Math.min(
+        dp[j] + 1,
+        dp[j - 1] + 1,
+        prev + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+      prev = temp;
+    }
+  }
+  return dp[n];
+}
+
+function suggestCommand(cmd: string, commands: readonly string[]): string | null {
+  let best: { name: string; dist: number } | null = null;
+  for (const candidate of commands) {
+    const dist = levenshtein(cmd, candidate);
+    if (dist <= 2 && (!best || dist < best.dist)) {
+      best = { name: candidate, dist };
+    }
+  }
+  return best ? best.name : null;
 }
 
 if (require.main === module) {
