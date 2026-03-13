@@ -12,7 +12,7 @@ export function resolveNodeonFile(input: string): string {
     if (existsSync(abs)) return candidate;
   }
 
-  console.error("error: file not found");
+  console.error(`${RED}error${RESET}: file not found`);
 
   const suggestion = suggestClosestFile(input);
   if (suggestion) {

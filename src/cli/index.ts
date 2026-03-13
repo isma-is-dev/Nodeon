@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+
+import { CYAN, RESET } from "./utils/colors";
+
 export async function main(argv = process.argv) {
   const args = argv.slice(2);
   const cmd = args[0];
@@ -36,11 +39,10 @@ export async function main(argv = process.argv) {
 
   const knownCommands = ["build", "run", "repl", "help", "version"] as const;
   const suggestion = suggestCommand(cmd, knownCommands);
-  const { printHelp } = await import("@commands/help");
   console.error(`Unknown command '${cmd}'`);
+  console.error(`See ${CYAN}'nodeon help'${RESET}.`);
   if (suggestion) {
     console.error(`did you mean: ${suggestion} ?`);
-    printHelp();
     process.exit(1);
   }
 
