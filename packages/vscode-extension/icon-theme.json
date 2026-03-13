@@ -1,0 +1,12 @@
+{
+  "version": "1.0",
+  "extends": "vs-seti",
+  "iconDefinitions": {
+    "nodeon-file": {
+      "iconPath": "./assets/no-file.svg"
+    }
+  },
+  "fileExtensions": {
+    "no": "nodeon-file"
+  }
+}

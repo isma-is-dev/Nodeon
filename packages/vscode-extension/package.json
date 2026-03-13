@@ -28,6 +28,13 @@
         "scopeName": "source.nodeon",
         "path": "./syntaxes/nodeon.tmLanguage.json"
       }
+    ],
+    "iconThemes": [
+      {
+        "id": "nodeon-icons",
+        "label": "Nodeon Icons",
+        "path": "./icon-theme.json"
+      }
     ]
   },
   "scripts": {

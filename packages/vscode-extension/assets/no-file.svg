@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+
+  <!-- Hexagon outline -->
+  <polygon
+    points="32,6 54,19 54,45 32,58 10,45 10,19"
+    fill="none"
+    stroke="#e53935"
+    stroke-width="4"
+    stroke-linejoin="round"
+  />
+
+  <!-- Stylized text -->
+  <text
+    x="50%"
+    y="60%"
+    text-anchor="middle"
+    font-size="30"
+    font-weight="700"
+    letter-spacing="1"
+    font-family="JetBrains Mono, Fira Code, Consolas, monospace"
+    fill="#e53935"
+  >
+    no
+  </text>
+
+</svg>
