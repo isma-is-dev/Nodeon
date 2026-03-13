@@ -8,17 +8,28 @@
     "type": "git",
     "url": "https://github.com/isma-is-dev/Nodeon.git"
   },
-  "engines": { "vscode": "^1.84.0" },
-  "categories": ["Programming Languages"],
+  "engines": {
+    "vscode": "^1.84.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
   "license": "MIT",
   "main": "dist/extension.js",
-  "activationEvents": ["onLanguage:nodeon"],
+  "activationEvents": [
+    "onLanguage:nodeon"
+  ],
   "contributes": {
     "languages": [
       {
         "id": "nodeon",
-        "aliases": ["Nodeon", "nodeon"],
-        "extensions": [".no"],
+        "aliases": [
+          "Nodeon",
+          "nodeon"
+        ],
+        "extensions": [
+          ".no"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],
@@ -38,14 +49,15 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run build",
-    "build": "tsc -p ./",
-    "watch": "tsc -w -p ./",
-    "package": "vsce package",
-    "publish": "vsce publish"
+    "vscode:prepublish": "npm run build --production",
+    "build": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "package": "vsce package --no-dependencies",
+    "publish": "vsce publish --no-dependencies"
   },
   "devDependencies": {
     "@types/node": "^20.11.25",
+    "esbuild": "^0.27.4",
     "typescript": "^5.3.3",
     "vsce": "^2.15.0",
     "vscode": "^1.1.37"
