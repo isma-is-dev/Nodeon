@@ -18,7 +18,12 @@ import {
   Range,
   Position,
   TextEdit,
-  DocumentFormattingParams
+  DocumentFormattingParams,
+  RenameParams,
+  WorkspaceEdit,
+  ReferenceParams,
+  SemanticTokens,
+  SemanticTokensParams,
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { Lexer } from '@lexer/lexer';
@@ -44,7 +49,20 @@ connection.onInitialize((_params: InitializeParams): InitializeResult => {
         resolveProvider: false
       },
       definitionProvider: true,
-      documentFormattingProvider: true
+      documentFormattingProvider: true,
+      renameProvider: { prepareProvider: false },
+      referencesProvider: true,
+      semanticTokensProvider: {
+        legend: {
+          tokenTypes: [
+            'function', 'variable', 'class', 'parameter', 'keyword',
+            'string', 'number', 'comment', 'operator', 'type',
+            'enum', 'interface', 'property'
+          ],
+          tokenModifiers: ['declaration', 'readonly', 'async', 'static']
+        },
+        full: true
+      }
     }
   };
 });
@@ -341,7 +359,7 @@ function analyzeSemantics(ast: Program, source: string): Diagnostic[] {
         break;
       }
       case 'ExportDeclaration': {
-        walkStatement(stmt.declaration);
+        if (stmt.declaration) walkStatement(stmt.declaration);
         break;
       }
       case 'TryCatchStatement': {
@@ -861,6 +879,135 @@ const KEYWORD_DOCS: Record<string, string> = {
   enum: 'Enum declaration: `enum Color { Red, Green, Blue }` — compiles to `Object.freeze({...})`',
   interface: 'Interface declaration: `interface Shape { area(): number }` — type-only, stripped from JS output',
 };
+
+// ── Rename Symbol ───────────────────────────────────────────────────
+
+connection.onRenameRequest((params: RenameParams): WorkspaceEdit | null => {
+  const doc = documents.get(params.textDocument.uri);
+  if (!doc) return null;
+
+  const word = getWordAtPosition(doc, params.position);
+  if (!word || KEYWORDS.has(word)) return null;
+
+  const source = doc.getText();
+  const edits: TextEdit[] = [];
+  const regex = new RegExp(`\\b${escapeRegex(word)}\\b`, 'g');
+  const lines = source.split('\n');
+
+  for (let i = 0; i < lines.length; i++) {
+    let match: RegExpExecArray | null;
+    regex.lastIndex = 0;
+    while ((match = regex.exec(lines[i])) !== null) {
+      edits.push(TextEdit.replace(
+        Range.create(i, match.index, i, match.index + word.length),
+        params.newName
+      ));
+    }
+  }
+
+  if (edits.length === 0) return null;
+  return { changes: { [params.textDocument.uri]: edits } };
+});
+
+// ── Find References ─────────────────────────────────────────────────
+
+connection.onReferences((params: ReferenceParams): Location[] => {
+  const doc = documents.get(params.textDocument.uri);
+  if (!doc) return [];
+
+  const word = getWordAtPosition(doc, params.position);
+  if (!word) return [];
+
+  const source = doc.getText();
+  const locations: Location[] = [];
+  const regex = new RegExp(`\\b${escapeRegex(word)}\\b`, 'g');
+  const lines = source.split('\n');
+
+  for (let i = 0; i < lines.length; i++) {
+    let match: RegExpExecArray | null;
+    regex.lastIndex = 0;
+    while ((match = regex.exec(lines[i])) !== null) {
+      locations.push(Location.create(
+        params.textDocument.uri,
+        Range.create(i, match.index, i, match.index + word.length)
+      ));
+    }
+  }
+
+  return locations;
+});
+
+// ── Semantic Tokens ─────────────────────────────────────────────────
+
+const TOKEN_TYPES = [
+  'function', 'variable', 'class', 'parameter', 'keyword',
+  'string', 'number', 'comment', 'operator', 'type',
+  'enum', 'interface', 'property'
+];
+
+function tokenTypeIndex(type: string): number {
+  return TOKEN_TYPES.indexOf(type);
+}
+
+connection.languages.semanticTokens.on((params: SemanticTokensParams): SemanticTokens => {
+  const doc = documents.get(params.textDocument.uri);
+  if (!doc) return { data: [] };
+
+  const source = doc.getText();
+  const data: number[] = [];
+
+  try {
+    const tokens = new Lexer(source).tokenize();
+    let prevLine = 0;
+    let prevChar = 0;
+
+    for (const token of tokens) {
+      if (token.type === 'EOF') break;
+      if (!token.loc) continue;
+
+      const line = token.loc.line - 1;
+      const char = token.loc.column - 1;
+      const length = token.value.length;
+
+      let typeIdx = -1;
+      switch (token.type) {
+        case 'Keyword':
+          typeIdx = tokenTypeIndex('keyword');
+          break;
+        case 'Identifier':
+          typeIdx = tokenTypeIndex('variable');
+          break;
+        case 'Number':
+          typeIdx = tokenTypeIndex('number');
+          break;
+        case 'String':
+        case 'RawString':
+        case 'TemplateLiteral':
+          typeIdx = tokenTypeIndex('string');
+          break;
+        case 'Operator':
+          typeIdx = tokenTypeIndex('operator');
+          break;
+        case 'RegExp':
+          typeIdx = tokenTypeIndex('string');
+          break;
+      }
+
+      if (typeIdx < 0) continue;
+
+      const deltaLine = line - prevLine;
+      const deltaChar = deltaLine === 0 ? char - prevChar : char;
+
+      data.push(deltaLine, deltaChar, length, typeIdx, 0);
+      prevLine = line;
+      prevChar = char;
+    }
+  } catch {
+    // If lexing fails, return empty tokens — diagnostics will show the error
+  }
+
+  return { data };
+});
 
 // ── Start ───────────────────────────────────────────────────────────
 
