@@ -652,4 +652,17 @@ describe("End-to-end compilation", () => {
       expect(js).toContain("static #instances");
     });
   });
+
+  // ── Dynamic Import ──────────────────────────────────────────
+  describe("dynamic import", () => {
+    it("compiles dynamic import expression", () => {
+      const js = compileToJS('const mod = await import("./utils.js")');
+      expect(js).toContain('import("./utils.js")');
+    });
+
+    it("compiles dynamic import with variable", () => {
+      const js = compileToJS("const mod = await import(path)");
+      expect(js).toContain("import(path)");
+    });
+  });
 });

@@ -1037,6 +1037,12 @@ export class Parser extends ParserBase {
       return { type: "Identifier", name: "super" } as Identifier;
     }
 
+    // Dynamic import: import("./module")
+    if (token.type === TokenType.Keyword && token.value === "import" && this.peekNext()?.type === TokenType.Delimiter && this.peekNext()?.value === "(") {
+      this.advance(); // consume 'import'
+      return this.parseCallArguments({ type: "Identifier", name: "import" } as Identifier, false);
+    }
+
     // Identifier or keyword used as identifier (print)
     if (token.type === TokenType.Identifier || (token.type === TokenType.Keyword && token.value === "print")) {
       this.advance();
