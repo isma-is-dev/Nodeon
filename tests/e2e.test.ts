@@ -397,4 +397,116 @@ describe("End-to-end compilation", () => {
       expect(js.trim()).toBe("");
     });
   });
+
+  // ── Regex Literals ──────────────────────────────────────────
+  describe("regex literals", () => {
+    it("compiles basic regex", () => {
+      const js = compileToJS("let re = /hello/");
+      expect(js).toContain("/hello/");
+    });
+
+    it("compiles regex with flags", () => {
+      const js = compileToJS("let re = /pattern/gi");
+      expect(js).toContain("/pattern/gi");
+    });
+
+    it("compiles regex with character class", () => {
+      const js = compileToJS("let re = /[a-z]+/");
+      expect(js).toContain("/[a-z]+/");
+    });
+
+    it("compiles regex with escape sequences", () => {
+      const js = compileToJS("let re = /\\d+\\.\\d+/");
+      expect(js).toContain("/\\d+\\.\\d+/");
+    });
+
+    it("compiles regex in conditional", () => {
+      const js = compileToJS('if /test/.test(str) { print("match") }');
+      expect(js).toContain("/test/");
+      expect(js).toContain(".test(str)");
+    });
+
+    it("does not confuse division with regex", () => {
+      const js = compileToJS("x = a / b");
+      expect(js).not.toContain("RegExp");
+      expect(js).toContain("a / b");
+    });
+
+    it("compiles regex assignment", () => {
+      const js = compileToJS("const pattern = /^[A-Z][a-z]+$/i");
+      expect(js).toContain("/^[A-Z][a-z]+$/i");
+    });
+  });
+
+  // ── Class Static Members ────────────────────────────────────
+  describe("class static members", () => {
+    it("compiles static method", () => {
+      const js = compileToJS("class Util {\n  static fn create() {\n    return new Util()\n  }\n}");
+      expect(js).toContain("static create()");
+    });
+
+    it("compiles static field", () => {
+      const js = compileToJS("class Config {\n  static defaultTimeout = 3000\n}");
+      expect(js).toContain("static defaultTimeout");
+      expect(js).toContain("3000");
+    });
+
+    it("compiles async static method", () => {
+      const js = compileToJS("class Api {\n  static async fn fetch(url) {\n    return url\n  }\n}");
+      expect(js).toContain("static async fetch(url)");
+    });
+  });
+
+  // ── Class Fields ────────────────────────────────────────────
+  describe("class fields", () => {
+    it("compiles class field with value", () => {
+      const js = compileToJS("class Counter {\n  count = 0\n}");
+      expect(js).toContain("count = 0;");
+    });
+
+    it("compiles class field without value", () => {
+      const js = compileToJS("class Point {\n  x\n  y\n}");
+      expect(js).toContain("x;");
+      expect(js).toContain("y;");
+    });
+
+    it("compiles class with fields and methods", () => {
+      const js = compileToJS("class Dog {\n  name = 'Rex'\n  constructor(n) {\n    this.name = n\n  }\n  fn bark() { print(this.name) }\n}");
+      expect(js).toContain("name = \"Rex\";");
+      expect(js).toContain("constructor(n)");
+      expect(js).toContain("bark()");
+    });
+  });
+
+  // ── Getters and Setters ─────────────────────────────────────
+  describe("getters and setters", () => {
+    it("compiles getter", () => {
+      const js = compileToJS("class Circle {\n  get area() {\n    return 3.14 * this.r * this.r\n  }\n}");
+      expect(js).toContain("get area()");
+    });
+
+    it("compiles setter", () => {
+      const js = compileToJS("class Box {\n  set width(w) {\n    this._w = w\n  }\n}");
+      expect(js).toContain("set width(w)");
+    });
+
+    it("compiles getter and setter together", () => {
+      const js = compileToJS("class Temp {\n  get value() { return this._v }\n  set value(v) { this._v = v }\n}");
+      expect(js).toContain("get value()");
+      expect(js).toContain("set value(v)");
+    });
+  });
+
+  // ── Computed Property Names ─────────────────────────────────
+  describe("computed property names", () => {
+    it("compiles computed property in object", () => {
+      const js = compileToJS('const key = "name"\nconst obj = { [key]: "Alice" }');
+      expect(js).toContain("[key]:");
+    });
+
+    it("compiles computed method in class", () => {
+      const js = compileToJS('class Foo {\n  [Symbol.iterator]() {\n    return this\n  }\n}');
+      expect(js).toContain("[Symbol.iterator]()");
+    });
+  });
 });
