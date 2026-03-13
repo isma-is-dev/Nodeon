@@ -62,6 +62,7 @@ import {
   EnumMember,
   InterfaceDeclaration,
   InterfaceProperty,
+  LabeledStatement,
 } from "@ast/nodes";
 
 // PRECEDENCE and COMPOUND_ASSIGN imported from @language/precedence
@@ -116,22 +117,45 @@ export class Parser {
         case "match": stmt = this.parseMatchStatement(); break;
         case "enum": stmt = this.parseEnumDeclaration(); break;
         case "interface": stmt = this.parseInterfaceDeclaration(); break;
-        case "break": this.advance(); stmt = { type: "BreakStatement" } as BreakStatement; break;
-        case "continue": this.advance(); stmt = { type: "ContinueStatement" } as ContinueStatement; break;
+        case "break": {
+          this.advance();
+          let label: string | undefined;
+          if (this.peek().type === TokenType.Identifier) {
+            label = this.peek().value;
+            this.advance();
+          }
+          stmt = { type: "BreakStatement", label } as BreakStatement;
+          break;
+        }
+        case "continue": {
+          this.advance();
+          let label: string | undefined;
+          if (this.peek().type === TokenType.Identifier) {
+            label = this.peek().value;
+            this.advance();
+          }
+          stmt = { type: "ContinueStatement", label } as ContinueStatement;
+          break;
+        }
         case "debugger": this.advance(); stmt = { type: "DebuggerStatement" } as DebuggerStatement; break;
         default: stmt = this.parseExpressionStatement(); break;
       }
     } else if (tok.type === TokenType.Identifier) {
       const next = this.peekNext();
-      if (next?.type === TokenType.Operator && next.value === "=") {
-        const afterEq = this.peekAt(2);
-        if (afterEq?.type !== TokenType.Operator || (afterEq.value !== "=" && afterEq.value !== ">")) {
-          stmt = this.parseVariableDeclaration("let");
+      // Labeled statement: label: for/while/do
+      if (next?.type === TokenType.Delimiter && next.value === ":") {
+        const after = this.peekAt(2);
+        if (after?.type === TokenType.Keyword && (after.value === "for" || after.value === "while" || after.value === "do")) {
+          const label = tok.value;
+          this.advance(); // consume label
+          this.advance(); // consume :
+          const body = this.parseStatement();
+          stmt = { type: "LabeledStatement", label, body } as LabeledStatement;
         } else {
-          stmt = this.parseExpressionStatement();
+          stmt = this.parseIdentifierStatement(tok, next);
         }
       } else {
-        stmt = this.parseExpressionStatement();
+        stmt = this.parseIdentifierStatement(tok, next);
       }
     } else {
       stmt = this.parseExpressionStatement();
@@ -139,6 +163,16 @@ export class Parser {
 
     if (loc) stmt.loc = loc;
     return stmt;
+  }
+
+  private parseIdentifierStatement(tok: Token, next: Token | undefined): Statement {
+    if (next?.type === TokenType.Operator && next.value === "=") {
+      const afterEq = this.peekAt(2);
+      if (afterEq?.type !== TokenType.Operator || (afterEq.value !== "=" && afterEq.value !== ">")) {
+        return this.parseVariableDeclaration("let");
+      }
+    }
+    return this.parseExpressionStatement();
   }
 
   private parseAsync(): Statement {

@@ -613,4 +613,24 @@ describe("End-to-end compilation", () => {
       expect(js).toContain("async function* stream()");
     });
   });
+
+  // ── Labeled Statements ──────────────────────────────────────
+  describe("labeled statements", () => {
+    it("compiles labeled for loop with break label", () => {
+      const js = compileToJS("outer: for i in 0..10 {\n  break outer\n}");
+      expect(js).toContain("outer:");
+      expect(js).toContain("break outer;");
+    });
+
+    it("compiles labeled while with continue label", () => {
+      const js = compileToJS("loop: while true {\n  continue loop\n}");
+      expect(js).toContain("loop:");
+      expect(js).toContain("continue loop;");
+    });
+
+    it("plain break still works", () => {
+      const js = compileToJS("for i in 0..5 { break }");
+      expect(js).toContain("break;");
+    });
+  });
 });

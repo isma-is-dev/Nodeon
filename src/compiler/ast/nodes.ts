@@ -42,6 +42,7 @@ export type Statement = (
   | MatchStatement
   | EnumDeclaration
   | InterfaceDeclaration
+  | LabeledStatement
 ) & { loc?: SourceLoc };
 
 export type FunctionDeclaration = {
@@ -185,10 +186,18 @@ export type SwitchCase = {
 
 export type BreakStatement = {
   type: "BreakStatement";
+  label?: string;
 };
 
 export type ContinueStatement = {
   type: "ContinueStatement";
+  label?: string;
+};
+
+export type LabeledStatement = {
+  type: "LabeledStatement";
+  label: string;
+  body: Statement;
 };
 
 export type DebuggerStatement = {

@@ -171,9 +171,9 @@ function emitStatement(stmt: Statement, ctx: GenContext): string {
     case "SwitchStatement":
       return emitSwitch(stmt, ctx);
     case "BreakStatement":
-      return "break;";
+      return stmt.label ? `break ${stmt.label};` : "break;";
     case "ContinueStatement":
-      return "continue;";
+      return stmt.label ? `continue ${stmt.label};` : "continue;";
     case "DestructuringDeclaration":
       return emitDestructuring(stmt, ctx);
     case "MatchStatement":
@@ -184,6 +184,8 @@ function emitStatement(stmt: Statement, ctx: GenContext): string {
       return ""; // Type-only declaration, stripped from JS output
     case "DebuggerStatement":
       return "debugger;";
+    case "LabeledStatement":
+      return `${stmt.label}: ${emitStatement(stmt.body, ctx)}`;
     default:
       throw new Error(`Unsupported statement type: ${(stmt as any).type}`);
   }
