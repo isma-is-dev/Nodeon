@@ -56,6 +56,7 @@ import {
 } from "@ast/nodes";
 import { PRECEDENCE as BIN_PRECEDENCE } from "@language/precedence";
 import { SourceMapBuilder } from "./source-map";
+import { rewriteImportSource } from "@compiler/resolver";
 
 // ── Public API ─────────────────────────────────────────────────────
 
@@ -295,27 +296,29 @@ function emitReturn(stmt: ReturnStatement, ctx: GenContext): string {
 }
 
 function emitImport(stmt: ImportDeclaration, ctx: GenContext): string {
+  const src = rewriteImportSource(stmt.source);
   if (stmt.namedImports.length > 0) {
     const names = stmt.namedImports.join("," + ctx.sp);
-    return `import${ctx.sp}{${ctx.sp}${names}${ctx.sp}}${ctx.sp}from${ctx.sp}${JSON.stringify(stmt.source)};`;
+    return `import${ctx.sp}{${ctx.sp}${names}${ctx.sp}}${ctx.sp}from${ctx.sp}${JSON.stringify(src)};`;
   }
   if (stmt.defaultImport && stmt.defaultImport.startsWith("*")) {
-    return `import ${stmt.defaultImport}${ctx.sp}from${ctx.sp}${JSON.stringify(stmt.source)};`;
+    return `import ${stmt.defaultImport}${ctx.sp}from${ctx.sp}${JSON.stringify(src)};`;
   }
-  return `import ${stmt.defaultImport}${ctx.sp}from${ctx.sp}${JSON.stringify(stmt.source)};`;
+  return `import ${stmt.defaultImport}${ctx.sp}from${ctx.sp}${JSON.stringify(src)};`;
 }
 
 function emitExport(stmt: ExportDeclaration, ctx: GenContext): string {
   // export * from "mod"  /  export * as ns from "mod"
   if (stmt.exportAll) {
     const alias = stmt.exportAllAlias ? ` as ${stmt.exportAllAlias}` : "";
-    return `export *${alias} from ${JSON.stringify(stmt.source)};`;
+    const src = rewriteImportSource(stmt.source!);
+    return `export *${alias} from ${JSON.stringify(src)};`;
   }
 
   // export { x, y }  or  export { x, y } from "mod"
   if (stmt.namedExports) {
     const names = stmt.namedExports.join(`,${ctx.sp}`);
-    const from = stmt.source ? ` from ${JSON.stringify(stmt.source)}` : "";
+    const from = stmt.source ? ` from ${JSON.stringify(rewriteImportSource(stmt.source))}` : "";
     return `export${ctx.sp}{${ctx.sp}${names}${ctx.sp}}${from};`;
   }
 

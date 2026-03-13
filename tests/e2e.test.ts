@@ -723,4 +723,22 @@ describe("End-to-end compilation", () => {
       expect(js).toContain('export * as helpers from "utils"');
     });
   });
+
+  // ── Import Source Rewriting ─────────────────────────────────
+  describe("import source rewriting", () => {
+    it("rewrites relative imports to .js", () => {
+      const js = compileToJS('import { greet } from "./utils"');
+      expect(js).toContain('"./utils.js"');
+    });
+
+    it("keeps bare imports unchanged", () => {
+      const js = compileToJS('import express from "express"');
+      expect(js).toContain('"express"');
+    });
+
+    it("rewrites re-export source to .js", () => {
+      const js = compileToJS('export { helper } from "./helpers"');
+      expect(js).toContain('"./helpers.js"');
+    });
+  });
 });
