@@ -1,6 +1,8 @@
-const { version = "0.0.0" } = require("../../package.json");
+import { version as pkgVersion } from "../../package.json";
 
-const helpText = `nodeon v${version}
+export const version: string = pkgVersion ?? "0.0.0";
+
+export const helpText: string = `nodeon v${version}
 
 Usage: nodeon <command> [options] <file>
 
@@ -21,5 +23,3 @@ Examples:
   nodeon build hello.no out.js       → out.js
   nodeon run hello.no                → compile & execute
   nodeon repl                        → interactive mode`;
-
-module.exports = { helpText, version };

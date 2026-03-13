@@ -19,32 +19,8 @@ if (fs.existsSync(distBundle)) {
   }
   return;
 }
- 
-// Dev mode: Early handling for simple flags to avoid ts-node startup cost.
-const args = process.argv.slice(2);
-const cmd = args[0];
 
-const { helpText: HELP_TEXT, version: VERSION } = require("../src/cli/help-content.js");
-
-function printVersionLite() {
-  console.log(`nodeon v${VERSION}`);
-}
-
-function printHelpLite() {
-  console.log(HELP_TEXT);
-}
-
-if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") {
-  printHelpLite();
-  process.exit(0);
-}
-
-if (cmd === "version" || cmd === "--version" || cmd === "-v") {
-  printVersionLite();
-  process.exit(0);
-}
-
-// Heavy path: register ts-node only when needed.
+// Dev mode: register ts-node and tsconfig-paths first.
 require("ts-node").register({
   project: path.resolve(__dirname, "../tsconfig.json"),
   transpileOnly: true,
@@ -52,5 +28,24 @@ require("ts-node").register({
 require("tsconfig-paths").register({
   project: path.resolve(__dirname, "../tsconfig.json"),
 });
+
+// Early handling for simple flags to avoid full CLI startup cost.
+const args = process.argv.slice(2);
+const cmd = args[0];
+
+if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") {
+  const { helpText } = require("../src/cli/help-content");
+  console.log(helpText);
+  process.exit(0);
+}
+
+if (cmd === "version" || cmd === "--version" || cmd === "-v") {
+  const { version } = require("../src/cli/help-content");
+  console.log(`nodeon v${version}`);
+  process.exit(0);
+}
+
+// Full CLI: already registered above.
 const { main } = require("../src/cli/index");
 main();
+
