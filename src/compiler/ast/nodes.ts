@@ -94,6 +94,7 @@ export type ForStatement = {
   variable: Identifier | ObjectPattern | ArrayPattern;
   iterable: Expression;
   body: Statement[];
+  kind: "in" | "of";
 };
 
 export type WhileStatement = {

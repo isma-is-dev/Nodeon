@@ -256,10 +256,17 @@ export class Parser {
     } else {
       variable = this.consumeIdentifier("Expected loop variable");
     }
-    this.consumeKeyword("in");
+    // Support both 'for x in expr' and 'for x of expr'
+    let kind: "in" | "of" = "in";
+    if (this.checkKeyword("of")) {
+      kind = "of";
+      this.advance();
+    } else {
+      this.consumeKeyword("in");
+    }
     const iterable = this.parseExpression();
     const body = this.parseBlock();
-    return { type: "ForStatement", variable, iterable, body };
+    return { type: "ForStatement", variable, iterable, body, kind };
   }
 
   private parseWhileStatement(): WhileStatement {

@@ -551,4 +551,40 @@ describe("End-to-end compilation", () => {
       expect(js).not.toContain("default");
     });
   });
+
+  // ── For-In / For-Of Loops ───────────────────────────────────
+  describe("for-in and for-of loops", () => {
+    it("compiles for-in as JS for-of (values, backward compat)", () => {
+      const js = compileToJS("for item in items { print(item) }");
+      expect(js).toContain("for (const item of items)");
+    });
+
+    it("compiles for-of as JS for-in (keys)", () => {
+      const js = compileToJS("for key of obj { print(key) }");
+      expect(js).toContain("for (const key in obj)");
+    });
+
+    it("range loop still works", () => {
+      const js = compileToJS("for i in 0..5 { print(i) }");
+      expect(js).toContain("for (let i = 0; i <= 5; i++)");
+    });
+  });
+
+  // ── Bitwise Compound Assignments ────────────────────────────
+  describe("bitwise compound assignments", () => {
+    it("compiles &= operator", () => {
+      const js = compileToJS("x &= 0xFF");
+      expect(js).toContain("&=");
+    });
+
+    it("compiles |= operator", () => {
+      const js = compileToJS("x |= 0x01");
+      expect(js).toContain("|=");
+    });
+
+    it("compiles <<= operator", () => {
+      const js = compileToJS("x <<= 2");
+      expect(js).toContain("<<=");
+    });
+  });
 });

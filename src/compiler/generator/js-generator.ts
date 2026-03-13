@@ -266,8 +266,10 @@ function emitFor(stmt: ForStatement, ctx: GenContext): string {
     return `for${ctx.sp}(let ${v}${ctx.sp}=${ctx.sp}${start};${ctx.sp}${v}${ctx.sp}<=${ctx.sp}${end};${ctx.sp}${v}++)${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`;
   }
 
-  // Iterable: for item in collection → for (const item of collection)
-  return `for${ctx.sp}(const ${varStr} of ${emitExpression(iter, ctx)})${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`;
+  // Nodeon 'in' → JS 'of' (values, like Python's for-in)
+  // Nodeon 'of' → JS 'in' (keys)
+  const jsKind = stmt.kind === "of" ? "in" : "of";
+  return `for${ctx.sp}(const ${varStr} ${jsKind} ${emitExpression(iter, ctx)})${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`;
 }
 
 function emitWhile(stmt: WhileStatement, ctx: GenContext): string {

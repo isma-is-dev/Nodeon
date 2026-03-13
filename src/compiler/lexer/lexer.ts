@@ -1,6 +1,6 @@
 import { Token, TokenType, SourceLocation } from "@language/tokens";
 import { KEYWORDS } from "@language/keywords";
-import { OPERATORS, TWO_CHAR_OPERATORS, THREE_CHAR_OPERATORS } from "@language/operators";
+import { OPERATORS, TWO_CHAR_OPERATORS, THREE_CHAR_OPERATORS, FOUR_CHAR_OPERATORS } from "@language/operators";
 import { DELIMITERS } from "@language/symbols";
 
 export class Lexer {
@@ -255,9 +255,19 @@ export class Lexer {
     const first = this.peek();
     const second = this.peekNext();
     const third = this.peekAt(2);
+    const fourth = this.peekAt(3);
 
+    const potentialFour = first + second + third + fourth;
     const potentialThree = first + second + third;
     const potentialTwo = first + second;
+
+    if (FOUR_CHAR_OPERATORS.has(potentialFour)) {
+      this.advance();
+      this.advance();
+      this.advance();
+      this.advance();
+      return this.makeToken(TokenType.Operator, potentialFour, loc);
+    }
 
     if (THREE_CHAR_OPERATORS.has(potentialThree)) {
       this.advance();
