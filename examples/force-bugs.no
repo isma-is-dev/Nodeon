@@ -1,5 +1,317 @@
-fn test() {
-    print("Hello World{")
+# ─────────────────────────────────────────────────────────────
+# Nodeon Stress Test Example
+# Designed to test:
+# - async / await
+# - try / catch / throw
+# - nested loops
+# - classes + inheritance
+# - closures
+# - recursion
+# - interpolation
+# - complex objects
+# - intentional bugs
+# ─────────────────────────────────────────────────────────────
+
+
+# ── Custom Error Class ────────────────────────────────────────
+class ValidationError {
+    constructor(message, field) {
+        this.name = "ValidationError"
+        this.message = message
+        this.field = field
+    }
 }
 
-test()
+
+# ── Logger class ──────────────────────────────────────────────
+class Logger {
+
+    constructor(prefix = "APP") {
+        this.prefix = prefix
+        this.logs = []
+    }
+
+    fn log(message) {
+        entry = "[{this.prefix}] {message}"
+        this.logs.push(entry)
+        print(entry)
+    }
+
+    fn dump() {
+        for line in this.logs {
+            print("LOG: {line}")
+        }
+    }
+
+}
+
+
+# ── Recursive Fibonacci (CPU stress) ─────────────────────────
+fn fibonacci(n) {
+
+    if n < 0 {
+        throw new Error("Negative fibonacci not allowed: {n}")
+    }
+
+    if n <= 1 {
+        return n
+    }
+
+    return fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+
+
+# ── Higher Order Function (closure) ──────────────────────────
+fn makeMultiplier(x) {
+
+    fn multiply(n) {
+        n * x
+    }
+
+    return multiply
+}
+
+
+double = makeMultiplier(2)
+triple = makeMultiplier(3)
+
+
+
+# ── Simulated Database ───────────────────────────────────────
+class FakeDatabase {
+
+    constructor() {
+        this.records = {}
+    }
+
+    fn save(id, data) {
+        this.records[id] = data
+    }
+
+    fn get(id) {
+
+        if this.records[id] == null {
+            throw new Error("Record {id} not found")
+        }
+
+        return this.records[id]
+    }
+
+}
+
+
+db = new FakeDatabase()
+
+
+
+# ── User Service ─────────────────────────────────────────────
+class UserService {
+
+    constructor(logger) {
+        this.logger = logger
+    }
+
+    fn validate(user) {
+
+        if user.name == null {
+            throw new ValidationError("Name required", "name")
+        }
+
+        if user.age < 0 {
+            throw new ValidationError("Age invalid: {user.age}", "age")
+        }
+
+    }
+
+    fn register(user) {
+
+        try {
+
+            this.validate(user)
+
+            id = user.name + "-" + Date.now()
+
+            db.save(id, user)
+
+            this.logger.log("User created: {id}")
+
+            return id
+
+        } catch (err) {
+
+            if err.name == "ValidationError" {
+                this.logger.log("Validation failed on {err.field}")
+                return null
+            }
+
+            throw err
+        }
+
+    }
+
+}
+
+
+logger = new Logger("NODEON")
+service = new UserService(logger)
+
+
+
+# ── Register users ───────────────────────────────────────────
+users = [
+    { name: "Alice", age: 30 },
+    { name: "Bob", age: -5 },      # invalid age
+    { age: 20 },                   # missing name
+    { name: "Charlie", age: 25 }
+]
+
+ids = []
+
+for user in users {
+
+    id = service.register(user)
+
+    if id != null {
+        ids.push(id)
+    }
+
+}
+
+
+
+# ── Async simulation ─────────────────────────────────────────
+async fn fakeFetchUser(id) {
+
+    try {
+
+        data = db.get(id)
+
+        return {
+            id: id,
+            profile: data
+        }
+
+    } catch (err) {
+
+        print("Fetch error: {err}")
+
+        return null
+    }
+
+}
+
+
+
+# ── Fetch users ──────────────────────────────────────────────
+results = []
+
+for id in ids {
+
+    profile = fakeFetchUser(id)
+
+    if profile != null {
+        results.push(profile)
+    }
+
+}
+
+
+
+# ── Complex loop logic ───────────────────────────────────────
+for user in results {
+
+    name = user.profile.name
+
+    print("Processing {name}")
+
+    for i in 0..3 {
+
+        fib = fibonacci(i)
+
+        value = double(fib)
+
+        print("loop {i} fib={fib} doubled={value}")
+
+    }
+
+}
+
+
+
+# ── Intentional logic bug ────────────────────────────────────
+total = 0
+
+numbers = [1,2,3,4,5]
+
+for n in numbers {
+
+    total = total + n
+
+}
+
+# BUG: wrong variable used
+print("Average: {sum / numbers.length}")
+
+
+
+# ── While loop stress ────────────────────────────────────────
+i = 0
+
+while i < 5 {
+
+    print("while iteration {i}")
+
+    if i == 3 {
+        break
+    }
+
+    i = i + 1
+}
+
+
+
+# ── Object mutation ──────────────────────────────────────────
+settings = {
+    retries: 3,
+    timeout: 1000,
+    debug: true
+}
+
+settings.timeout = settings.timeout * 2
+
+print("Timeout now {settings.timeout}")
+
+
+
+# ── Intentional runtime bug ──────────────────────────────────
+fn divide(a, b) {
+
+    if b == 0 {
+        throw new Error("Division by zero")
+    }
+
+    return a / b
+}
+
+
+try {
+
+    result = divide(10, 0)
+
+    print("Result {result}")
+
+} catch (err) {
+
+    print("Caught error: {err}")
+
+}
+
+
+
+# ── Logger dump ──────────────────────────────────────────────
+logger.dump()
+
+
+
+print("Execution finished")

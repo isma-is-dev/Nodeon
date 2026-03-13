@@ -1,122 +1,317 @@
-# ──────────────────────────────────────────────────────────
-# Nodeon Complex Example: ApiClient class with fetch, error
-# handling, iteration, conditionals, and string interpolation
-# ──────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# Nodeon Stress Test Example
+# Designed to test:
+# - async / await
+# - try / catch / throw
+# - nested loops
+# - classes + inheritance
+# - closures
+# - recursion
+# - interpolation
+# - complex objects
+# - intentional bugs
+# ─────────────────────────────────────────────────────────────
 
-# ── Helper function with implicit return ──────────────────
-fn double(x) {
-    x * 2
+
+# ── Custom Error Class ────────────────────────────────────────
+class ValidationError {
+    constructor(message, field) {
+        this.name = "ValidationError"
+        this.message = message
+        this.field = field
+    }
 }
 
-# ── Function with default params and explicit return ──────
-fn clamp(value, min = 0, max = 100) {
-    if value < min {
-        return min
-    }
-    if value > max {
-        return max
-    }
-    return value
-}
 
-# ── Class with constructor, methods, async, and try/catch ─
-class ApiClient {
-    constructor(baseUrl) {
-        this.baseUrl = baseUrl
-        this.headers = { "Content-Type": "application/json" }
-        this.cache = {}
+# ── Logger class ──────────────────────────────────────────────
+class Logger {
+
+    constructor(prefix = "APP") {
+        this.prefix = prefix
+        this.logs = []
     }
 
-    fn buildUrl(path) {
-        this.baseUrl + path
+    fn log(message) {
+        entry = "[{this.prefix}] {message}"
+        this.logs.push(entry)
+        print(entry)
     }
 
-    async fn get(path) {
-        url = this.buildUrl(path)
-
-        if this.cache[url] != null {
-            print("Cache hit: {url}")
-            return this.cache[url]
+    fn dump() {
+        for line in this.logs {
+            print("LOG: {line}")
         }
+    }
+
+}
+
+
+# ── Recursive Fibonacci (CPU stress) ─────────────────────────
+fn fibonacci(n) {
+
+    if n < 0 {
+        throw new Error("Negative fibonacci not allowed: {n}")
+    }
+
+    if n <= 1 {
+        return n
+    }
+
+    return fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+
+
+# ── Higher Order Function (closure) ──────────────────────────
+fn makeMultiplier(x) {
+
+    fn multiply(n) {
+        n * x
+    }
+
+    return multiply
+}
+
+
+double = makeMultiplier(2)
+triple = makeMultiplier(3)
+
+
+
+# ── Simulated Database ───────────────────────────────────────
+class FakeDatabase {
+
+    constructor() {
+        this.records = {}
+    }
+
+    fn save(id, data) {
+        this.records[id] = data
+    }
+
+    fn get(id) {
+
+        if this.records[id] == null {
+            throw new Error("Record {id} not found")
+        }
+
+        return this.records[id]
+    }
+
+}
+
+
+db = new FakeDatabase()
+
+
+
+# ── User Service ─────────────────────────────────────────────
+class UserService {
+
+    constructor(logger) {
+        this.logger = logger
+    }
+
+    fn validate(user) {
+
+        if user.name == null {
+            throw new ValidationError("Name required", "name")
+        }
+
+        if user.age < 0 {
+            throw new ValidationError("Age invalid: {user.age}", "age")
+        }
+
+    }
+
+    fn register(user) {
 
         try {
-            response = fetch(url, { method: "GET", headers: this.headers })
-            data = response.json()
-            this.cache[url] = data
-            return data
+
+            this.validate(user)
+
+            id = user.name + "-" + Date.now()
+
+            db.save(id, user)
+
+            this.logger.log("User created: {id}")
+
+            return id
+
         } catch (err) {
-            print("Request failed: {err}")
-            throw new Error("GET {path} failed")
+
+            if err.name == "ValidationError" {
+                this.logger.log("Validation failed on {err.field}")
+                return null
+            }
+
+            throw err
         }
+
     }
 
-    async fn post(path, body) {
-        url = this.buildUrl(path)
-        options = {
-            method: "POST",
-            headers: this.headers,
-            body: JSON.stringify(body)
-        }
+}
 
-        try {
-            response = fetch(url, options)
-            return response.json()
-        } catch (err) {
-            print("POST failed: {err}")
-            return null
-        }
+
+logger = new Logger("NODEON")
+service = new UserService(logger)
+
+
+
+# ── Register users ───────────────────────────────────────────
+users = [
+    { name: "Alice", age: 30 },
+    { name: "Bob", age: -5 },      # invalid age
+    { age: 20 },                   # missing name
+    { name: "Charlie", age: 25 }
+]
+
+ids = []
+
+for user in users {
+
+    id = service.register(user)
+
+    if id != null {
+        ids.push(id)
     }
+
 }
 
-# ── Using the class ───────────────────────────────────────
-client = new ApiClient("https://api.example.com")
 
-# ── Iteration examples ────────────────────────────────────
-items = ["alpha", "beta", "gamma"]
 
-for item in items {
-    print("Item: {item}")
+# ── Async simulation ─────────────────────────────────────────
+async fn fakeFetchUser(id) {
+
+    try {
+
+        data = db.get(id)
+
+        return {
+            id: id,
+            profile: data
+        }
+
+    } catch (err) {
+
+        print("Fetch error: {err}")
+
+        return null
+    }
+
 }
 
-for i in 0..5 {
-    result = double(i)
-    print("double({i}) = {result}")
+
+
+# ── Fetch users ──────────────────────────────────────────────
+results = []
+
+for id in ids {
+
+    profile = fakeFetchUser(id)
+
+    if profile != null {
+        results.push(profile)
+    }
+
 }
 
-# ── Conditionals and comparisons ──────────────────────────
-score = 85
-clamped = clamp(score, 0, 100)
 
-if clamped >= 90 {
-    print("Grade: A")
-} else if clamped >= 80 {
-    print("Grade: B")
-} else if clamped >= 70 {
-    print("Grade: C")
-} else {
-    print("Grade: F")
+
+# ── Complex loop logic ───────────────────────────────────────
+for user in results {
+
+    name = user.profile.name
+
+    print("Processing {name}")
+
+    for i in 0..3 {
+
+        fib = fibonacci(i)
+
+        value = double(fib)
+
+        print("loop {i} fib={fib} doubled={value}")
+
+    }
+
 }
 
-# ── Arrow functions and array methods ─────────────────────
-numbers = [1, 2, 3, 4, 5]
-doubled = numbers.map((n) => n * 2)
-evens = numbers.filter((n) => n % 2 == 0)
 
-print("Doubled: {doubled}")
-print("Evens: {evens}")
 
-# ── While loop ────────────────────────────────────────────
-counter = 10
-while counter > 0 {
-    counter = counter - 1
+# ── Intentional logic bug ────────────────────────────────────
+total = 0
+
+numbers = [1,2,3,4,5]
+
+for n in numbers {
+
+    total = total + n
+
 }
-print("Countdown done")
 
-# ── Object creation and access ────────────────────────────
-config = {
-    host: "localhost",
-    port: 3000,
+# BUG: wrong variable used
+print("Average: {sum / numbers.length}")
+
+
+
+# ── While loop stress ────────────────────────────────────────
+i = 0
+
+while i < 5 {
+
+    print("while iteration {i}")
+
+    if i == 3 {
+        break
+    }
+
+    i = i + 1
+}
+
+
+
+# ── Object mutation ──────────────────────────────────────────
+settings = {
+    retries: 3,
+    timeout: 1000,
     debug: true
 }
 
-print("Server: {config.host}:{config.port}")
+settings.timeout = settings.timeout * 2
+
+print("Timeout now {settings.timeout}")
+
+
+
+# ── Intentional runtime bug ──────────────────────────────────
+fn divide(a, b) {
+
+    if b == 0 {
+        throw new Error("Division by zero")
+    }
+
+    return a / b
+}
+
+
+try {
+
+    result = divide(10, 0)
+
+    print("Result {result}")
+
+} catch (err) {
+
+    print("Caught error: {err}")
+
+}
+
+
+
+# ── Logger dump ──────────────────────────────────────────────
+logger.dump()
+
+
+
+print("Execution finished")
