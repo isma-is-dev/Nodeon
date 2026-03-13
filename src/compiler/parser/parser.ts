@@ -1,5 +1,6 @@
 import { Token, TokenType } from "@language/tokens";
 import { Lexer } from "@lexer/lexer";
+import { PRECEDENCE, COMPOUND_ASSIGN } from "@language/precedence";
 import {
   Program,
   Statement,
@@ -61,27 +62,7 @@ import {
   InterfaceProperty,
 } from "@ast/nodes";
 
-const PRECEDENCE: Record<string, number> = {
-  "|>": 1,
-  "..": 1,
-  "??": 2,
-  "||": 3,
-  "&&": 3,
-  "|": 4,
-  "^": 5,
-  "&": 6,
-  "==": 7, "!=": 7, "===": 7, "!==": 7,
-  "<": 8, ">": 8, "<=": 8, ">=": 8, "instanceof": 8,
-  "<<": 9, ">>": 9, ">>>": 9,
-  "+": 10, "-": 10,
-  "*": 11, "/": 11, "%": 11,
-  "**": 12,
-};
-
-const COMPOUND_ASSIGN = new Set([
-  "+=", "-=", "*=", "/=", "%=", "**=",
-  "&&=", "||=", "??=",
-]);
+// PRECEDENCE and COMPOUND_ASSIGN imported from @language/precedence
 
 export class Parser {
   private tokens: Token[] = [];

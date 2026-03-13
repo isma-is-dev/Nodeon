@@ -1,8 +1,9 @@
-import { existsSync, readdirSync } from "fs";
-import { basename, dirname, join, resolve } from "path";
+import { existsSync } from "fs";
+import { basename, join, resolve } from "path";
 import { compileFile } from "../utils/compile";
 import { runInSandbox } from "../utils/runtime";
 import { RED, BOLD, RESET, CYAN } from "../utils/colors";
+import { suggestClosest } from "../utils/strings";
 
 export function resolveNodeonFile(input: string): string {
   const candidates = [input, `${input}.no`, join(input, "index.no")];
@@ -12,62 +13,30 @@ export function resolveNodeonFile(input: string): string {
     if (existsSync(abs)) return candidate;
   }
 
-  console.error(`${RED}error${RESET}: file not found`);
-
+  // Look for similar .no files to suggest
   const suggestion = suggestClosestFile(input);
-  if (suggestion) {
-    console.error(`did you mean: ${CYAN}${suggestion}${RESET} ?`);
-  }
-
-  process.exit(1);
-}
-
-function levenshtein(a: string, b: string): number {
-  const m = a.length;
-  const n = b.length;
-  const dp = new Array(n + 1);
-  for (let j = 0; j <= n; j++) dp[j] = j;
-  for (let i = 1; i <= m; i++) {
-    let prev = dp[0];
-    dp[0] = i;
-    for (let j = 1; j <= n; j++) {
-      const temp = dp[j];
-      dp[j] = Math.min(
-        dp[j] + 1,
-        dp[j - 1] + 1,
-        prev + (a[i - 1] === b[j - 1] ? 0 : 1)
-      );
-      prev = temp;
-    }
-  }
-  return dp[n];
+  const msg = suggestion
+    ? `file not found: ${input} (did you mean: ${suggestion} ?)`
+    : `file not found: ${input}`;
+  throw new Error(msg);
 }
 
 function suggestClosestFile(input: string): string | null {
   const parsed = basename(input);
+  const { dirname } = require("path") as typeof import("path");
+  const { readdirSync } = require("fs") as typeof import("fs");
   const dir = dirname(input) === "." ? "." : dirname(input);
   const desired = parsed.includes(".") ? parsed : `${parsed}.no`;
   const dirAbs = resolve(process.cwd(), dir);
-  let best: { name: string; dist: number } | null = null;
   try {
     const entries = readdirSync(dirAbs, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isFile()) continue;
-      if (!entry.name.endsWith(".no")) continue;
-      const dist = levenshtein(desired, entry.name);
-      if (dist <= 3 && (!best || dist < best.dist)) {
-        best = { name: entry.name, dist };
-      }
-    }
+    const noFiles = entries
+      .filter((e) => e.isFile() && e.name.endsWith(".no"))
+      .map((e) => e.name);
+    return suggestClosest(desired, noFiles, 3);
   } catch {
-    // ignore directory read errors
+    return null;
   }
-
-  if (best) {
-    const maybePath = dir === "." ? best.name : join(dir, best.name);
-    return maybePath;
-  }
-  return null;
 }
 
 export function runRun(args: string[]) {
@@ -77,7 +46,14 @@ export function runRun(args: string[]) {
     process.exit(1);
   }
 
-  const resolvedInput = resolveNodeonFile(input);
+  let resolvedInput: string;
+  try {
+    resolvedInput = resolveNodeonFile(input);
+  } catch (err: any) {
+    console.error(`${RED}error${RESET}: ${err.message}`);
+    process.exit(1);
+  }
+
   const result = compileFile(resolvedInput, undefined, { minify: false, write: false });
   if (!result) return;
   const { jsCode } = result;
@@ -88,3 +64,4 @@ export function runRun(args: string[]) {
     process.exit(1);
   }
 }
+

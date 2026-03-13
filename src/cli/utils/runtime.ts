@@ -1,6 +1,6 @@
 import vm from "vm";
 import { readFileSync, existsSync } from "fs";
-import { resolve } from "path";
+import { resolve, sep } from "path";
 import { RED, BOLD, RESET, DIM, CYAN } from "./colors";
 
 const sandboxGlobals = {
@@ -57,7 +57,7 @@ export function runInSandbox(jsCode: string, filename: string): void {
       sourceLine = fileLines[lineNum - 1] ?? "";
     }
 
-    const relPath = filePath ? filePath.replace(process.cwd() + "/", "") : fileOnStack;
+    const relPath = filePath ? filePath.replace(process.cwd() + sep, "") : fileOnStack;
     console.error(`${RED}${BOLD}${name}${RESET}: ${message}`);
     console.error(`${DIM}  --> ${RESET}${CYAN}${relPath}:${lineNum}:${colNum}${RESET}`);
     if (sourceLine) {

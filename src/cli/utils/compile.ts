@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readFileSync as fsReadFileSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { resolve, basename, join } from "path";
 import crypto from "crypto";
 import type * as Compiler from "@compiler/compile";
@@ -77,7 +77,7 @@ export function compileFile(inputPath: string, outputPath?: string, opts: CLICom
     if (!existsSync(cacheDir)) mkdirSync(cacheDir, { recursive: true });
 
     if (existsSync(cachePath)) {
-      const cached: CacheEntry = JSON.parse(fsReadFileSync(cachePath, "utf8"));
+      const cached: CacheEntry = JSON.parse(readFileSync(cachePath, "utf8"));
       if (opts.sourceMap && cached.sourceMap && out) {
         writeFileSync(out, cached.jsCode, "utf8");
         writeFileSync(out + ".map", JSON.stringify(cached.sourceMap), "utf8");
