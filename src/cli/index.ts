@@ -20,6 +20,12 @@ export async function main(argv = process.argv) {
     return;
   }
 
+  if (cmd === "init") {
+    const { runInit } = await import("@commands/init");
+    runInit(args.slice(1));
+    return;
+  }
+
   if (cmd === "build") {
     const { runBuild } = await import("@commands/build");
     runBuild(args.slice(1));
@@ -51,7 +57,7 @@ export async function main(argv = process.argv) {
     }
   }
 
-  const knownCommands = ["build", "run", "repl", "help", "version"] as const;
+  const knownCommands = ["build", "run", "repl", "help", "version", "init"] as const;
   const suggestion = suggestClosest(cmd, knownCommands);
   console.error(`Unknown command '${cmd}'`);
   console.error(`See ${CYAN}'nodeon help'${RESET}.`);
