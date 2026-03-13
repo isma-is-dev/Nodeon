@@ -384,13 +384,50 @@ export class Parser extends ParserBase {
 
   private parseExportDeclaration(): ExportDeclaration {
     this.consumeKeyword("export");
-    let isDefault = false;
+
+    // export default ...
     if (this.checkKeyword("default")) {
       this.advance();
-      isDefault = true;
+      const declaration = this.parseStatement();
+      return { type: "ExportDeclaration", declaration, isDefault: true };
     }
+
+    // export * from "mod"  or  export * as ns from "mod"
+    if (this.checkOperator("*")) {
+      this.advance();
+      let exportAllAlias: string | undefined;
+      if (this.checkKeyword("as")) {
+        this.advance();
+        exportAllAlias = this.consumeIdentifier("Expected alias name").name;
+      }
+      this.consumeKeyword("from");
+      const source = this.peek().value;
+      this.advance(); // consume string
+      return { type: "ExportDeclaration", isDefault: false, exportAll: true, source, exportAllAlias };
+    }
+
+    // export { x, y }  or  export { x } from "mod"
+    if (this.checkDelimiter("{")) {
+      this.advance(); // consume {
+      const namedExports: string[] = [];
+      while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+        namedExports.push(this.consumeIdentifier("Expected export name").name);
+        if (!this.matchDelimiter(",")) break;
+      }
+      this.consumeDelimiter("}", "Expected '}'");
+
+      let source: string | undefined;
+      if (this.checkKeyword("from")) {
+        this.advance();
+        source = this.peek().value;
+        this.advance(); // consume string
+      }
+      return { type: "ExportDeclaration", isDefault: false, namedExports, source };
+    }
+
+    // export fn/class/const/let/var ...
     const declaration = this.parseStatement();
-    return { type: "ExportDeclaration", declaration, isDefault };
+    return { type: "ExportDeclaration", declaration, isDefault: false };
   }
 
   private parseClassDeclaration(): ClassDeclaration {

@@ -700,4 +700,27 @@ describe("End-to-end compilation", () => {
       expect(js).not.toContain("|");
     });
   });
+
+  // ── Export Variants ─────────────────────────────────────────
+  describe("export variants", () => {
+    it("compiles named export list", () => {
+      const js = compileToJS("export { foo, bar }");
+      expect(js).toContain("export { foo, bar }");
+    });
+
+    it("compiles re-export from module", () => {
+      const js = compileToJS('export { utils } from "helpers"');
+      expect(js).toContain('export { utils } from "helpers"');
+    });
+
+    it("compiles wildcard re-export", () => {
+      const js = compileToJS('export * from "utils"');
+      expect(js).toContain('export * from "utils"');
+    });
+
+    it("compiles wildcard re-export with alias", () => {
+      const js = compileToJS('export * as helpers from "utils"');
+      expect(js).toContain('export * as helpers from "utils"');
+    });
+  });
 });

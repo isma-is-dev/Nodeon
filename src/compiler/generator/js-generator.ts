@@ -306,8 +306,22 @@ function emitImport(stmt: ImportDeclaration, ctx: GenContext): string {
 }
 
 function emitExport(stmt: ExportDeclaration, ctx: GenContext): string {
+  // export * from "mod"  /  export * as ns from "mod"
+  if (stmt.exportAll) {
+    const alias = stmt.exportAllAlias ? ` as ${stmt.exportAllAlias}` : "";
+    return `export *${alias} from ${JSON.stringify(stmt.source)};`;
+  }
+
+  // export { x, y }  or  export { x, y } from "mod"
+  if (stmt.namedExports) {
+    const names = stmt.namedExports.join(`,${ctx.sp}`);
+    const from = stmt.source ? ` from ${JSON.stringify(stmt.source)}` : "";
+    return `export${ctx.sp}{${ctx.sp}${names}${ctx.sp}}${from};`;
+  }
+
+  // export default ...  or  export ...
   const kw = stmt.isDefault ? "export default" : "export";
-  return `${kw} ${emitStatement(stmt.declaration, ctx)}`;
+  return `${kw} ${emitStatement(stmt.declaration!, ctx)}`;
 }
 
 function emitClass(cls: ClassDeclaration, ctx: GenContext): string {

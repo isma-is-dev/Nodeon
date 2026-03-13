@@ -126,8 +126,12 @@ export type ImportDeclaration = {
 
 export type ExportDeclaration = {
   type: "ExportDeclaration";
-  declaration: Statement;
+  declaration?: Statement;
   isDefault: boolean;
+  namedExports?: string[];       // export { x, y }
+  source?: string;               // export { x } from "mod"  /  export * from "mod"
+  exportAll?: boolean;           // export * from "mod"
+  exportAllAlias?: string;       // export * as ns from "mod"
 };
 
 export type ClassDeclaration = {
