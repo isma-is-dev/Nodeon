@@ -1,6 +1,7 @@
 import { Token, TokenType } from "@language/tokens";
 import { Lexer } from "@lexer/lexer";
 import { PRECEDENCE, COMPOUND_ASSIGN } from "@language/precedence";
+import { ParserBase } from "./parser-base";
 import {
   Program,
   Statement,
@@ -67,12 +68,9 @@ import {
 
 // PRECEDENCE and COMPOUND_ASSIGN imported from @language/precedence
 
-export class Parser {
-  private tokens: Token[] = [];
-  private current = 0;
-
+export class Parser extends ParserBase {
   constructor(tokens: Token[]) {
-    this.tokens = tokens;
+    super(tokens);
   }
 
   parseProgram(): Program {
@@ -1451,103 +1449,4 @@ export class Parser {
     return { type: "ArrayPattern", elements, rest };
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────
-
-  private checkKeyword(value: string): boolean {
-    const tok = this.peek();
-    return tok.type === TokenType.Keyword && tok.value === value;
-  }
-
-  private checkOperator(value: string): boolean {
-    const tok = this.peek();
-    return tok.type === TokenType.Operator && tok.value === value;
-  }
-
-  private consumeKeyword(value: string): void {
-    const tok = this.peek();
-    if (tok.type === TokenType.Keyword && tok.value === value) {
-      this.advance();
-      return;
-    }
-    this.error(tok, `Expected keyword '${value}'`);
-  }
-
-  private consumeIdentifier(message: string): Identifier {
-    const tok = this.peek();
-    if (tok.type === TokenType.Identifier) {
-      this.advance();
-      return { type: "Identifier", name: tok.value };
-    }
-    // Allow some keywords to be used as identifiers in certain contexts
-    if (tok.type === TokenType.Keyword && ["print", "from", "async", "of", "get", "set"].includes(tok.value)) {
-      this.advance();
-      return { type: "Identifier", name: tok.value };
-    }
-    this.error(tok, message);
-  }
-
-  private consumeDelimiter(value: string, message: string): void {
-    const tok = this.peek();
-    if (tok.type === TokenType.Delimiter && tok.value === value) {
-      this.advance();
-      return;
-    }
-    this.error(tok, message);
-  }
-
-  private consumeOperator(value: string, message: string): void {
-    const tok = this.peek();
-    if (tok.type === TokenType.Operator && tok.value === value) {
-      this.advance();
-      return;
-    }
-    this.error(tok, message);
-  }
-
-  private matchDelimiter(value: string): boolean {
-    const tok = this.peek();
-    if (tok.type === TokenType.Delimiter && tok.value === value) {
-      this.advance();
-      return true;
-    }
-    return false;
-  }
-
-  private checkDelimiter(value: string): boolean {
-    const tok = this.peek();
-    return tok.type === TokenType.Delimiter && tok.value === value;
-  }
-
-  private advance(): Token {
-    if (!this.isAtEnd()) this.current++;
-    return this.previous();
-  }
-
-  private peek(): Token {
-    return this.tokens[this.current];
-  }
-
-  private peekNext(): Token | undefined {
-    return this.tokens[this.current + 1];
-  }
-
-  private peekAt(offset: number): Token | undefined {
-    return this.tokens[this.current + offset];
-  }
-
-  private previous(): Token {
-    return this.tokens[this.current - 1];
-  }
-
-  private isAtEnd(): boolean {
-    return this.peek().type === TokenType.EOF;
-  }
-
-  private error(token: Token, message: string): never {
-    const loc = token.loc;
-    if (loc) {
-      throw new SyntaxError(`${message} at ${loc.line}:${loc.column}`);
-    }
-    throw new SyntaxError(`${message} at position ${token.position}`);
-  }
 }
