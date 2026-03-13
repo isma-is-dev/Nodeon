@@ -24,7 +24,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { Lexer } from '@lexer/lexer';
 import { Parser } from '@parser/parser';
 import { KEYWORDS } from '@language/keywords';
-import { Program, Statement, FunctionDeclaration, VariableDeclaration, ClassDeclaration } from '@ast/nodes';
+import { Program, Statement, Expression, FunctionDeclaration, VariableDeclaration, ClassDeclaration } from '@ast/nodes';
 
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
@@ -68,9 +68,12 @@ function validateDocument(doc: TextDocument): void {
     const tokens = new Lexer(source).tokenize();
     const ast = new Parser(tokens).parseProgram();
     astCache.set(doc.uri, ast);
+
+    // Semantic analysis on successful parse
+    const semanticDiags = analyzeSemantics(ast, source);
+    diagnostics.push(...semanticDiags);
   } catch (err: any) {
     const message = err.message || String(err);
-    // Extract line:col from messages like "Unexpected token at 3:5"
     const match = message.match(/at (\d+):(\d+)$/);
     let range: Range;
     if (match) {
@@ -94,6 +97,449 @@ function validateDocument(doc: TextDocument): void {
   }
 
   connection.sendDiagnostics({ uri: doc.uri, diagnostics });
+}
+
+// ── Semantic Analysis ───────────────────────────────────────────────
+
+// Built-in globals that should never trigger "undefined variable"
+const BUILTIN_GLOBALS = new Set([
+  'console', 'Math', 'Date', 'JSON', 'Object', 'Array', 'String', 'Number',
+  'Boolean', 'RegExp', 'Error', 'TypeError', 'RangeError', 'SyntaxError',
+  'Map', 'Set', 'WeakMap', 'WeakSet', 'Promise', 'Symbol', 'Proxy', 'Reflect',
+  'parseInt', 'parseFloat', 'isNaN', 'isFinite', 'NaN', 'Infinity',
+  'encodeURIComponent', 'decodeURIComponent', 'encodeURI', 'decodeURI',
+  'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval',
+  'print', 'require', 'module', 'exports', '__dirname', '__filename',
+  'process', 'Buffer', 'globalThis', 'global', 'undefined',
+]);
+
+interface SymbolInfo {
+  line: number;
+  used: boolean;
+  kind: 'let' | 'const' | 'var' | 'fn' | 'class' | 'param' | 'for' | 'import' | 'catch' | 'enum';
+}
+
+interface Scope {
+  symbols: Map<string, SymbolInfo>;
+}
+
+function analyzeSemantics(ast: Program, source: string): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+  const lines = source.split('\n');
+  const scopes: Scope[] = [{ symbols: new Map() }];
+
+  function currentScope(): Scope {
+    return scopes[scopes.length - 1];
+  }
+
+  function pushScope(): void {
+    scopes.push({ symbols: new Map() });
+  }
+
+  function popScope(): void {
+    const scope = scopes.pop();
+    if (!scope) return;
+    // Report unused variables (only for variables, not params/imports in top-level)
+    for (const [name, info] of scope.symbols) {
+      if (!info.used && info.kind !== 'import' && info.kind !== 'catch' && name !== '_') {
+        const line = info.line;
+        const col = findIdentifierColumn(lines[line] || '', name);
+        diagnostics.push({
+          severity: DiagnosticSeverity.Hint,
+          range: Range.create(
+            Position.create(line, col),
+            Position.create(line, col + name.length)
+          ),
+          message: `'${name}' is declared but never used`,
+          source: 'nodeon',
+          tags: [1] // DiagnosticTag.Unnecessary
+        });
+      }
+    }
+  }
+
+  function declare(name: string, line: number, kind: SymbolInfo['kind']): void {
+    const scope = currentScope();
+    if (scope.symbols.has(name)) {
+      const existing = scope.symbols.get(name)!;
+      // Allow re-assignment for 'let' and 'var', but warn for 'const', 'fn', 'class'
+      if (existing.kind === 'const' || existing.kind === 'class' || existing.kind === 'enum') {
+        const col = findIdentifierColumn(lines[line] || '', name);
+        diagnostics.push({
+          severity: DiagnosticSeverity.Warning,
+          range: Range.create(
+            Position.create(line, col),
+            Position.create(line, col + name.length)
+          ),
+          message: `'${name}' is already declared in this scope (line ${existing.line + 1})`,
+          source: 'nodeon'
+        });
+      }
+    }
+    scope.symbols.set(name, { line, used: false, kind });
+  }
+
+  function reference(name: string, line: number): void {
+    if (BUILTIN_GLOBALS.has(name)) return;
+    if (KEYWORDS.has(name)) return;
+
+    // Walk scopes from innermost to outermost
+    for (let i = scopes.length - 1; i >= 0; i--) {
+      if (scopes[i].symbols.has(name)) {
+        scopes[i].symbols.get(name)!.used = true;
+        return;
+      }
+    }
+
+    // Not found — undefined variable
+    const col = findIdentifierColumn(lines[line] || '', name);
+    diagnostics.push({
+      severity: DiagnosticSeverity.Error,
+      range: Range.create(
+        Position.create(line, col),
+        Position.create(line, col + name.length)
+      ),
+      message: `'${name}' is not defined`,
+      source: 'nodeon'
+    });
+  }
+
+  function findIdentifierColumn(lineText: string, name: string): number {
+    // Try to find the identifier in the line text
+    const idx = lineText.indexOf(name);
+    return idx >= 0 ? idx : 0;
+  }
+
+  function getLine(node: any): number {
+    if (node?.loc) return node.loc.line - 1;
+    return 0;
+  }
+
+  // ── AST walkers ─────────────────────────────────────────────────
+
+  function walkStatements(stmts: Statement[]): void {
+    for (const stmt of stmts) walkStatement(stmt);
+  }
+
+  function walkStatement(stmt: Statement): void {
+    const line = getLine(stmt);
+
+    switch (stmt.type) {
+      case 'VariableDeclaration': {
+        // Walk the value first (it may reference existing variables)
+        walkExpression(stmt.value, line);
+        declare(stmt.name.name, line, stmt.kind as 'let' | 'const' | 'var');
+        break;
+      }
+      case 'DestructuringDeclaration': {
+        walkExpression(stmt.value, line);
+        declarePattern(stmt.pattern, line, stmt.kind as 'let' | 'const' | 'var');
+        break;
+      }
+      case 'FunctionDeclaration': {
+        declare(stmt.name.name, line, 'fn');
+        pushScope();
+        for (const p of stmt.params) {
+          if (p.pattern) {
+            declarePattern(p.pattern, line, 'param');
+          } else {
+            declare(p.name, line, 'param');
+          }
+          if (p.defaultValue) walkExpression(p.defaultValue, line);
+        }
+        walkStatements(stmt.body);
+        popScope();
+        break;
+      }
+      case 'ClassDeclaration': {
+        declare(stmt.name.name, line, 'class');
+        if (stmt.superClass) reference(stmt.superClass.name, line);
+        pushScope();
+        declare('this', line, 'param'); // 'this' is always available inside class
+        for (const method of stmt.body) {
+          pushScope();
+          for (const p of method.params) {
+            if (p.pattern) {
+              declarePattern(p.pattern, getLine(method), 'param');
+            } else {
+              declare(p.name, getLine(method), 'param');
+            }
+            if (p.defaultValue) walkExpression(p.defaultValue, getLine(method));
+          }
+          walkStatements(method.body);
+          popScope();
+        }
+        popScope();
+        break;
+      }
+      case 'IfStatement': {
+        walkExpression(stmt.condition, line);
+        pushScope();
+        walkStatements(stmt.consequent);
+        popScope();
+        if (stmt.alternate) {
+          pushScope();
+          walkStatements(stmt.alternate);
+          popScope();
+        }
+        break;
+      }
+      case 'ForStatement': {
+        pushScope();
+        walkExpression(stmt.iterable, line);
+        if (stmt.variable.type === 'Identifier') {
+          declare(stmt.variable.name, line, 'for');
+        } else {
+          declarePattern(stmt.variable, line, 'for');
+        }
+        walkStatements(stmt.body);
+        popScope();
+        break;
+      }
+      case 'WhileStatement': {
+        walkExpression(stmt.condition, line);
+        pushScope();
+        walkStatements(stmt.body);
+        popScope();
+        break;
+      }
+      case 'DoWhileStatement': {
+        pushScope();
+        walkStatements(stmt.body);
+        popScope();
+        walkExpression(stmt.condition, line);
+        break;
+      }
+      case 'ReturnStatement': {
+        if (stmt.value) walkExpression(stmt.value, line);
+        break;
+      }
+      case 'ThrowStatement': {
+        walkExpression(stmt.value, line);
+        break;
+      }
+      case 'ExpressionStatement': {
+        walkExpression(stmt.expression, line);
+        break;
+      }
+      case 'ImportDeclaration': {
+        if (stmt.defaultImport) {
+          // Ignore "* as X" — take just the alias name
+          const importName = stmt.defaultImport.startsWith('* as ')
+            ? stmt.defaultImport.slice(5)
+            : stmt.defaultImport;
+          declare(importName, line, 'import');
+        }
+        for (const name of stmt.namedImports) {
+          declare(name, line, 'import');
+        }
+        break;
+      }
+      case 'ExportDeclaration': {
+        walkStatement(stmt.declaration);
+        break;
+      }
+      case 'TryCatchStatement': {
+        pushScope();
+        walkStatements(stmt.tryBlock);
+        popScope();
+        pushScope();
+        if (stmt.catchParam) declare(stmt.catchParam.name, line, 'catch');
+        walkStatements(stmt.catchBlock);
+        popScope();
+        if (stmt.finallyBlock) {
+          pushScope();
+          walkStatements(stmt.finallyBlock);
+          popScope();
+        }
+        break;
+      }
+      case 'SwitchStatement': {
+        walkExpression(stmt.discriminant, line);
+        for (const c of stmt.cases) {
+          if (c.test) walkExpression(c.test, line);
+          pushScope();
+          walkStatements(c.consequent);
+          popScope();
+        }
+        break;
+      }
+      case 'MatchStatement': {
+        walkExpression(stmt.discriminant, line);
+        for (const c of stmt.cases) {
+          if (c.pattern) walkExpression(c.pattern, line);
+          if (c.guard) walkExpression(c.guard, line);
+          pushScope();
+          walkStatements(c.body);
+          popScope();
+        }
+        break;
+      }
+      case 'EnumDeclaration': {
+        declare(stmt.name.name, line, 'enum');
+        for (const member of stmt.members) {
+          if (member.value) walkExpression(member.value, line);
+        }
+        break;
+      }
+      case 'InterfaceDeclaration': {
+        // Interfaces are type-only, no runtime checks needed
+        declare(stmt.name.name, line, 'class');
+        break;
+      }
+      case 'BreakStatement':
+      case 'ContinueStatement':
+      case 'DebuggerStatement':
+        break;
+    }
+  }
+
+  function declarePattern(pattern: any, line: number, kind: SymbolInfo['kind']): void {
+    if (pattern.type === 'ObjectPattern') {
+      for (const prop of pattern.properties) {
+        if (prop.value.type === 'Identifier') {
+          declare(prop.value.name, line, kind);
+        } else {
+          declarePattern(prop.value, line, kind);
+        }
+      }
+      if (pattern.rest) declare(pattern.rest.name, line, kind);
+    } else if (pattern.type === 'ArrayPattern') {
+      for (const el of pattern.elements) {
+        if (!el) continue;
+        if (el.type === 'Identifier') {
+          declare(el.name, line, kind);
+        } else {
+          declarePattern(el, line, kind);
+        }
+      }
+      if (pattern.rest) declare(pattern.rest.name, line, kind);
+    }
+  }
+
+  function walkExpression(expr: Expression | null | undefined, fallbackLine: number): void {
+    if (!expr) return;
+    const line = (expr as any)?.loc ? (expr as any).loc.line - 1 : fallbackLine;
+
+    switch (expr.type) {
+      case 'Identifier':
+        reference(expr.name, line);
+        break;
+      case 'Literal':
+        break;
+      case 'TemplateLiteral':
+        for (const part of expr.parts) {
+          if (part.kind === 'Expression') walkExpression(part.expression, line);
+        }
+        break;
+      case 'BinaryExpression':
+        walkExpression(expr.left, line);
+        walkExpression(expr.right, line);
+        break;
+      case 'UnaryExpression':
+        walkExpression(expr.argument, line);
+        break;
+      case 'UpdateExpression':
+        walkExpression(expr.argument, line);
+        break;
+      case 'CallExpression':
+        walkExpression(expr.callee, line);
+        for (const arg of expr.arguments) walkExpression(arg, line);
+        break;
+      case 'MemberExpression':
+        walkExpression(expr.object, line);
+        if (expr.computed) walkExpression(expr.property, line);
+        break;
+      case 'ArrayExpression':
+        for (const el of expr.elements) walkExpression(el, line);
+        break;
+      case 'ObjectExpression':
+        for (const prop of expr.properties) walkExpression(prop.value, line);
+        break;
+      case 'ArrowFunction': {
+        pushScope();
+        for (const p of expr.params) {
+          if (p.pattern) {
+            declarePattern(p.pattern, line, 'param');
+          } else {
+            declare(p.name, line, 'param');
+          }
+          if (p.defaultValue) walkExpression(p.defaultValue, line);
+        }
+        if (Array.isArray(expr.body)) {
+          walkStatements(expr.body);
+        } else {
+          walkExpression(expr.body, line);
+        }
+        popScope();
+        break;
+      }
+      case 'AssignmentExpression':
+        walkExpression(expr.right, line);
+        // For bare assignments (x = value), if x is an Identifier, treat it as
+        // an implicit declaration in Nodeon (similar to Python)
+        if (expr.left.type === 'Identifier') {
+          // Check if it already exists in scope — if so, just mark used
+          let found = false;
+          for (let i = scopes.length - 1; i >= 0; i--) {
+            if (scopes[i].symbols.has(expr.left.name)) {
+              scopes[i].symbols.get(expr.left.name)!.used = true;
+              found = true;
+              break;
+            }
+          }
+          if (!found) {
+            declare(expr.left.name, line, 'let');
+          }
+        } else {
+          walkExpression(expr.left, line);
+        }
+        break;
+      case 'CompoundAssignmentExpression':
+        walkExpression(expr.left, line);
+        walkExpression(expr.right, line);
+        break;
+      case 'NewExpression':
+        walkExpression(expr.callee, line);
+        for (const arg of expr.arguments) walkExpression(arg, line);
+        break;
+      case 'AwaitExpression':
+        walkExpression(expr.argument, line);
+        break;
+      case 'SpreadExpression':
+        walkExpression(expr.argument, line);
+        break;
+      case 'TernaryExpression':
+        walkExpression(expr.condition, line);
+        walkExpression(expr.consequent, line);
+        walkExpression(expr.alternate, line);
+        break;
+      case 'TypeofExpression':
+        walkExpression(expr.argument, line);
+        break;
+      case 'VoidExpression':
+        walkExpression(expr.argument, line);
+        break;
+      case 'DeleteExpression':
+        walkExpression(expr.argument, line);
+        break;
+      case 'YieldExpression':
+        if (expr.argument) walkExpression(expr.argument, line);
+        break;
+      case 'ObjectPattern':
+      case 'ArrayPattern':
+        // Patterns are handled by declarePattern
+        break;
+    }
+  }
+
+  // Run the analysis
+  walkStatements(ast.body);
+
+  // Pop the global scope (reports unused globals)
+  popScope();
+
+  return diagnostics;
 }
 
 // ── Completions ─────────────────────────────────────────────────────

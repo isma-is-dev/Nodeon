@@ -16,9 +16,7 @@
   ],
   "license": "MIT",
   "main": "dist/extension.js",
-  "activationEvents": [
-    "onLanguage:nodeon"
-  ],
+  "activationEvents": [],
   "contributes": {
     "languages": [
       {
@@ -30,6 +28,10 @@
         "extensions": [
           ".no"
         ],
+        "icon": {
+          "light": "./assets/no-file.svg",
+          "dark": "./assets/no-file.svg"
+        },
         "configuration": "./language-configuration.json"
       }
     ],
@@ -38,13 +40,6 @@
         "language": "nodeon",
         "scopeName": "source.nodeon",
         "path": "./syntaxes/nodeon.tmLanguage.json"
-      }
-    ],
-    "iconThemes": [
-      {
-        "id": "nodeon-icons",
-        "label": "Nodeon Icons",
-        "path": "./icon-theme.json"
       }
     ]
   },
