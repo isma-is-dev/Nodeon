@@ -2,7 +2,7 @@ import { existsSync, watch } from "fs";
 import { basename, join, resolve, dirname } from "path";
 import { compileFile } from "../utils/compile";
 import { runInSandbox } from "../utils/runtime";
-import { RED, BOLD, RESET, CYAN } from "../utils/colors";
+import { RED, BOLD, RESET, DIM } from "../utils/colors";
 import { suggestClosest } from "../utils/strings";
 
 export function resolveNodeonFile(input: string): string {
@@ -61,7 +61,7 @@ export function runRun(args: string[]) {
 
   // Watch mode: re-run on changes
   if (watchMode) {
-    console.log(`\n${CYAN}👀${RESET} Watching ${basename(resolvedInput)} for changes... (Ctrl+C to stop)`);
+    console.log(`\n${DIM}watching ${basename(resolvedInput)} for changes...${RESET} (Ctrl+C to stop)`);
     watchAndRun(resolvedInput);
   }
 }
@@ -94,10 +94,10 @@ function watchAndRun(resolvedInput: string): void {
     // Debounce rapid file changes
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
-      console.log(`\n${CYAN}↻${RESET} Change detected: ${filename}`);
+      console.log(`\n${DIM}change detected: ${filename}${RESET}`);
       console.log("─".repeat(40));
       executeFile(resolvedInput);
-      console.log(`\n${CYAN}👀${RESET} Waiting for changes...`);
+      console.log(`\n${DIM}waiting for changes...${RESET}`);
     }, 150);
   });
 
@@ -107,7 +107,7 @@ function watchAndRun(resolvedInput: string): void {
   process.on("SIGINT", () => {
     watcher.close();
     clearInterval(keepAlive);
-    console.log(`\n${CYAN}✓${RESET} Watch stopped.`);
+    console.log(`\n${DIM}watch stopped.${RESET}`);
     process.exit(0);
   });
 }
