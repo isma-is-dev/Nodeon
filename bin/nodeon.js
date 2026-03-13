@@ -1,7 +1,26 @@
 #!/usr/bin/env node
 const path = require("path");
+const fs = require("fs");
 
-// Early handling for simple flags to avoid ts-node startup cost.
+// Prefer prebuilt bundle if present (production fast path).
+const distBundle = path.resolve(__dirname, "../dist/nodeon.js");
+if (fs.existsSync(distBundle)) {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const bundled = require(distBundle);
+  if (bundled && typeof bundled.main === "function") {
+    const maybe = bundled.main(process.argv);
+    if (maybe && typeof maybe.then === "function") {
+      maybe.catch((err) => {
+        console.error(err);
+        process.exit(1);
+      });
+    }
+    return;
+  }
+  return;
+}
+ 
+// Dev mode: Early handling for simple flags to avoid ts-node startup cost.
 const args = process.argv.slice(2);
 const cmd = args[0];
 

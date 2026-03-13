@@ -6,6 +6,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "build:cli": "node scripts/build-cli.js",
     "postinstall": "npm install --prefix packages/language-server && npm install --prefix packages/vscode-extension",
     "build:lsp": "npm run build --prefix packages/language-server",
     "build:ext": "npm run build --prefix packages/vscode-extension",
@@ -28,6 +29,7 @@
   },
   "devDependencies": {
     "@types/node": "20.11.0",
-    "vitest": "4.1.0"
+    "vitest": "4.1.0",
+    "esbuild": "0.19.12"
   }
 }
