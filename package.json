@@ -10,9 +10,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build:cli": "node scripts/build-cli.js",
-    "build:lsp": "npm run build -w nodeon-language-server",
+    "build:lsp": "npm run build -w nodeon-vscode-extension",
     "build:ext": "npm run build -w nodeon-vscode-extension",
-    "build:all": "npm run build:lsp && npm run build:ext",
+    "build:all": "npm run build:ext",
+    "typecheck:lsp": "tsc --noEmit -p packages/language-server/tsconfig.json",
     "package:ext": "npm run package -w nodeon-vscode-extension"
   },
   "repository": {
