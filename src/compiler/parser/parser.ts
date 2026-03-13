@@ -928,13 +928,13 @@ export class Parser {
     // String literal (double-quoted, with interpolation detection)
     if (token.type === TokenType.String) {
       this.advance();
-      return this.parseStringLiteral(token.value);
+      return this.parseStringLiteral(token.value, token.loc);
     }
 
     // Template literal from lexer (backtick strings)
     if (token.type === TokenType.TemplateLiteral) {
       this.advance();
-      return this.parseTemplateLiteral(token.value);
+      return this.parseTemplateLiteral(token.value, token.loc);
     }
 
     this.error(token, "Expected expression");
@@ -1037,7 +1037,7 @@ export class Parser {
   }
 
   // Nodeon-style string interpolation: "Hello {name}" → template literal
-  private parseStringLiteral(raw: string): Literal | TemplateLiteral {
+  private parseStringLiteral(raw: string, loc?: { line: number; column: number }): Literal | TemplateLiteral {
     if (!raw.includes("{")) {
       return { type: "Literal", value: raw, literalType: "string" } as Literal;
     }
@@ -1069,7 +1069,8 @@ export class Parser {
           j++;
         }
         if (j >= raw.length) {
-          throw new SyntaxError("Unterminated interpolation in string literal");
+          const where = loc ? ` at ${loc.line}:${loc.column + i}` : "";
+          throw new SyntaxError(`Unterminated interpolation in string literal${where}`);
         }
         // Parse the inner expression using a sub-lexer + sub-parser
         const innerTokens = new Lexer(inner).tokenize();
@@ -1089,7 +1090,7 @@ export class Parser {
   }
 
   // JS-style template literal: `Hello ${name}` from backtick tokens
-  private parseTemplateLiteral(raw: string): TemplateLiteral {
+  private parseTemplateLiteral(raw: string, loc?: { line: number; column: number }): TemplateLiteral {
     const parts: Array<TemplatePartText | TemplatePartExpression> = [];
     let buffer = "";
     let i = 0;
@@ -1107,6 +1108,10 @@ export class Parser {
           else if (raw[i] === "}") { braceDepth--; if (braceDepth === 0) break; }
           inner += raw[i];
           i++;
+        }
+        if (braceDepth !== 0) {
+          const where = loc ? ` at ${loc.line}:${loc.column + i}` : "";
+          throw new SyntaxError(`Unterminated interpolation in template literal${where}`);
         }
         i++; // skip closing }
         const innerTokens = new Lexer(inner).tokenize();
