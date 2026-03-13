@@ -34,6 +34,14 @@ export async function main(argv = process.argv) {
     return;
   }
 
+  // Fallback: treat the first arg as a file to run (extensionless allowed).
+  {
+    const { runRun, resolveNodeonFile } = await import("@commands/run");
+    const resolved = resolveNodeonFile(cmd);
+    runRun([resolved, ...args.slice(1)]);
+    return;
+  }
+
   const { printHelp } = await import("@commands/help");
   console.error(`Unknown command '${cmd}'`);
   printHelp();
