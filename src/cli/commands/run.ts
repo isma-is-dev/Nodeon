@@ -101,8 +101,12 @@ function watchAndRun(resolvedInput: string): void {
     }, 150);
   });
 
+  // Explicit keep-alive — fs.watch on Windows may not keep the process alive
+  const keepAlive = setInterval(() => {}, 2_147_483_647);
+
   process.on("SIGINT", () => {
     watcher.close();
+    clearInterval(keepAlive);
     console.log(`\n${CYAN}✓${RESET} Watch stopped.`);
     process.exit(0);
   });
