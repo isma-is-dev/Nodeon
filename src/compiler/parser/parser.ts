@@ -98,20 +98,41 @@ export class Parser extends ParserBase {
   }
 
   private recover(): void {
+    let braceDepth = 0;
     while (!this.isAtEnd()) {
       const tok = this.peek();
-      // Skip to a boundary: newline, semicolon, }, or a keyword that starts a statement
-      if (tok.type === TokenType.Delimiter && (tok.value === "}" || tok.value === ";")) {
+
+      // Track brace depth so we don't skip past closing braces of outer scopes
+      if (tok.type === TokenType.Delimiter && tok.value === "{") {
+        braceDepth++;
+        this.advance();
+        continue;
+      }
+      if (tok.type === TokenType.Delimiter && tok.value === "}") {
+        if (braceDepth > 0) {
+          braceDepth--;
+          this.advance();
+          continue;
+        }
+        // At depth 0, stop before the } — let the caller handle it
+        return;
+      }
+
+      // Semicolons at depth 0 are valid recovery points
+      if (tok.type === TokenType.Delimiter && tok.value === ";" && braceDepth === 0) {
         this.advance();
         return;
       }
-      if (tok.type === TokenType.Keyword && [
+
+      // Statement-starting keywords at depth 0 — stop and let parser try again
+      if (braceDepth === 0 && tok.type === TokenType.Keyword && [
         "fn", "if", "for", "while", "do", "return", "import", "export",
         "class", "try", "throw", "const", "let", "var", "switch", "match",
         "enum", "interface", "break", "continue"
       ].includes(tok.value)) {
         return; // Don't consume — let the parser try parsing this as a new statement
       }
+
       this.advance();
     }
   }
