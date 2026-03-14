@@ -785,4 +785,23 @@ describe("type checker", () => {
     const diags = check('let x = 42\nlet y = "hello"\nprint(x)');
     expect(diags.length).toBe(0);
   });
+
+  // ── Bare typed declarations ────────────────────────────────
+  it("compiles bare typed declaration x: number = 3", () => {
+    const js = compile("x: number = 3").js;
+    expect(js).toContain("let x = 3;");
+  });
+
+  it("detects bare typed mismatch x: number = 'hello'", () => {
+    const ast = compileToAST('x: number = "hello"');
+    const diags = typeCheck(ast);
+    expect(diags.length).toBeGreaterThan(0);
+    expect(diags[0].message).toContain("not assignable");
+  });
+
+  it("accepts bare typed declaration with correct type", () => {
+    const ast = compileToAST("x: string = \"hello\"");
+    const diags = typeCheck(ast);
+    expect(diags.length).toBe(0);
+  });
 });

@@ -151,6 +151,7 @@ export class Parser extends ParserBase {
           const body = this.parseStatement();
           stmt = { type: "LabeledStatement", label, body } as LabeledStatement;
         } else {
+          // Bare typed declaration: x: Type = value  (implicit let)
           stmt = this.parseIdentifierStatement(tok, next);
         }
       } else {
@@ -165,11 +166,16 @@ export class Parser extends ParserBase {
   }
 
   private parseIdentifierStatement(tok: Token, next: Token | undefined): Statement {
+    // Bare assignment: x = value (implicit let)
     if (next?.type === TokenType.Operator && next.value === "=") {
       const afterEq = this.peekAt(2);
       if (afterEq?.type !== TokenType.Operator || (afterEq.value !== "=" && afterEq.value !== ">")) {
         return this.parseVariableDeclaration("let");
       }
+    }
+    // Bare typed declaration: x: Type = value (implicit let)
+    if (next?.type === TokenType.Delimiter && next.value === ":") {
+      return this.parseVariableDeclaration("let");
     }
     return this.parseExpressionStatement();
   }
