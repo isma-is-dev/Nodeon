@@ -600,6 +600,25 @@ function analyzeSemantics(ast: Program, source: string): Diagnostic[] {
     }
   }
 
+  // Pre-pass: hoist top-level fn/class declarations (they're available before their textual position)
+  function hoistDeclarations(stmts: Statement[]): void {
+    for (const stmt of stmts) {
+      if (stmt.type === 'FunctionDeclaration') {
+        declare(stmt.name.name, getLine(stmt), 'fn');
+      } else if (stmt.type === 'ClassDeclaration') {
+        declare(stmt.name.name, getLine(stmt), 'class');
+      } else if (stmt.type === 'ExportDeclaration' && stmt.declaration) {
+        if (stmt.declaration.type === 'FunctionDeclaration') {
+          declare(stmt.declaration.name.name, getLine(stmt.declaration), 'fn');
+        } else if (stmt.declaration.type === 'ClassDeclaration') {
+          declare(stmt.declaration.name.name, getLine(stmt.declaration), 'class');
+        }
+      }
+    }
+  }
+
+  hoistDeclarations(ast.body);
+
   // Run the analysis
   walkStatements(ast.body);
 

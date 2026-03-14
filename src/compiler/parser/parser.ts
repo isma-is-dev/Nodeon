@@ -1396,6 +1396,15 @@ export class Parser extends ParserBase {
         }
       }
       if (raw[i] === "{") {
+        // Only treat { as interpolation if followed by identifier-start char
+        // This allows literal braces in strings like "{ }" or "{;"
+        const nextCh = i + 1 < raw.length ? raw[i + 1] : "";
+        const isInterpolation = /[a-zA-Z_$!~([]/.test(nextCh);
+        if (!isInterpolation) {
+          buffer += raw[i];
+          i++;
+          continue;
+        }
         if (buffer) {
           parts.push({ kind: "Text", value: buffer });
           buffer = "";
