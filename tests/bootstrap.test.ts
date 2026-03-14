@@ -73,6 +73,13 @@ describe("bootstrap: .no modules compile", () => {
     expect(js).toContain("emitExpression");
     expect(js.length).toBeGreaterThan(10000);
   });
+
+  it("compiler/type-checker.no compiles", () => {
+    const js = compileNoFile("compiler/type-checker.no");
+    expect(js).toContain("class TypeEnv");
+    expect(js).toContain("function typeCheck");
+    expect(js).toContain("inferExpression");
+  });
 });
 
 function stripModuleSyntax(js: string): string {

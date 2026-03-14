@@ -1,0 +1,331 @@
+// Nodeon Type Checker — validates type annotations, infers types, reports errors.
+
+const ANY = { kind: "any" }
+const VOID = { kind: "primitive", name: "void" }
+const STRING = { kind: "primitive", name: "string" }
+const NUMBER = { kind: "primitive", name: "number" }
+const BOOLEAN = { kind: "primitive", name: "boolean" }
+const NULL_TYPE = { kind: "primitive", name: "null" }
+const UNDEFINED = { kind: "primitive", name: "undefined" }
+
+// ── Type Environment / Scope ─────────────────────────────────────
+
+class TypeEnv {
+  constructor() {
+    this.scopes = [{ bindings: new Map() }]
+  }
+  fn push() { this.scopes.push({ bindings: new Map() }) }
+  fn pop() { this.scopes.pop() }
+  fn define(name, type) {
+    this.scopes[this.scopes.length - 1].bindings.set(name, type)
+  }
+  fn lookup(name) {
+    let i = this.scopes.length - 1
+    while i >= 0 {
+      const t = this.scopes[i].bindings.get(name)
+      if t { return t }
+      i = i - 1
+    }
+    return null
+  }
+}
+
+// ── TypeAnnotation -> NType ───────────────────────────────────────
+
+fn annotationToType(ann) {
+  if !ann { return ANY }
+  switch ann.kind {
+    case "named" {
+      const n = ann.name
+      if n == "string" { return STRING }
+      if n == "number" { return NUMBER }
+      if n == "boolean" { return BOOLEAN }
+      if n == "void" { return VOID }
+      if n == "null" { return NULL_TYPE }
+      if n == "undefined" { return UNDEFINED }
+      if n == "any" { return ANY }
+      if n == "never" { return { kind: "never" } }
+      return { kind: "named", name: n }
+    }
+    case "array" { return { kind: "array", element: annotationToType(ann.elementType) } }
+    case "union" { return { kind: "union", types: ann.types.map(annotationToType) } }
+    case "intersection" { return { kind: "intersection", types: ann.types.map(annotationToType) } }
+    case "generic" { return { kind: "generic", base: ann.name, args: ann.args.map(annotationToType) } }
+    case "function" { return { kind: "function", params: ann.params.map(annotationToType), returnType: annotationToType(ann.returnType) } }
+    case "tuple" { return { kind: "tuple", elements: ann.elements.map(annotationToType) } }
+    case "object" {
+      const props = new Map()
+      for p in ann.properties { props.set(p.key, annotationToType(p.value)) }
+      return { kind: "object", properties: props }
+    }
+    case "literal" {
+      if typeof ann.value == "string" { return STRING }
+      if typeof ann.value == "number" { return NUMBER }
+      if typeof ann.value == "boolean" { return BOOLEAN }
+      return ANY
+    }
+    default { return ANY }
+  }
+}
+
+// ── Type Display ─────────────────────────────────────────────────
+
+fn typeToString(t) {
+  switch t.kind {
+    case "primitive" { return t.name }
+    case "any" { return "any" }
+    case "never" { return "never" }
+    case "array" { return typeToString(t.element) + "[]" }
+    case "tuple" { return "[" + t.elements.map(typeToString).join(", ") + "]" }
+    case "union" { return t.types.map(typeToString).join(" | ") }
+    case "intersection" { return t.types.map(typeToString).join(" & ") }
+    case "function" { return "(" + t.params.map(typeToString).join(", ") + ") => " + typeToString(t.returnType) }
+    case "named" { return t.name }
+    case "generic" { return t.base + "<" + t.args.map(typeToString).join(", ") + ">" }
+    case "object" {
+      const entries = Array.from(t.properties).map((entry) => entry[0] + ": " + typeToString(entry[1]))
+      return "{ " + entries.join("; ") + " }"
+    }
+    default { return "unknown" }
+  }
+}
+
+// ── Type Compatibility ───────────────────────────────────────────
+
+fn isAssignableTo(source, target) {
+  if target.kind == "any" || source.kind == "any" { return true }
+  if source.kind == "never" { return true }
+  if source.kind == "primitive" && target.kind == "primitive" { return source.name == target.name }
+  if source.kind == "primitive" && (source.name == "null" || source.name == "undefined") { return true }
+  if source.kind == "named" && target.kind == "named" { return source.name == target.name }
+  if source.kind == "array" && target.kind == "array" { return isAssignableTo(source.element, target.element) }
+  if target.kind == "union" { return target.types.some((t) => isAssignableTo(source, t)) }
+  if source.kind == "union" { return source.types.every((t) => isAssignableTo(t, target)) }
+  if target.kind == "intersection" { return target.types.every((t) => isAssignableTo(source, t)) }
+  if source.kind == "function" && target.kind == "function" {
+    if source.params.length != target.params.length { return false }
+    let i = 0
+    while i < source.params.length {
+      if !isAssignableTo(target.params[i], source.params[i]) { return false }
+      i = i + 1
+    }
+    return isAssignableTo(source.returnType, target.returnType)
+  }
+  return false
+}
+
+// ── Expression Type Inference ────────────────────────────────────
+
+fn inferExpression(expr, env) {
+  switch expr.type {
+    case "Literal" {
+      switch expr.literalType {
+        case "string" { return STRING }
+        case "number" { return NUMBER }
+        case "boolean" { return BOOLEAN }
+        case "null" { return NULL_TYPE }
+        default { return ANY }
+      }
+    }
+    case "Identifier" { return env.lookup(expr.name) ?? ANY }
+    case "ArrayExpression" {
+      if expr.elements.length == 0 { return { kind: "array", element: ANY } }
+      return { kind: "array", element: inferExpression(expr.elements[0], env) }
+    }
+    case "ObjectExpression" {
+      const props = new Map()
+      for prop in expr.properties {
+        const key = prop.key.type == "Identifier" ? prop.key.name : String(prop.key.value)
+        props.set(key, inferExpression(prop.value, env))
+      }
+      return { kind: "object", properties: props }
+    }
+    case "BinaryExpression" {
+      if ["+", "-", "*", "/", "%", "**"].includes(expr.operator) {
+        const lt = inferExpression(expr.left, env)
+        const rt = inferExpression(expr.right, env)
+        if expr.operator == "+" && ((lt.kind == "primitive" && lt.name == "string") || (rt.kind == "primitive" && rt.name == "string")) { return STRING }
+        return NUMBER
+      }
+      if ["==", "!=", "===", "!==", "<", ">", "<=", ">=", "instanceof"].includes(expr.operator) { return BOOLEAN }
+      if ["&&", "||", "??"].includes(expr.operator) { return inferExpression(expr.right, env) }
+      return ANY
+    }
+    case "UnaryExpression" {
+      if expr.operator == "!" { return BOOLEAN }
+      if expr.operator == "typeof" { return STRING }
+      if expr.operator == "-" || expr.operator == "+" || expr.operator == "~" { return NUMBER }
+      return ANY
+    }
+    case "TemplateLiteral" { return STRING }
+    case "CallExpression" {
+      if expr.callee.type == "Identifier" {
+        const fnType = env.lookup(expr.callee.name)
+        if fnType && fnType.kind == "function" { return fnType.returnType }
+      }
+      return ANY
+    }
+    case "ArrowFunction" {
+      return { kind: "function", params: expr.params.map((p) => annotationToType(p.typeAnnotation)), returnType: annotationToType(expr.returnType) }
+    }
+    case "TernaryExpression" { return inferExpression(expr.consequent, env) }
+    case "AsExpression" { return annotationToType(expr.typeAnnotation) }
+    case "AwaitExpression" { return inferExpression(expr.argument, env) }
+    case "NewExpression" {
+      if expr.callee.type == "Identifier" { return { kind: "named", name: expr.callee.name } }
+      return ANY
+    }
+    default { return ANY }
+  }
+}
+
+// ── Statement Type Checking ──────────────────────────────────────
+
+fn getLine(stmt) { return stmt?.loc?.line ? stmt.loc.line - 1 : 0 }
+fn getCol(stmt) { return stmt?.loc?.column ? stmt.loc.column - 1 : 0 }
+
+// ── Type Narrowing ───────────────────────────────────────────────
+
+const TYPEOF_MAP = {
+  string: STRING, number: NUMBER, boolean: BOOLEAN,
+  undefined: UNDEFINED, object: { kind: "named", name: "object" },
+  function: { kind: "function", params: [], returnType: ANY },
+}
+
+fn extractTypeGuard(cond) {
+  if cond.type != "BinaryExpression" { return null }
+  if cond.operator != "===" && cond.operator != "==" { return null }
+
+  // typeof x === "string"
+  if cond.left.type == "UnaryExpression" && cond.left.operator == "typeof" && cond.left.argument.type == "Identifier" && cond.right.type == "Literal" && typeof cond.right.value == "string" {
+    const mapped = TYPEOF_MAP[cond.right.value]
+    if mapped { return { name: cond.left.argument.name, narrowedType: mapped } }
+  }
+  // "string" === typeof x (reversed)
+  if cond.right.type == "UnaryExpression" && cond.right.operator == "typeof" && cond.right.argument.type == "Identifier" && cond.left.type == "Literal" && typeof cond.left.value == "string" {
+    const mapped = TYPEOF_MAP[cond.left.value]
+    if mapped { return { name: cond.right.argument.name, narrowedType: mapped } }
+  }
+  return null
+}
+
+fn checkStatements(stmts, env, diags) {
+  for stmt in stmts { checkStatement(stmt, env, diags) }
+}
+
+fn checkStatement(stmt, env, diags) {
+  switch stmt.type {
+    case "VariableDeclaration" {
+      const declaredType = annotationToType(stmt.typeAnnotation)
+      const initType = inferExpression(stmt.value, env)
+      if declaredType.kind != "any" && initType.kind != "any" {
+        if !isAssignableTo(initType, declaredType) {
+          diags.push({
+            line: getLine(stmt), column: getCol(stmt),
+            message: "Type '" + typeToString(initType) + "' is not assignable to type '" + typeToString(declaredType) + "'",
+            severity: "error",
+          })
+        }
+      }
+      const resolvedType = declaredType.kind != "any" ? declaredType : initType
+      if stmt.name { env.define(stmt.name.name, resolvedType) }
+    }
+    case "FunctionDeclaration" {
+      const paramTypes = stmt.params.map((p) => annotationToType(p.typeAnnotation))
+      const retType = annotationToType(stmt.returnType)
+      env.define(stmt.name.name, { kind: "function", params: paramTypes, returnType: retType })
+      env.push()
+      let pi = 0
+      while pi < stmt.params.length {
+        env.define(stmt.params[pi].name, paramTypes[pi])
+        pi = pi + 1
+      }
+      checkStatements(stmt.body, env, diags)
+      if retType.kind != "any" { checkReturnTypes(stmt.body, retType, env, diags) }
+      env.pop()
+    }
+    case "ClassDeclaration" {
+      env.define(stmt.name.name, { kind: "named", name: stmt.name.name })
+    }
+    case "ExpressionStatement" {
+      inferExpression(stmt.expression, env)
+    }
+    case "IfStatement" {
+      inferExpression(stmt.condition, env)
+      env.push()
+      const guard = extractTypeGuard(stmt.condition)
+      if guard { env.define(guard.name, guard.narrowedType) }
+      checkStatements(stmt.consequent, env, diags)
+      env.pop()
+      if stmt.alternate { env.push(); checkStatements(stmt.alternate, env, diags); env.pop() }
+    }
+    case "ReturnStatement" {
+      if stmt.value { inferExpression(stmt.value, env) }
+    }
+    case "ForStatement" {
+      env.push()
+      if stmt.variable.type == "Identifier" { env.define(stmt.variable.name, ANY) }
+      checkStatements(stmt.body, env, diags)
+      env.pop()
+    }
+    case "WhileStatement" {
+      inferExpression(stmt.condition, env)
+      env.push(); checkStatements(stmt.body, env, diags); env.pop()
+    }
+    case "DoWhileStatement" {
+      inferExpression(stmt.condition, env)
+      env.push(); checkStatements(stmt.body, env, diags); env.pop()
+    }
+    case "ImportDeclaration" {
+      if stmt.defaultImport { env.define(stmt.defaultImport, ANY) }
+      for spec in stmt.namedImports { env.define(spec.alias ?? spec.name, ANY) }
+    }
+    case "ExportDeclaration" {
+      if stmt.declaration { checkStatement(stmt.declaration, env, diags) }
+    }
+    case "TryCatchStatement" {
+      env.push(); checkStatements(stmt.tryBlock, env, diags); env.pop()
+      if stmt.catchBlock.length > 0 {
+        env.push()
+        if stmt.catchParam { env.define(stmt.catchParam.name, ANY) }
+        checkStatements(stmt.catchBlock, env, diags)
+        env.pop()
+      }
+      if stmt.finallyBlock { env.push(); checkStatements(stmt.finallyBlock, env, diags); env.pop() }
+    }
+    case "EnumDeclaration" {
+      env.define(stmt.name.name, { kind: "named", name: stmt.name.name })
+    }
+    case "InterfaceDeclaration" {
+      env.define(stmt.name.name, { kind: "named", name: stmt.name.name })
+    }
+  }
+}
+
+fn checkReturnTypes(body, expected, env, diags) {
+  for stmt in body {
+    if stmt.type == "ReturnStatement" && stmt.value {
+      const actual = inferExpression(stmt.value, env)
+      if actual.kind != "any" && !isAssignableTo(actual, expected) {
+        diags.push({
+          line: getLine(stmt), column: getCol(stmt),
+          message: "Type '" + typeToString(actual) + "' is not assignable to return type '" + typeToString(expected) + "'",
+          severity: "error",
+        })
+      }
+    }
+    if stmt.type == "IfStatement" {
+      checkReturnTypes(stmt.consequent, expected, env, diags)
+      if stmt.alternate { checkReturnTypes(stmt.alternate, expected, env, diags) }
+    }
+  }
+}
+
+// ── Public API ───────────────────────────────────────────────────
+
+export fn typeCheck(ast) {
+  const diags = []
+  const env = new TypeEnv()
+  checkStatements(ast.body, env, diags)
+  return diags
+}
