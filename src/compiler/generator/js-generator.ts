@@ -316,9 +316,9 @@ function emitExport(stmt: ExportDeclaration, ctx: GenContext): string {
     return `export *${alias} from ${JSON.stringify(src)};`;
   }
 
-  // export { x, y }  or  export { x, y } from "mod"
+  // export { x, y }  or  export { x as y } from "mod"
   if (stmt.namedExports) {
-    const names = stmt.namedExports.join(`,${ctx.sp}`);
+    const names = stmt.namedExports.map(s => s.alias ? `${s.name} as ${s.alias}` : s.name).join(`,${ctx.sp}`);
     const from = stmt.source ? ` from ${JSON.stringify(rewriteImportSource(stmt.source))}` : "";
     return `export${ctx.sp}{${ctx.sp}${names}${ctx.sp}}${from};`;
   }

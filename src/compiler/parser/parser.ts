@@ -65,6 +65,7 @@ import {
   InterfaceProperty,
   TypeAliasDeclaration,
   ImportSpecifier,
+  ExportSpecifier,
   LabeledStatement,
   AsExpression,
 } from "@ast/nodes";
@@ -260,6 +261,7 @@ export class Parser extends ParserBase {
     const params: Param[] = [];
     if (this.checkDelimiter(")")) return params;
     do {
+      if (this.checkDelimiter(")")) break; // trailing comma
       let rest = false;
       if (this.checkOperator("...")) {
         this.advance();
@@ -457,12 +459,18 @@ export class Parser extends ParserBase {
       return { type: "ExportDeclaration", isDefault: false, exportAll: true, source, exportAllAlias };
     }
 
-    // export { x, y }  or  export { x } from "mod"
+    // export { x, y }  or  export { x as y } from "mod"
     if (this.checkDelimiter("{")) {
       this.advance(); // consume {
-      const namedExports: string[] = [];
+      const namedExports: ExportSpecifier[] = [];
       while (!this.checkDelimiter("}") && !this.isAtEnd()) {
-        namedExports.push(this.consumeIdentifier("Expected export name").name);
+        const name = this.consumeIdentifier("Expected export name").name;
+        let alias: string | undefined;
+        if (this.checkKeyword("as")) {
+          this.advance();
+          alias = this.consumeIdentifier("Expected alias name").name;
+        }
+        namedExports.push({ type: "ExportSpecifier", name, alias });
         if (!this.matchDelimiter(",")) break;
       }
       this.consumeDelimiter("}", "Expected '}'");
@@ -1200,6 +1208,7 @@ export class Parser extends ParserBase {
     const args: Expression[] = [];
     if (!this.checkDelimiter(")")) {
       do {
+        if (this.checkDelimiter(")")) break; // trailing comma
         args.push(this.parseExpression());
       } while (this.matchDelimiter(","));
     }
@@ -1212,6 +1221,7 @@ export class Parser extends ParserBase {
     const elements: Expression[] = [];
     if (!this.checkDelimiter("]")) {
       do {
+        if (this.checkDelimiter("]")) break; // trailing comma
         elements.push(this.parseExpression());
       } while (this.matchDelimiter(","));
     }
@@ -1224,6 +1234,7 @@ export class Parser extends ParserBase {
     const properties: ObjectProperty[] = [];
     if (!this.checkDelimiter("}")) {
       do {
+        if (this.checkDelimiter("}")) break; // trailing comma
         const keyTok = this.peek();
         let key: Identifier | Literal | Expression;
         let computed = false;

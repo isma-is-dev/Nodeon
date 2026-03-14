@@ -928,3 +928,47 @@ describe("import aliases", () => {
     expect(js).not.toContain(" as ");
   });
 });
+
+// ── Trailing commas ─────────────────────────────────────────────
+describe("trailing commas", () => {
+  it("allows trailing comma in function params", () => {
+    const js = compile("fn test(a, b,) { return a + b }").js;
+    expect(js).toContain("function test(a, b)");
+  });
+
+  it("allows trailing comma in call arguments", () => {
+    const js = compile("test(1, 2,)").js;
+    expect(js).toContain("test(1, 2)");
+  });
+
+  it("allows trailing comma in arrays", () => {
+    const js = compile("let arr = [1, 2, 3,]").js;
+    expect(js).toContain("[1, 2, 3]");
+  });
+
+  it("allows trailing comma in objects", () => {
+    const js = compile("let obj = { a: 1, b: 2, }").js;
+    expect(js).toContain("a: 1");
+    expect(js).toContain("b: 2");
+  });
+});
+
+// ── Export aliases ──────────────────────────────────────────────
+describe("export aliases", () => {
+  it("compiles export with alias", () => {
+    const js = compile('export { foo as bar }').js;
+    expect(js).toContain("foo as bar");
+  });
+
+  it("compiles export with mixed aliases and plain", () => {
+    const js = compile('export { foo as bar, baz }').js;
+    expect(js).toContain("foo as bar");
+    expect(js).toContain("baz");
+  });
+
+  it("compiles re-export with alias", () => {
+    const js = compile('export { foo as bar } from "mod"').js;
+    expect(js).toContain("foo as bar");
+    expect(js).toContain('"mod"');
+  });
+});

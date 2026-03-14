@@ -132,11 +132,17 @@ export type ImportDeclaration = {
   source: string;
 };
 
+export type ExportSpecifier = {
+  type: "ExportSpecifier";
+  name: string;
+  alias?: string;
+};
+
 export type ExportDeclaration = {
   type: "ExportDeclaration";
   declaration?: Statement;
   isDefault: boolean;
-  namedExports?: string[];       // export { x, y }
+  namedExports?: ExportSpecifier[];  // export { x, y } or export { x as y }
   source?: string;               // export { x } from "mod"  /  export * from "mod"
   exportAll?: boolean;           // export * from "mod"
   exportAllAlias?: string;       // export * as ns from "mod"
