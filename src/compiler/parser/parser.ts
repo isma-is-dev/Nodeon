@@ -974,15 +974,6 @@ export class Parser extends ParserBase {
         }
       }
 
-      // Postfix ++ and --
-      if (tok.type === TokenType.Operator && (tok.value === "++" || tok.value === "--")) {
-        if (left.type === "Identifier" || left.type === "MemberExpression") {
-          this.advance();
-          left = { type: "UpdateExpression", operator: tok.value as "++" | "--", argument: left, prefix: false } as UpdateExpression;
-          continue;
-        }
-      }
-
       // Binary operators
       if (tok.type === TokenType.Operator && PRECEDENCE[tok.value] !== undefined) {
         const opPrec = PRECEDENCE[tok.value];
@@ -1004,7 +995,7 @@ export class Parser extends ParserBase {
       }
 
       // Type assertion: value as Type (stripped in output)
-      if (tok.type === TokenType.Identifier && tok.value === "as") {
+      if ((tok.type === TokenType.Identifier || tok.type === TokenType.Keyword) && tok.value === "as") {
         this.advance(); // consume 'as'
         const typeAnnotation = this.parseTypeAnnotation();
         left = { type: "AsExpression", expression: left, typeAnnotation } as AsExpression;
@@ -1022,52 +1013,6 @@ export class Parser extends ParserBase {
         const alternate = this.parseExpression();
         left = { type: "TernaryExpression", condition: left, consequent, alternate } as TernaryExpression;
         continue;
-      }
-
-      // Member access . and ?. (property, call, index)
-      if (tok.type === TokenType.Operator && (tok.value === "." || tok.value === "?.")) {
-        const optional = tok.value === "?.";
-        this.advance();
-
-        // Optional call: obj?.(args)
-        if (optional && this.checkDelimiter("(")) {
-          left = this.parseCallArguments(left, true);
-          continue;
-        }
-
-        // Optional index: obj?.[expr]
-        if (optional && this.checkDelimiter("[")) {
-          this.advance(); // skip [
-          const prop = this.parseExpression();
-          this.consumeDelimiter("]", "Expected ']'");
-          left = { type: "MemberExpression", object: left, property: prop, computed: true, optional: true } as MemberExpression;
-          continue;
-        }
-
-        const prop = this.consumePropertyName("Expected property name");
-        left = { type: "MemberExpression", object: left, property: prop, computed: false, optional } as MemberExpression;
-        // Check for call: obj.method(...)
-        if (this.checkDelimiter("(")) {
-          left = this.parseCallArguments(left, false);
-        }
-        continue;
-      }
-
-      // Computed member access [
-      if (tok.type === TokenType.Delimiter && tok.value === "[") {
-        this.advance();
-        const prop = this.parseExpression();
-        this.consumeDelimiter("]", "Expected ']'");
-        left = { type: "MemberExpression", object: left, property: prop, computed: true, optional: false } as MemberExpression;
-        continue;
-      }
-
-      // Function call: name(...)
-      if (tok.type === TokenType.Delimiter && tok.value === "(") {
-        if (left.type === "Identifier" || left.type === "MemberExpression" || left.type === "CallExpression") {
-          left = this.parseCallArguments(left, false);
-          continue;
-        }
       }
 
       break;
@@ -1140,7 +1085,8 @@ export class Parser extends ParserBase {
         }
         this.consumeDelimiter(")", "Expected ')'");
       }
-      return { type: "NewExpression", callee, arguments: args } as NewExpression;
+      const newExpr = { type: "NewExpression", callee, arguments: args } as NewExpression;
+      return this.parsePostfix(newExpr);
     }
 
     // ...spread
@@ -1165,8 +1111,8 @@ export class Parser extends ParserBase {
     return this.parsePostfix();
   }
 
-  private parsePostfix(): Expression {
-    let left = this.parsePrimary();
+  private parsePostfix(initial?: Expression): Expression {
+    let left = initial ?? this.parsePrimary();
 
     while (true) {
       const tok = this.peek();
