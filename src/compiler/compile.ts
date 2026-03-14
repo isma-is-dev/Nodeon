@@ -3,10 +3,12 @@ import { Parser } from "@parser/parser";
 import { generateJS, generateJSWithSourceMap } from "@compiler/generator/js-generator";
 import { Program } from "@ast/nodes";
 import type { SourceMap } from "@compiler/generator/source-map";
+import { typeCheck, TypeDiagnostic } from "@compiler/type-checker";
 
 export interface CompileResult {
   js: string;
   ast: Program;
+  diagnostics: TypeDiagnostic[];
 }
 
 export interface CompileWithMapResult {
@@ -17,12 +19,14 @@ export interface CompileWithMapResult {
 
 export interface CompileOptions {
   minify?: boolean;
+  check?: boolean;
 }
 
 export function compile(source: string, options: CompileOptions = {}): CompileResult {
   const ast = compileToAST(source);
+  const diagnostics = options.check ? typeCheck(ast) : [];
   const js = generateJS(ast, options.minify ?? false);
-  return { js, ast };
+  return { js, ast, diagnostics };
 }
 
 export function compileWithSourceMap(
@@ -51,3 +55,5 @@ export { Lexer } from "@lexer/lexer";
 export { Parser } from "@parser/parser";
 export { generateJS, generateJSWithSourceMap } from "@compiler/generator/js-generator";
 export type { SourceMap } from "@compiler/generator/source-map";
+export { typeCheck } from "@compiler/type-checker";
+export type { TypeDiagnostic } from "@compiler/type-checker";

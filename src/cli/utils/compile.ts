@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { resolve, basename, join } from "path";
 import crypto from "crypto";
 import type * as Compiler from "@compiler/compile";
+import type { TypeDiagnostic } from "@compiler/compile";
 import { formatError } from "./errors";
 
 let compilerModule: typeof Compiler | null = null;
@@ -18,12 +19,14 @@ export interface CLICompileOptions {
   minify: boolean;
   write: boolean;
   sourceMap?: boolean;
+  check?: boolean;
 }
 
 export interface CompileResult {
   ast: unknown;
   jsCode: string;
   out?: string | null;
+  diagnostics?: TypeDiagnostic[];
 }
 
 interface CacheEntry {
@@ -100,10 +103,10 @@ export function compileFile(inputPath: string, outputPath?: string, opts: CLICom
     }
 
     const { compile } = getCompiler();
-    const { js: jsCode, ast } = compile(source, { minify: opts.minify });
+    const { js: jsCode, ast, diagnostics } = compile(source, { minify: opts.minify, check: opts.check });
     writeFileSync(cachePath, JSON.stringify({ jsCode } satisfies CacheEntry), "utf8");
     if (out) writeFileSync(out, jsCode, "utf8");
-    return { ast, jsCode, out };
+    return { ast, jsCode, out, diagnostics };
   } catch (err: any) {
     console.error(formatError(inputPath, source, err));
     process.exit(1);

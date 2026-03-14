@@ -1,22 +1,22 @@
-# ──────────────────────────────────────────────────────────
-# Nodeon Feature Showcase: tests all major language features
-# ──────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────
+// Nodeon Feature Showcase: tests all major language features
+// ──────────────────────────────────────────────────────────
 
-# ── Variables with different declaration styles ───────────
+// ── Variables with different declaration styles ───────────
 x = 42
 const PI = 3.14159
 let name = "Nodeon"
 
-# ── Hex, binary, octal number literals ────────────────────
+// ── Hex, binary, octal number literals ────────────────────
 hex = 0xFF
 bin = 0b1010
 oct = 0o77
 
-# ── JS-style comments also work ──────────────────────────
+// ── JS-style comments also work ──────────────────────────
 // This is a JS-style line comment
 /* This is a block comment */
 
-# ── Switch statement ──────────────────────────────────────
+// ── Switch statement ──────────────────────────────────────
 color = "red"
 switch color {
   case "red" {
@@ -30,38 +30,38 @@ switch color {
   }
 }
 
-# ── Do-while loop ────────────────────────────────────────
+// ── Do-while loop ────────────────────────────────────────
 n = 5
 do {
   n = n - 1
 } while n > 0
 
-# ── Compound assignment operators ─────────────────────────
+// ── Compound assignment operators ─────────────────────────
 counter = 0
 counter += 10
 counter -= 3
 counter *= 2
 
-# ── Ternary expression ───────────────────────────────────
+// ── Ternary expression ───────────────────────────────────
 status = counter > 10 ? "high" : "low"
 print("Counter status: {status}")
 
-# ── typeof ────────────────────────────────────────────────
+// ── typeof ────────────────────────────────────────────────
 print(typeof x)
 
-# ── Optional chaining ────────────────────────────────────
+// ── Optional chaining ────────────────────────────────────
 config = { db: { host: "localhost" } }
 port = config.db?.port
 print("Port: {port}")
 
-# ── Nullish coalescing ───────────────────────────────────
+// ── Nullish coalescing ───────────────────────────────────
 fallback = port ?? 3000
 print("Using port: {fallback}")
 
-# ── Try/catch/finally ────────────────────────────────────
+// ── Try/catch/finally ────────────────────────────────────
 try {
   result = JSON.parse('{"ok": true}')
-  # Single-quoted strings don't interpolate, so {"ok": true} is literal
+  // Single-quoted strings don't interpolate, so {"ok": true} is literal
   print("Parsed: {result.ok}")
 } catch (err) {
   print("Error: {err}")
@@ -69,7 +69,7 @@ try {
   print("Cleanup done")
 }
 
-# ── Break and continue ───────────────────────────────────
+// ── Break and continue ───────────────────────────────────
 for i in 0..10 {
   if i == 3 {
     continue
@@ -80,7 +80,7 @@ for i in 0..10 {
   print(i)
 }
 
-# ── Strict equality (=== in JS) ──────────────────────────
+// ── Strict equality (=== in JS) ──────────────────────────
 a = "5"
 b = 5
 if a == b {
@@ -89,18 +89,18 @@ if a == b {
   print("not equal (=== comparison)")
 }
 
-# ── Backtick template literals ────────────────────────────
+// ── Backtick template literals ────────────────────────────
 greeting = `Hello ${name}, you have ${counter} items`
 print(greeting)
 
-# ── Destructuring ───────────────────────────────────────
+// ── Destructuring ───────────────────────────────────────
 const { host, port } = config.db
 print("Host: {host}")
 
 let [first, second, ...rest] = [1, 2, 3, 4, 5]
 print("First: {first}, Rest: {rest}")
 
-# ── Type Annotations (stripped in JS output) ────────────
+// ── Type Annotations (stripped in JS output) ────────────
 let count: number = 42
 const label: string = "items"
 
@@ -109,7 +109,7 @@ fn add(a: number, b: number): number {
 }
 print("Sum: {add(count, 8)}")
 
-# ── Pattern Matching ────────────────────────────────────
+// ── Pattern Matching ────────────────────────────────────
 match color {
   case "red" {
     print("Match: Stop!")
@@ -122,7 +122,7 @@ match color {
   }
 }
 
-# ── Match with guard clauses ────────────────────────────
+// ── Match with guard clauses ────────────────────────────
 let score = 85
 match score {
   case 100 {
@@ -136,21 +136,21 @@ match score {
   }
 }
 
-# ── Enums ───────────────────────────────────────────────
+// ── Enums ───────────────────────────────────────────────
 enum Color { Red, Green, Blue }
 print("Red = {Color.Red}")
 
 enum Status { OK = 200, NotFound = 404, Error = 500 }
 print("OK = {Status.OK}")
 
-# ── Pipe Operator ───────────────────────────────────────
+// ── Pipe Operator ───────────────────────────────────────
 fn double(x) { return x * 2 }
 fn increment(x) { return x + 1 }
 
 let result = 5 |> double |> increment
 print("5 |> double |> increment = {result}")
 
-# ── Interfaces (type-only, stripped from JS) ────────────
+// ── Interfaces (type-only, stripped from JS) ────────────
 interface Shape {
   area(): number,
   perimeter(): number

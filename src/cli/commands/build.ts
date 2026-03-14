@@ -1,16 +1,18 @@
 import { basename, resolve, dirname, relative } from "path";
 import { compileFile } from "../utils/compile";
-import { GREEN, RED, DIM, RESET } from "../utils/colors";
+import { GREEN, RED, DIM, YELLOW, RESET } from "../utils/colors";
 import { resolveNodeonFile } from "./run";
 import { resolveImport } from "@compiler/resolver";
 import { compileToAST } from "@compiler/compile";
 import { readFileSync } from "fs";
 import { ImportDeclaration, ExportDeclaration } from "@ast/nodes";
+import type { TypeDiagnostic } from "@compiler/compile";
 
 export function runBuild(args: string[]) {
   const flags = args;
   const minify = flags.includes("-min") || flags.includes("--minify");
   const sourceMap = flags.includes("--map");
+  const check = flags.includes("--check");
   const positional = flags.filter((f) => !f.startsWith("-"));
 
   if (positional.length === 0) {
@@ -40,9 +42,12 @@ export function runBuild(args: string[]) {
     try {
       // For the entry file, use the explicit output path if given
       const outPath = (file === absInput) ? output : undefined;
-      const { out } = compileFile(relFile, outPath, { minify, write: true, sourceMap });
+      const { out, diagnostics } = compileFile(relFile, outPath, { minify, write: true, sourceMap, check });
       const extra = [minify ? "minified" : "", sourceMap ? "+map" : ""].filter(Boolean).join(", ");
       console.log(`  ${GREEN}✓${RESET} ${basename(relFile)} → ${basename(out!)}${extra ? ` (${extra})` : ""}`);
+      if (diagnostics && diagnostics.length > 0) {
+        printDiagnostics(relFile, diagnostics);
+      }
       compiled++;
     } catch (err: any) {
       console.error(`  ${RED}✗${RESET} ${basename(relFile)}: ${err.message}`);
@@ -52,6 +57,15 @@ export function runBuild(args: string[]) {
 
   if (filesToCompile.length > 1) {
     console.log(`\n${DIM}${compiled} compiled${failed ? `, ${failed} failed` : ""}${RESET}`);
+  }
+}
+
+function printDiagnostics(file: string, diagnostics: TypeDiagnostic[]): void {
+  for (const d of diagnostics) {
+    const sev = d.severity === "error" ? `${RED}error${RESET}`
+      : d.severity === "warning" ? `${YELLOW}warn${RESET}`
+      : `${DIM}hint${RESET}`;
+    console.log(`    ${sev}: ${d.message} ${DIM}(${file}:${d.line + 1}:${d.column + 1})${RESET}`);
   }
 }
 

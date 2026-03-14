@@ -400,7 +400,12 @@ function emitSwitch(stmt: SwitchStatement, ctx: GenContext): string {
       ? `${pad(inner)}case ${emitExpression(c.test, inner)}:`
       : `${pad(inner)}default:`;
     const body = c.consequent.map((s) => pad(caseInner) + emitStatement(s, caseInner)).join(ctx.nl);
-    return `${header}${ctx.nl}${body}`;
+    // Auto-break: Nodeon switch cases are block-scoped, no fall-through.
+    // Skip if the last statement already exits (break/return/throw/continue).
+    const last = c.consequent.length > 0 ? c.consequent[c.consequent.length - 1] : null;
+    const exits = last && (last.type === "BreakStatement" || last.type === "ReturnStatement" || last.type === "ThrowStatement" || last.type === "ContinueStatement");
+    const brk = exits ? "" : `${ctx.nl}${pad(caseInner)}break;`;
+    return `${header}${ctx.nl}${body}${brk}`;
   }).join(ctx.nl);
   return `switch${ctx.sp}(${disc})${ctx.sp}{${ctx.nl}${cases}${ctx.nl}${pad(ctx)}}`;
 }

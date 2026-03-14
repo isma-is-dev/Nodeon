@@ -817,4 +817,56 @@ describe("type checker", () => {
     expect(js).toContain("class Box {");
     expect(js).not.toContain("<T>");
   });
+
+});
+
+// ── Switch auto-break ───────────────────────────────────────────
+describe("switch auto-break", () => {
+  it("adds break to each case block automatically", () => {
+    const js = compile('switch x {\n  case 1 { print("one") }\n  case 2 { print("two") }\n  default { print("other") }\n}').js;
+    expect(js).toContain("break;");
+    const breaks = js.match(/break;/g);
+    expect(breaks?.length).toBe(3);
+  });
+
+  it("does not add break when case already has return", () => {
+    const js = compile('fn test(x) {\n  switch x {\n    case 1 { return "one" }\n    default { return "other" }\n  }\n}').js;
+    expect(js).not.toMatch(/return[^}]*break/);
+  });
+
+  it("does not add break when case already has throw", () => {
+    const js = compile('switch x {\n  case 1 { throw new Error("bad") }\n  default { print("ok") }\n}').js;
+    const breaks = js.match(/break;/g);
+    expect(breaks?.length).toBe(1);
+  });
+
+  it("does not add break when case already has explicit break", () => {
+    const js = compile('switch x {\n  case 1 { break }\n  default { print("ok") }\n}').js;
+    const breaks = js.match(/break;/g);
+    expect(breaks?.length).toBe(2);
+  });
+});
+
+// ── Type-checker integration via compile() ──────────────────────
+describe("type-checker integration", () => {
+  it("returns empty diagnostics without --check", () => {
+    const result = compile("let x: number = 42");
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it("returns empty diagnostics when types are correct", () => {
+    const result = compile("let x: number = 42", { check: true });
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it("returns diagnostics for type mismatch with --check", () => {
+    const result = compile('let x: number = "hello"', { check: true });
+    expect(result.diagnostics.length).toBeGreaterThan(0);
+    expect(result.diagnostics[0].message).toContain("not assignable");
+  });
+
+  it("checks function return types", () => {
+    const result = compile('fn add(a: number, b: number): number {\n  return "oops"\n}', { check: true });
+    expect(result.diagnostics.length).toBeGreaterThan(0);
+  });
 });

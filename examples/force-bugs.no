@@ -1,19 +1,19 @@
-# ─────────────────────────────────────────────────────────────
-# Nodeon Stress Test Example
-# Designed to test:
-# - async / await
-# - try / catch / throw
-# - nested loops
-# - classes + inheritance
-# - closures
-# - recursion
-# - interpolation
-# - complex objects
-# - intentional bugs
-# ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// Nodeon Stress Test Example
+// Designed to test:
+// - async / await
+// - try / catch / throw
+// - nested loops
+// - classes + inheritance
+// - closures
+// - recursion
+// - interpolation
+// - complex objects
+// - intentional bugs
+// ─────────────────────────────────────────────────────────────
 
 
-# ── Custom Error Class ────────────────────────────────────────
+// ── Custom Error Class ────────────────────────────────────────
 class ValidationError {
     constructor(message, field) {
         this.name = "ValidationError"
@@ -23,7 +23,7 @@ class ValidationError {
 }
 
 
-# ── Logger class ──────────────────────────────────────────────
+// ── Logger class ──────────────────────────────────────────────
 class Logger {
 
     constructor(prefix = "APP") {
@@ -46,7 +46,7 @@ class Logger {
 }
 
 
-# ── Recursive Fibonacci (CPU stress) ─────────────────────────
+// ── Recursive Fibonacci (CPU stress) ─────────────────────────
 fn fibonacci(n) {
 
     if n < 0 {
@@ -62,7 +62,7 @@ fn fibonacci(n) {
 
 
 
-# ── Higher Order Function (closure) ──────────────────────────
+// ── Higher Order Function (closure) ──────────────────────────
 fn makeMultiplier(x) {
 
     fn multiply(n) {
@@ -78,7 +78,7 @@ triple = makeMultiplier(3)
 
 
 
-# ── Simulated Database ───────────────────────────────────────
+// ── Simulated Database ───────────────────────────────────────
 class FakeDatabase {
 
     constructor() {
@@ -105,7 +105,7 @@ db = new FakeDatabase()
 
 
 
-# ── User Service ─────────────────────────────────────────────
+// ── User Service ─────────────────────────────────────────────
 class UserService {
 
     constructor(logger) {
@@ -158,11 +158,11 @@ service = new UserService(logger)
 
 
 
-# ── Register users ───────────────────────────────────────────
+// ── Register users ───────────────────────────────────────────
 users = [
     { name: "Alice", age: 30 },
-    { name: "Bob", age: -5 },      # invalid age
-    { age: 20 },                   # missing name
+    { name: "Bob", age: -5 },      // invalid age
+    { age: 20 },                   // missing name
     { name: "Charlie", age: 25 }
 ]
 
@@ -180,7 +180,7 @@ for user in users {
 
 
 
-# ── Async simulation ─────────────────────────────────────────
+// ── Async simulation ─────────────────────────────────────────
 async fn fakeFetchUser(id) {
 
     try {
@@ -203,7 +203,7 @@ async fn fakeFetchUser(id) {
 
 
 
-# ── Fetch users ──────────────────────────────────────────────
+// ── Fetch users ──────────────────────────────────────────────
 results = []
 
 for id in ids {
@@ -218,7 +218,7 @@ for id in ids {
 
 
 
-# ── Complex loop logic ───────────────────────────────────────
+// ── Complex loop logic ───────────────────────────────────────
 for user in results {
 
     name = user.profile.name
@@ -239,7 +239,7 @@ for user in results {
 
 
 
-# ── Intentional logic bug ────────────────────────────────────
+// ── Intentional logic bug ────────────────────────────────────
 total = 0
 
 numbers = [1,2,3,4,5]
@@ -250,12 +250,12 @@ for n in numbers {
 
 }
 
-# BUG: wrong variable used
+// BUG: wrong variable used
 print("Average: {sum / numbers.length}")
 
 
 
-# ── While loop stress ────────────────────────────────────────
+// ── While loop stress ────────────────────────────────────────
 i = 0
 
 while i < 5 {
@@ -271,7 +271,7 @@ while i < 5 {
 
 
 
-# ── Object mutation ──────────────────────────────────────────
+// ── Object mutation ──────────────────────────────────────────
 settings = {
     retries: 3,
     timeout: 1000,
@@ -284,7 +284,7 @@ print("Timeout now {settings.timeout}")
 
 
 
-# ── Intentional runtime bug ──────────────────────────────────
+// ── Intentional runtime bug ──────────────────────────────────
 fn divide(a, b) {
 
     if b == 0 {
@@ -309,7 +309,7 @@ try {
 
 
 
-# ── Logger dump ──────────────────────────────────────────────
+// ── Logger dump ──────────────────────────────────────────────
 logger.dump()
 
 
