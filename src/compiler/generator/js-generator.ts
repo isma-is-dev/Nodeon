@@ -599,8 +599,11 @@ function emitBinary(bin: BinaryExpression, ctx: GenContext): string {
   if (op === "==") op = "===";
   else if (op === "!=") op = "!==";
 
-  // Range operator (..) is handled at the ForStatement level, but
-  // if it appears in an expression context emit as-is for safety
+  // Range operator (..) is only valid inside for loops (handled at ForStatement level)
+  if (bin.operator === "..") {
+    throw new Error("Range operator '..' can only be used inside 'for' loops (e.g., for i in 0..10)");
+  }
+
   const left = parenthesizeIfNeeded(bin.left, bin.operator, ctx);
   const right = parenthesizeIfNeeded(bin.right, bin.operator, ctx);
   return `${left}${ctx.sp}${op}${ctx.sp}${right}`;
