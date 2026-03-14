@@ -26,6 +26,13 @@ import {
   CodeAction,
   CodeActionKind,
   SemanticTokensParams,
+  SignatureHelp,
+  SignatureInformation,
+  ParameterInformation,
+  DocumentSymbol,
+  SymbolKind,
+  DocumentSymbolParams,
+  InsertTextFormat,
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { Lexer } from '@lexer/lexer';
@@ -53,6 +60,10 @@ connection.onInitialize((_params: InitializeParams): InitializeResult => {
       },
       definitionProvider: true,
       documentFormattingProvider: true,
+      signatureHelpProvider: {
+        triggerCharacters: ['(', ',']
+      },
+      documentSymbolProvider: true,
       codeActionProvider: true,
       renameProvider: { prepareProvider: false },
       referencesProvider: true,
@@ -666,6 +677,36 @@ connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] =
 
   // Built-in functions
   items.push({ label: 'print', kind: CompletionItemKind.Function, detail: 'print(value) → console.log' });
+
+  // Snippet completions
+  const snippets: { label: string; detail: string; insertText: string }[] = [
+    { label: 'fn', detail: 'Function declaration', insertText: 'fn ${1:name}(${2:params}) {\n  ${0}\n}' },
+    { label: 'afn', detail: 'Async function', insertText: 'async fn ${1:name}(${2:params}) {\n  ${0}\n}' },
+    { label: 'class', detail: 'Class declaration', insertText: 'class ${1:Name} {\n  constructor(${2}) {\n    ${0}\n  }\n}' },
+    { label: 'if', detail: 'If statement', insertText: 'if ${1:condition} {\n  ${0}\n}' },
+    { label: 'ife', detail: 'If-else statement', insertText: 'if ${1:condition} {\n  ${2}\n} else {\n  ${0}\n}' },
+    { label: 'for', detail: 'For-in loop', insertText: 'for ${1:item} in ${2:collection} {\n  ${0}\n}' },
+    { label: 'forr', detail: 'For-range loop', insertText: 'for ${1:i} in ${2:0}..${3:10} {\n  ${0}\n}' },
+    { label: 'while', detail: 'While loop', insertText: 'while ${1:condition} {\n  ${0}\n}' },
+    { label: 'match', detail: 'Match expression', insertText: 'match ${1:expr} {\n  case ${2:value} {\n    ${0}\n  }\n  default {\n  }\n}' },
+    { label: 'try', detail: 'Try-catch block', insertText: 'try {\n  ${1}\n} catch (${2:err}) {\n  ${0}\n}' },
+    { label: 'imp', detail: 'Import statement', insertText: 'import ${1:name} from "${2:module}"' },
+    { label: 'impn', detail: 'Named import', insertText: 'import { ${1:name} } from "${2:module}"' },
+    { label: 'export', detail: 'Export function', insertText: 'export fn ${1:name}(${2:params}) {\n  ${0}\n}' },
+    { label: 'enum', detail: 'Enum declaration', insertText: 'enum ${1:Name} {\n  ${0}\n}' },
+    { label: 'interface', detail: 'Interface declaration', insertText: 'interface ${1:Name} {\n  ${0}\n}' },
+    { label: 'arrow', detail: 'Arrow function', insertText: '(${1:params}) => {\n  ${0}\n}' },
+  ];
+
+  for (const snip of snippets) {
+    items.push({
+      label: snip.label,
+      kind: CompletionItemKind.Snippet,
+      detail: `Snippet: ${snip.detail}`,
+      insertText: snip.insertText,
+      insertTextFormat: InsertTextFormat.Snippet,
+    });
+  }
 
   // Document identifiers (functions, variables, classes)
   const doc = documents.get(params.textDocument.uri);
@@ -1417,6 +1458,252 @@ connection.onCodeAction((params): CodeAction[] => {
   }
 
   return actions;
+});
+
+// ── Signature Help ──────────────────────────────────────────────────
+
+connection.onSignatureHelp((params): SignatureHelp | null => {
+  const doc = documents.get(params.textDocument.uri);
+  if (!doc) return null;
+
+  const source = doc.getText();
+  const offset = doc.offsetAt(params.position);
+  const textBefore = source.slice(0, offset);
+
+  // Find the function name before the opening paren
+  // Walk backwards to find the matching '(' and count commas for active parameter
+  let parenDepth = 0;
+  let commaCount = 0;
+  let openParenIdx = -1;
+
+  for (let i = textBefore.length - 1; i >= 0; i--) {
+    const ch = textBefore[i];
+    if (ch === ')') parenDepth++;
+    else if (ch === '(') {
+      if (parenDepth === 0) {
+        openParenIdx = i;
+        break;
+      }
+      parenDepth--;
+    } else if (ch === ',' && parenDepth === 0) {
+      commaCount++;
+    }
+  }
+
+  if (openParenIdx < 0) return null;
+
+  // Extract function name before the '('
+  const beforeParen = textBefore.slice(0, openParenIdx).trimEnd();
+  const fnNameMatch = beforeParen.match(/(\w+)$/);
+  if (!fnNameMatch) return null;
+  const fnName = fnNameMatch[1];
+
+  // Look up the function in document symbols
+  const symbols = extractSymbols(source);
+  const fnSym = symbols.find(s => s.name === fnName && s.kind === 'function');
+
+  if (!fnSym) {
+    // Check built-in print
+    if (fnName === 'print') {
+      return {
+        signatures: [{
+          label: 'print(...args)',
+          documentation: 'Print values to console (maps to console.log)',
+          parameters: [{ label: '...args', documentation: 'Values to print' }]
+        }],
+        activeSignature: 0,
+        activeParameter: commaCount
+      };
+    }
+    return null;
+  }
+
+  // Parse the function detail to extract parameters
+  const detailMatch = fnSym.detail.match(/fn\s+\w+\(([^)]*)\)/);
+  if (!detailMatch) return null;
+
+  const paramStr = detailMatch[1].trim();
+  const paramNames = paramStr ? paramStr.split(',').map(p => p.trim()) : [];
+  const parameters: ParameterInformation[] = paramNames.map(p => ({
+    label: p,
+    documentation: `Parameter: ${p}`
+  }));
+
+  const sig: SignatureInformation = {
+    label: fnSym.detail,
+    documentation: `Function ${fnName}`,
+    parameters
+  };
+
+  return {
+    signatures: [sig],
+    activeSignature: 0,
+    activeParameter: Math.min(commaCount, parameters.length - 1)
+  };
+});
+
+// ── Document Symbols ────────────────────────────────────────────────
+
+connection.onDocumentSymbol((params: DocumentSymbolParams): DocumentSymbol[] => {
+  const doc = documents.get(params.textDocument.uri);
+  if (!doc) return [];
+
+  const ast = astCache.get(doc.uri);
+  if (!ast) return [];
+
+  const result: DocumentSymbol[] = [];
+
+  for (const stmt of ast.body) {
+    const line = stmt.loc ? stmt.loc.line - 1 : 0;
+    const col = stmt.loc ? stmt.loc.column - 1 : 0;
+
+    switch (stmt.type) {
+      case 'FunctionDeclaration': {
+        const params = stmt.params.map(p => p.name).join(', ');
+        const children: DocumentSymbol[] = [];
+        // Collect local variables inside the function
+        for (const s of stmt.body) {
+          if (s.type === 'VariableDeclaration') {
+            const vline = s.loc ? s.loc.line - 1 : line;
+            children.push({
+              name: s.name.name,
+              kind: s.kind === 'const' ? SymbolKind.Constant : SymbolKind.Variable,
+              range: Range.create(vline, 0, vline, 100),
+              selectionRange: Range.create(vline, 0, vline, s.name.name.length),
+            });
+          }
+        }
+        result.push({
+          name: stmt.name.name,
+          detail: `fn(${params})`,
+          kind: SymbolKind.Function,
+          range: Range.create(line, col, line + stmt.body.length + 1, 0),
+          selectionRange: Range.create(line, col, line, col + stmt.name.name.length),
+          children: children.length > 0 ? children : undefined,
+        });
+        break;
+      }
+      case 'ClassDeclaration': {
+        const children: DocumentSymbol[] = [];
+        for (const member of stmt.body) {
+          const mline = (member as any).loc ? (member as any).loc.line - 1 : line;
+          if (member.type === 'ClassMethod') {
+            const mparams = member.params.map(p => p.name).join(', ');
+            const mname = (member.name as any).name;
+            children.push({
+              name: mname,
+              detail: `(${mparams})`,
+              kind: mname === 'constructor' ? SymbolKind.Constructor : SymbolKind.Method,
+              range: Range.create(mline, 0, mline + member.body.length + 1, 0),
+              selectionRange: Range.create(mline, 0, mline, mname.length),
+            });
+          } else if (member.type === 'ClassField') {
+            const fname = (member.name as any).name;
+            children.push({
+              name: fname,
+              kind: SymbolKind.Property,
+              range: Range.create(mline, 0, mline, 100),
+              selectionRange: Range.create(mline, 0, mline, fname.length),
+            });
+          }
+        }
+        result.push({
+          name: stmt.name.name,
+          detail: stmt.superClass ? `extends ${stmt.superClass.name}` : undefined,
+          kind: SymbolKind.Class,
+          range: Range.create(line, col, line + stmt.body.length + 1, 0),
+          selectionRange: Range.create(line, col, line, col + stmt.name.name.length),
+          children: children.length > 0 ? children : undefined,
+        });
+        break;
+      }
+      case 'VariableDeclaration': {
+        result.push({
+          name: stmt.name.name,
+          kind: stmt.kind === 'const' ? SymbolKind.Constant : SymbolKind.Variable,
+          range: Range.create(line, col, line, 100),
+          selectionRange: Range.create(line, col, line, col + stmt.name.name.length),
+        });
+        break;
+      }
+      case 'EnumDeclaration': {
+        const children: DocumentSymbol[] = stmt.members.map((m, idx) => {
+          const mline = (m as any).loc ? (m as any).loc.line - 1 : line + idx + 1;
+          return {
+            name: m.name.name,
+            kind: SymbolKind.EnumMember,
+            range: Range.create(mline, 0, mline, 100),
+            selectionRange: Range.create(mline, 0, mline, m.name.name.length),
+          };
+        });
+        result.push({
+          name: stmt.name.name,
+          kind: SymbolKind.Enum,
+          range: Range.create(line, col, line + stmt.members.length + 1, 0),
+          selectionRange: Range.create(line, col, line, col + stmt.name.name.length),
+          children,
+        });
+        break;
+      }
+      case 'InterfaceDeclaration': {
+        result.push({
+          name: stmt.name.name,
+          kind: SymbolKind.Interface,
+          range: Range.create(line, col, line + 1, 0),
+          selectionRange: Range.create(line, col, line, col + stmt.name.name.length),
+        });
+        break;
+      }
+      case 'ExportDeclaration': {
+        // If exported declaration, process the inner declaration
+        if (stmt.declaration) {
+          const inner = stmt.declaration;
+          const iline = inner.loc ? inner.loc.line - 1 : line;
+          if (inner.type === 'FunctionDeclaration') {
+            const params = inner.params.map(p => p.name).join(', ');
+            result.push({
+              name: inner.name.name,
+              detail: `export fn(${params})`,
+              kind: SymbolKind.Function,
+              range: Range.create(iline, 0, iline + inner.body.length + 1, 0),
+              selectionRange: Range.create(iline, 0, iline, inner.name.name.length),
+            });
+          } else if (inner.type === 'ClassDeclaration') {
+            result.push({
+              name: inner.name.name,
+              detail: 'export class',
+              kind: SymbolKind.Class,
+              range: Range.create(iline, 0, iline + inner.body.length + 1, 0),
+              selectionRange: Range.create(iline, 0, iline, inner.name.name.length),
+            });
+          } else if (inner.type === 'VariableDeclaration') {
+            result.push({
+              name: inner.name.name,
+              detail: `export ${inner.kind}`,
+              kind: inner.kind === 'const' ? SymbolKind.Constant : SymbolKind.Variable,
+              range: Range.create(iline, 0, iline, 100),
+              selectionRange: Range.create(iline, 0, iline, inner.name.name.length),
+            });
+          }
+        }
+        break;
+      }
+      case 'ImportDeclaration': {
+        if (stmt.defaultImport) {
+          result.push({
+            name: stmt.defaultImport,
+            detail: `import from "${stmt.source}"`,
+            kind: SymbolKind.Module,
+            range: Range.create(line, 0, line, 100),
+            selectionRange: Range.create(line, 0, line, stmt.defaultImport.length),
+          });
+        }
+        break;
+      }
+    }
+  }
+
+  return result;
 });
 
 // ── Start ───────────────────────────────────────────────────────────
