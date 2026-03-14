@@ -319,7 +319,7 @@ function checkStatement(stmt: Statement, env: TypeEnv, diags: TypeDiagnostic[]):
     case "ImportDeclaration": {
       const imp = stmt as ImportDeclaration;
       if (imp.defaultImport) env.define(imp.defaultImport, ANY);
-      for (const name of imp.namedImports) env.define(name, ANY);
+      for (const spec of imp.namedImports) env.define(spec.alias ?? spec.name, ANY);
       break;
     }
     case "ExportDeclaration": {

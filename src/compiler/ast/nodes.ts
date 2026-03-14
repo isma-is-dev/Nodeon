@@ -43,6 +43,7 @@ export type Statement = (
   | MatchStatement
   | EnumDeclaration
   | InterfaceDeclaration
+  | TypeAliasDeclaration
   | LabeledStatement
 ) & { loc?: SourceLoc };
 
@@ -118,10 +119,16 @@ export type ReturnStatement = {
   value: Expression | null;
 };
 
+export type ImportSpecifier = {
+  type: "ImportSpecifier";
+  name: string;
+  alias?: string;
+};
+
 export type ImportDeclaration = {
   type: "ImportDeclaration";
   defaultImport: string | null;
-  namedImports: string[];
+  namedImports: ImportSpecifier[];
   source: string;
 };
 
@@ -250,6 +257,13 @@ export type InterfaceProperty = {
   optional: boolean;
   method: boolean; // true if fn signature: area(): number
   params?: TypeAnnotation[];
+};
+
+export type TypeAliasDeclaration = {
+  type: "TypeAliasDeclaration";
+  name: Identifier;
+  typeParams?: string[];
+  value: TypeAnnotation;
 };
 
 // ── Expressions ──────────────────────────────────────────────────────

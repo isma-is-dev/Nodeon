@@ -870,3 +870,61 @@ describe("type-checker integration", () => {
     expect(result.diagnostics.length).toBeGreaterThan(0);
   });
 });
+
+// ── Type alias declarations ─────────────────────────────────────
+describe("type alias declarations", () => {
+  it("parses and erases simple type alias", () => {
+    const js = compile("type ID = string").js;
+    expect(js.trim()).toBe("");
+  });
+
+  it("parses and erases union type alias", () => {
+    const js = compile("type Result = string | number\nlet x = 42").js;
+    expect(js).not.toContain("type ");
+    expect(js).toContain("let x = 42;");
+  });
+
+  it("parses generic type alias", () => {
+    const js = compile("type Pair<A, B> = { first: A, second: B }").js;
+    expect(js.trim()).toBe("");
+  });
+
+  it("type alias does not affect subsequent code", () => {
+    const js = compile('type Name = string\nlet name: Name = "hello"\nprint(name)').js;
+    expect(js).toContain('let name = "hello";');
+    expect(js).toContain("console.log(name)");
+  });
+});
+
+// ── in operator for objects ─────────────────────────────────────
+describe("in operator", () => {
+  it("compiles 'key in obj' expression", () => {
+    const js = compile('"name" in obj').js;
+    expect(js).toContain('"name" in obj');
+  });
+
+  it("compiles in operator in if condition", () => {
+    const js = compile('if "key" in obj {\n  print("found")\n}').js;
+    expect(js).toContain('"key" in obj');
+  });
+});
+
+// ── Import aliases ──────────────────────────────────────────────
+describe("import aliases", () => {
+  it("compiles import with alias", () => {
+    const js = compile('import { readFile as rf } from "fs"').js;
+    expect(js).toContain("readFile as rf");
+  });
+
+  it("compiles import with mixed aliases and plain", () => {
+    const js = compile('import { readFile as rf, writeFile } from "fs"').js;
+    expect(js).toContain("readFile as rf");
+    expect(js).toContain("writeFile");
+  });
+
+  it("compiles import without alias unchanged", () => {
+    const js = compile('import { readFile } from "fs"').js;
+    expect(js).toContain("{ readFile }");
+    expect(js).not.toContain(" as ");
+  });
+});

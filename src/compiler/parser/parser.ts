@@ -63,6 +63,8 @@ import {
   EnumMember,
   InterfaceDeclaration,
   InterfaceProperty,
+  TypeAliasDeclaration,
+  ImportSpecifier,
   LabeledStatement,
   AsExpression,
 } from "@ast/nodes";
@@ -105,7 +107,7 @@ export class Parser extends ParserBase {
       if (tok.type === TokenType.Keyword && [
         "fn", "if", "for", "while", "do", "return", "import", "export",
         "class", "try", "throw", "const", "let", "var", "switch", "match",
-        "enum", "interface", "break", "continue"
+        "enum", "interface", "type", "break", "continue"
       ].includes(tok.value)) {
         return; // Don't consume — let the parser try parsing this as a new statement
       }
@@ -147,6 +149,7 @@ export class Parser extends ParserBase {
         case "match": stmt = this.parseMatchStatement(); break;
         case "enum": stmt = this.parseEnumDeclaration(); break;
         case "interface": stmt = this.parseInterfaceDeclaration(); break;
+        case "type": stmt = this.parseTypeAliasDeclaration(); break;
         case "break": {
           this.advance();
           let label: string | undefined;
@@ -378,7 +381,7 @@ export class Parser extends ParserBase {
   private parseImportDeclaration(): ImportDeclaration {
     this.consumeKeyword("import");
     let defaultImport: string | null = null;
-    const namedImports: string[] = [];
+    const namedImports: ImportSpecifier[] = [];
 
     if (this.checkDelimiter("{")) {
       this.advance();
@@ -386,8 +389,17 @@ export class Parser extends ParserBase {
         do {
           const tok = this.peek();
           if (tok.type !== TokenType.Identifier) this.error(tok, "Expected import name");
-          namedImports.push(tok.value);
+          const name = tok.value;
           this.advance();
+          let alias: string | undefined;
+          if (this.checkKeyword("as")) {
+            this.advance();
+            const aliasTok = this.peek();
+            if (aliasTok.type !== TokenType.Identifier) this.error(aliasTok, "Expected alias name");
+            alias = aliasTok.value;
+            this.advance();
+          }
+          namedImports.push({ type: "ImportSpecifier", name, alias });
         } while (this.matchDelimiter(","));
       }
       this.consumeDelimiter("}", "Expected '}'");
@@ -846,6 +858,15 @@ export class Parser extends ParserBase {
     return { type: "InterfaceDeclaration", name, properties, extends: extendsIds };
   }
 
+  private parseTypeAliasDeclaration(): TypeAliasDeclaration {
+    this.consumeKeyword("type");
+    const name = this.consumeIdentifier("Expected type alias name");
+    const typeParams = this.parseTypeParams();
+    this.consumeOperator("=", "Expected '=' after type alias name");
+    const value = this.parseTypeAnnotation();
+    return { type: "TypeAliasDeclaration", name, typeParams, value };
+  }
+
   private parseExpressionStatement(): ExpressionStatement {
     const expression = this.parseExpression();
     return { type: "ExpressionStatement", expression };
@@ -898,13 +919,13 @@ export class Parser extends ParserBase {
         continue;
       }
 
-      // instanceof as binary operator (keyword)
-      if (tok.type === TokenType.Keyword && tok.value === "instanceof") {
-        const opPrec = PRECEDENCE["instanceof"];
+      // instanceof / in as binary operators (keywords)
+      if (tok.type === TokenType.Keyword && (tok.value === "instanceof" || tok.value === "in")) {
+        const opPrec = PRECEDENCE[tok.value];
         if (opPrec <= precedence) break;
         this.advance();
         const right = this.parseExpression(opPrec);
-        left = { type: "BinaryExpression", operator: "instanceof", left, right } as BinaryExpression;
+        left = { type: "BinaryExpression", operator: tok.value, left, right } as BinaryExpression;
         continue;
       }
 

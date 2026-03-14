@@ -182,6 +182,7 @@ function emitStatement(stmt: Statement, ctx: GenContext): string {
     case "EnumDeclaration":
       return emitEnum(stmt, ctx);
     case "InterfaceDeclaration":
+    case "TypeAliasDeclaration":
       return ""; // Type-only declaration, stripped from JS output
     case "DebuggerStatement":
       return "debugger;";
@@ -298,7 +299,7 @@ function emitReturn(stmt: ReturnStatement, ctx: GenContext): string {
 function emitImport(stmt: ImportDeclaration, ctx: GenContext): string {
   const src = rewriteImportSource(stmt.source);
   if (stmt.namedImports.length > 0) {
-    const names = stmt.namedImports.join("," + ctx.sp);
+    const names = stmt.namedImports.map(s => s.alias ? `${s.name} as ${s.alias}` : s.name).join("," + ctx.sp);
     return `import${ctx.sp}{${ctx.sp}${names}${ctx.sp}}${ctx.sp}from${ctx.sp}${JSON.stringify(src)};`;
   }
   if (stmt.defaultImport && stmt.defaultImport.startsWith("*")) {

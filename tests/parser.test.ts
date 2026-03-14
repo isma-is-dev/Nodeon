@@ -347,7 +347,10 @@ describe("Parser", () => {
     it("parses named imports", () => {
       const stmt = firstStmt('import { readFile, writeFile } from "fs"');
       if (stmt.type === "ImportDeclaration") {
-        expect(stmt.namedImports).toEqual(["readFile", "writeFile"]);
+        expect(stmt.namedImports).toEqual([
+          { type: "ImportSpecifier", name: "readFile", alias: undefined },
+          { type: "ImportSpecifier", name: "writeFile", alias: undefined },
+        ]);
       }
     });
 

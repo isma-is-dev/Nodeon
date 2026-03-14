@@ -397,8 +397,8 @@ function analyzeSemantics(ast: Program, source: string): Diagnostic[] {
             : stmt.defaultImport;
           declare(importName, line, 'import');
         }
-        for (const name of stmt.namedImports) {
-          declare(name, line, 'import');
+        for (const spec of stmt.namedImports) {
+          declare(spec.alias ?? spec.name, line, 'import');
         }
         break;
       }
