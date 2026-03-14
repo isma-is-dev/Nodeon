@@ -30,6 +30,7 @@ import { Lexer } from '@lexer/lexer';
 import { Parser } from '@parser/parser';
 import { KEYWORDS } from '@language/keywords';
 import { Program, Statement, Expression, FunctionDeclaration, VariableDeclaration, ClassDeclaration } from '@ast/nodes';
+import { typeCheck, TypeDiagnostic } from '@compiler/type-checker';
 
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
@@ -90,6 +91,24 @@ function validateDocument(doc: TextDocument): void {
     // Semantic analysis on successful parse
     const semanticDiags = analyzeSemantics(ast, source);
     diagnostics.push(...semanticDiags);
+
+    // Type checking
+    const typeDiags = typeCheck(ast);
+    for (const td of typeDiags) {
+      const lines = source.split('\n');
+      const lineText = lines[td.line] || '';
+      diagnostics.push({
+        severity: td.severity === 'error' ? DiagnosticSeverity.Error
+          : td.severity === 'warning' ? DiagnosticSeverity.Warning
+          : DiagnosticSeverity.Hint,
+        range: Range.create(
+          Position.create(td.line, td.column),
+          Position.create(td.line, lineText.length)
+        ),
+        message: td.message,
+        source: 'nodeon-types'
+      });
+    }
   } catch (err: any) {
     const message = err.message || String(err);
     const match = message.match(/at (\d+):(\d+)$/);

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { compile, compileWithSourceMap } from "@compiler/compile";
+import { compile, compileWithSourceMap, compileToAST } from "@compiler/compile";
+import { typeCheck } from "@compiler/type-checker";
 
 describe("End-to-end compilation", () => {
   function compileToJS(src: string, minify = false): string {
@@ -740,5 +741,48 @@ describe("End-to-end compilation", () => {
       const js = compileToJS('export { helper } from "./helpers"');
       expect(js).toContain('"./helpers.js"');
     });
+  });
+});
+
+// ── Type Checker ───────────────────────────────────────────────
+describe("type checker", () => {
+  function check(src: string) {
+    const ast = compileToAST(src);
+    return typeCheck(ast);
+  }
+
+  it("detects type mismatch on variable assignment", () => {
+    const diags = check('let x: number = "hello"');
+    expect(diags.length).toBeGreaterThan(0);
+    expect(diags[0].message).toContain("not assignable");
+    expect(diags[0].message).toContain("string");
+    expect(diags[0].message).toContain("number");
+  });
+
+  it("accepts correct type assignment", () => {
+    const diags = check("let x: number = 42");
+    expect(diags.length).toBe(0);
+  });
+
+  it("detects return type mismatch", () => {
+    const diags = check("fn greet(): number {\n  return \"hello\"\n}");
+    expect(diags.length).toBeGreaterThan(0);
+    expect(diags[0].message).toContain("return type");
+  });
+
+  it("infers literal types correctly", () => {
+    // No errors because inference matches
+    const diags = check("let x = 42\nlet y: number = x");
+    expect(diags.length).toBe(0);
+  });
+
+  it("accepts union type assignment", () => {
+    const diags = check('let x: string | number = "hello"');
+    expect(diags.length).toBe(0);
+  });
+
+  it("reports no errors for unannotated code", () => {
+    const diags = check('let x = 42\nlet y = "hello"\nprint(x)');
+    expect(diags.length).toBe(0);
   });
 });
