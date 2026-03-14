@@ -7,6 +7,7 @@ Usage: nodeon <command> [options] <file>
 Commands:
   build [options] <input> [output]   Compile .no → .js
   run <input>                        Compile and execute
+  check <input>                      Type check without compiling
   repl                               Interactive REPL
   help                               Show this help
   version                            Show version
@@ -20,6 +21,7 @@ Examples:
   nodeon build -min hello.no         → hello.min.js
   nodeon build hello.no out.js       → out.js
   nodeon run hello.no                → compile & execute
+  nodeon check hello.no              → type check only
   nodeon repl                        → interactive mode`;
 
 module.exports = { helpText, version };

@@ -44,6 +44,12 @@ export async function main(argv = process.argv) {
     return;
   }
 
+  if (cmd === "check") {
+    const { runCheck } = await import("@commands/check");
+    runCheck(args.slice(1));
+    return;
+  }
+
   // If it doesn't match a known command, try to run as a file first.
   // This allows `nodeon myfile` or `nodeon myfile.no` without `run`.
   {
@@ -57,7 +63,7 @@ export async function main(argv = process.argv) {
     }
   }
 
-  const knownCommands = ["build", "run", "repl", "help", "version", "init"] as const;
+  const knownCommands = ["build", "run", "repl", "check", "help", "version", "init"] as const;
   const suggestion = suggestClosest(cmd, knownCommands);
   console.error(`Unknown command '${cmd}'`);
   console.error(`See ${CYAN}'nodeon help'${RESET}.`);
