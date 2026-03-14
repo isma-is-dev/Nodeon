@@ -973,6 +973,29 @@ describe("export aliases", () => {
   });
 });
 
+describe("String multiply sugar", () => {
+  it('"ha" * 3 compiles to "ha".repeat(3)', () => {
+    const js = compile('"ha" * 3').js;
+    expect(js).toContain('.repeat(3)');
+  });
+
+  it("3 * 'ha' compiles to 'ha'.repeat(3) (reversed)", () => {
+    const js = compile("3 * 'ha'").js;
+    expect(js).toContain('.repeat(3)');
+  });
+
+  it("template literal repeat", () => {
+    const js = compile('`abc` * 2').js;
+    expect(js).toContain('.repeat(2)');
+  });
+
+  it("regular number * number is unchanged", () => {
+    const js = compile("let x = 2 * 3").js;
+    expect(js).toContain("2 * 3");
+    expect(js).not.toContain("repeat");
+  });
+});
+
 describe("Array slicing sugar", () => {
   it("arr[1..3] compiles to arr.slice(1, 3)", () => {
     const js = compile("let x = arr[1..3]").js;

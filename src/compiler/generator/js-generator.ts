@@ -674,6 +674,20 @@ function emitBinary(bin: BinaryExpression, ctx: GenContext): string {
     return `${fn}(${arg})`;
   }
 
+  // String multiply: "ha" * 3 → "ha".repeat(3)
+  if (bin.operator === "*") {
+    const isLeftString = bin.left.type === "Literal" && bin.left.literalType === "string"
+      || bin.left.type === "TemplateLiteral";
+    const isRightString = bin.right.type === "Literal" && bin.right.literalType === "string"
+      || bin.right.type === "TemplateLiteral";
+    if (isLeftString) {
+      return `${emitExpression(bin.left, ctx)}.repeat(${emitExpression(bin.right, ctx)})`;
+    }
+    if (isRightString) {
+      return `${emitExpression(bin.right, ctx)}.repeat(${emitExpression(bin.left, ctx)})`;
+    }
+  }
+
   // Nodeon == compiles to JS ===, and != to !==
   let op = bin.operator;
   if (op === "==") op = "===";
