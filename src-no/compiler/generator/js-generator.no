@@ -1,5 +1,6 @@
 import { PRECEDENCE as BIN_PRECEDENCE } from "../../language/precedence.no"
 import { rewriteImportSource } from "../resolver.no"
+import { SourceMapBuilder } from "./source-map.no"
 
 // ── Public API ─────────────────────────────────────────────────────
 
@@ -10,6 +11,105 @@ export fn generateJS(program, minify) {
   const ctx = { minify: min, nl: nl, sp: sp, indentLevel: 0, indentSize: 2, declaredVars: new Set() }
   const lines = program.body.map((stmt) => emitStatement(stmt, ctx))
   return lines.join(nl)
+}
+
+export fn generateJSWithSourceMap(program, sourceFile, sourceContent, outputFile, minify) {
+  const builder = new SourceMapBuilder()
+  const sourceIndex = builder.addSource(sourceFile, sourceContent)
+
+  const min = minify ?? false
+  const nl = min ? "" : "\n"
+  const sp = min ? "" : " "
+  const ctx = { minify: min, nl: nl, sp: sp, indentLevel: 0, indentSize: 2, declaredVars: new Set() }
+
+  const outputLines = []
+  for stmt in program.body {
+    const code = emitStatement(stmt, ctx)
+    const genLine = outputLines.length + 1
+
+    if stmt.loc {
+      builder.addLineMapping(stmt.loc.line, genLine, sourceIndex)
+    }
+
+    const codeLines = code.split("\n")
+    if codeLines.length > 1 {
+      const innerLocs = collectInnerLocs(stmt)
+      outputLines.push(codeLines[0])
+      let i = 1
+      while i < codeLines.length {
+        const innerLoc = innerLocs[i - 1]
+        if innerLoc {
+          builder.addLineMapping(innerLoc.line, genLine + i, sourceIndex)
+        } else {
+          if stmt.loc {
+            builder.addLineMapping(stmt.loc.line, genLine + i, sourceIndex)
+          }
+        }
+        outputLines.push(codeLines[i])
+        i = i + 1
+      }
+    } else {
+      outputLines.push(code)
+    }
+  }
+
+  const js = outputLines.join(nl) + nl + "//# sourceMappingURL=" + outputFile + ".map"
+  const sourceMap = builder.toJSON(outputFile)
+
+  return { js: js, sourceMap: sourceMap }
+}
+
+fn collectInnerLocs(stmt) {
+  const locs = []
+
+  const collect = (stmts) => {
+    for s in stmts {
+      if s.loc {
+        locs.push({ line: s.loc.line, column: s.loc.column })
+      } else {
+        locs.push(null)
+      }
+      if s.type == "IfStatement" {
+        collect(s.consequent)
+        if s.alternate { collect(s.alternate) }
+      } else {
+        if s.type == "ForStatement" || s.type == "WhileStatement" {
+          collect(s.body)
+        } else {
+          if s.type == "TryCatchStatement" {
+            collect(s.tryBlock)
+            collect(s.catchBlock)
+            if s.finallyBlock { collect(s.finallyBlock) }
+          }
+        }
+      }
+    }
+  }
+
+  if stmt.type == "FunctionDeclaration" { collect(stmt.body) }
+  if stmt.type == "ClassDeclaration" {
+    for m in stmt.body {
+      if m.type == "ClassMethod" { collect(m.body) }
+    }
+  }
+  if stmt.type == "IfStatement" {
+    collect(stmt.consequent)
+    if stmt.alternate { collect(stmt.alternate) }
+  }
+  if stmt.type == "ForStatement" || stmt.type == "WhileStatement" { collect(stmt.body) }
+  if stmt.type == "TryCatchStatement" {
+    collect(stmt.tryBlock)
+    collect(stmt.catchBlock)
+    if stmt.finallyBlock { collect(stmt.finallyBlock) }
+  }
+  if stmt.type == "SwitchStatement" {
+    for c in stmt.cases { collect(c.consequent) }
+  }
+  if stmt.type == "MatchStatement" {
+    for c in stmt.cases { collect(c.body) }
+  }
+
+  return locs
 }
 
 // ── Helpers ─────────────────────────────────────────────────────

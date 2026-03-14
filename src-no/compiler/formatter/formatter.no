@@ -1,0 +1,464 @@
+// Nodeon Source Code Formatter
+// Takes a Program AST and emits consistently-formatted Nodeon source code.
+
+export fn format(program, opts) {
+  const options = { indentSize: opts?.indentSize ?? 2, maxLineWidth: opts?.maxLineWidth ?? 100 }
+  const ctx = { indent: 0, options: options }
+  const lines = program.body.map((stmt) => fmtStatement(stmt, ctx))
+  return lines.join("\n") + "\n"
+}
+
+fn pad(ctx) {
+  return " ".repeat(ctx.indent * ctx.options.indentSize)
+}
+
+fn indented(ctx) {
+  return { indent: ctx.indent + 1, options: ctx.options }
+}
+
+// ── Statements ────────────────────────────────────────────────────
+
+fn fmtStatement(stmt, ctx) {
+  switch stmt.type {
+    case "FunctionDeclaration" { return fmtFunction(stmt, ctx) }
+    case "VariableDeclaration" { return fmtVariable(stmt, ctx) }
+    case "DestructuringDeclaration" { return fmtDestructuring(stmt, ctx) }
+    case "ExpressionStatement" { return pad(ctx) + fmtExpression(stmt.expression, ctx) }
+    case "IfStatement" { return fmtIf(stmt, ctx) }
+    case "ForStatement" { return fmtFor(stmt, ctx) }
+    case "WhileStatement" { return fmtWhile(stmt, ctx) }
+    case "DoWhileStatement" { return fmtDoWhile(stmt, ctx) }
+    case "ReturnStatement" { return fmtReturn(stmt, ctx) }
+    case "ImportDeclaration" { return fmtImport(stmt, ctx) }
+    case "ExportDeclaration" { return fmtExport(stmt, ctx) }
+    case "ClassDeclaration" { return fmtClass(stmt, ctx) }
+    case "TryCatchStatement" { return fmtTryCatch(stmt, ctx) }
+    case "ThrowStatement" { return pad(ctx) + "throw " + fmtExpression(stmt.value, ctx) }
+    case "SwitchStatement" { return fmtSwitch(stmt, ctx) }
+    case "MatchStatement" { return fmtMatch(stmt, ctx) }
+    case "EnumDeclaration" { return fmtEnum(stmt, ctx) }
+    case "InterfaceDeclaration" { return fmtInterface(stmt, ctx) }
+    case "TypeAliasDeclaration" { return fmtTypeAlias(stmt, ctx) }
+    case "BreakStatement" { return pad(ctx) + "break" + (stmt.label ? " " + stmt.label : "") }
+    case "ContinueStatement" { return pad(ctx) + "continue" + (stmt.label ? " " + stmt.label : "") }
+    case "DebuggerStatement" { return pad(ctx) + "debugger" }
+    case "LabeledStatement" { return pad(ctx) + stmt.label + ":\n" + fmtStatement(stmt.body, ctx) }
+    default { return pad(ctx) + "/* unsupported: " + stmt.type + " */" }
+  }
+}
+
+fn fmtFunction(f, ctx) {
+  const inner = indented(ctx)
+  const prefix = f.async ? "async " : ""
+  const gen = f.generator ? "*" : ""
+  const typeParams = f.typeParams ? "<" + f.typeParams.join(", ") + ">" : ""
+  const params = f.params.map((p) => fmtParam(p)).join(", ")
+  const ret = f.returnType ? ": " + fmtType(f.returnType) : ""
+  const body = f.body.map((s) => fmtStatement(s, inner)).join("\n")
+  let decs = ""
+  if f.decorators && f.decorators.length > 0 {
+    decs = f.decorators.map((d) => {
+      const args = d.arguments ? "(" + d.arguments.map((a) => fmtExpression(a, ctx)).join(", ") + ")" : ""
+      return pad(ctx) + "@" + d.name + args
+    }).join("\n") + "\n"
+  }
+  return decs + pad(ctx) + prefix + "fn" + gen + " " + f.name.name + typeParams + "(" + params + ")" + ret + ` {\n` + body + "\n" + pad(ctx) + '}'
+}
+
+fn fmtParam(p) {
+  let out = ""
+  if p.rest { out = out + "..." }
+  if p.pattern {
+    out = out + fmtPattern(p.pattern)
+  } else {
+    out = out + p.name
+  }
+  if p.typeAnnotation { out = out + ": " + fmtType(p.typeAnnotation) }
+  if p.defaultValue { out = out + " = " + fmtExpression(p.defaultValue, { indent: 0, options: { indentSize: 2, maxLineWidth: 100 } }) }
+  return out
+}
+
+fn fmtVariable(v, ctx) {
+  const typeStr = v.typeAnnotation ? ": " + fmtType(v.typeAnnotation) : ""
+  return pad(ctx) + v.kind + " " + v.name.name + typeStr + " = " + fmtExpression(v.value, ctx)
+}
+
+fn fmtDestructuring(d, ctx) {
+  const pat = fmtPattern(d.pattern)
+  return pad(ctx) + d.kind + " " + pat + " = " + fmtExpression(d.value, ctx)
+}
+
+fn fmtIf(stmt, ctx) {
+  const inner = indented(ctx)
+  const cond = fmtExpression(stmt.condition, ctx)
+  const body = stmt.consequent.map((s) => fmtStatement(s, inner)).join("\n")
+  let out = pad(ctx) + "if " + cond + ` {\n` + body + "\n" + pad(ctx) + '}'
+  if stmt.alternate && stmt.alternate.length > 0 {
+    if stmt.alternate.length == 1 && stmt.alternate[0].type == "IfStatement" {
+      const elseIf = fmtIf(stmt.alternate[0], ctx)
+      out = out + " else " + elseIf.trimStart()
+    } else {
+      const alt = stmt.alternate.map((s) => fmtStatement(s, inner)).join("\n")
+      out = out + ` else {\n` + alt + "\n" + pad(ctx) + '}'
+    }
+  }
+  return out
+}
+
+fn fmtFor(stmt, ctx) {
+  const inner = indented(ctx)
+  let variable = ""
+  if stmt.variable.type == "Identifier" {
+    variable = stmt.variable.name
+  } else {
+    variable = fmtPattern(stmt.variable)
+  }
+  let iterable = ""
+  if stmt.iterable.type == "BinaryExpression" && stmt.iterable.operator == ".." {
+    iterable = fmtExpression(stmt.iterable.left, ctx) + ".." + fmtExpression(stmt.iterable.right, ctx)
+  } else {
+    iterable = fmtExpression(stmt.iterable, ctx)
+  }
+  const body = stmt.body.map((s) => fmtStatement(s, inner)).join("\n")
+  return pad(ctx) + "for " + variable + " " + stmt.kind + " " + iterable + ` {\n` + body + "\n" + pad(ctx) + '}'
+}
+
+fn fmtWhile(stmt, ctx) {
+  const inner = indented(ctx)
+  const body = stmt.body.map((s) => fmtStatement(s, inner)).join("\n")
+  return pad(ctx) + "while " + fmtExpression(stmt.condition, ctx) + ` {\n` + body + "\n" + pad(ctx) + '}'
+}
+
+fn fmtDoWhile(stmt, ctx) {
+  const inner = indented(ctx)
+  const body = stmt.body.map((s) => fmtStatement(s, inner)).join("\n")
+  return pad(ctx) + `do {\n` + body + "\n" + pad(ctx) + '} while ' + fmtExpression(stmt.condition, ctx)
+}
+
+fn fmtReturn(stmt, ctx) {
+  if !stmt.value { return pad(ctx) + "return" }
+  return pad(ctx) + "return " + fmtExpression(stmt.value, ctx)
+}
+
+fn fmtImport(stmt, ctx) {
+  const src = "'" + stmt.source + "'"
+  if stmt.namedImports.length > 0 {
+    const specs = stmt.namedImports.map((s) => s.alias ? s.name + " as " + s.alias : s.name).join(", ")
+    return pad(ctx) + "import " + '{ ' + specs + ' }' + " from " + src
+  }
+  if stmt.namespaceImport {
+    return pad(ctx) + "import * as " + stmt.namespaceImport + " from " + src
+  }
+  return pad(ctx) + "import " + stmt.defaultImport + " from " + src
+}
+
+fn fmtExport(stmt, ctx) {
+  if stmt.exportAll {
+    const alias = stmt.exportAllAlias ? " as " + stmt.exportAllAlias : ""
+    return pad(ctx) + "export *" + alias + " from '" + stmt.source + "'"
+  }
+  if stmt.namedExports && stmt.namedExports.length > 0 {
+    const specs = stmt.namedExports.map((s) => s.alias ? s.name + " as " + s.alias : s.name).join(", ")
+    const fromClause = stmt.source ? " from '" + stmt.source + "'" : ""
+    return pad(ctx) + "export " + '{ ' + specs + ' }' + fromClause
+  }
+  const def = stmt.isDefault ? "default " : ""
+  if stmt.declaration {
+    return pad(ctx) + "export " + def + fmtStatement(stmt.declaration, { indent: 0, options: ctx.options }).trimStart()
+  }
+  return pad(ctx) + "export " + def
+}
+
+fn fmtClass(cls, ctx) {
+  const inner = indented(ctx)
+  const typeParams = cls.typeParams ? "<" + cls.typeParams.join(", ") + ">" : ""
+  const ext = cls.superClass ? " extends " + cls.superClass.name : ""
+  const members = cls.body.map((m) => fmtClassMember(m, inner)).join("\n\n")
+  let decs = ""
+  if cls.decorators && cls.decorators.length > 0 {
+    decs = cls.decorators.map((d) => {
+      const args = d.arguments ? "(" + d.arguments.map((a) => fmtExpression(a, ctx)).join(", ") + ")" : ""
+      return pad(ctx) + "@" + d.name + args
+    }).join("\n") + "\n"
+  }
+  return decs + pad(ctx) + "class " + cls.name.name + typeParams + ext + ` {\n` + members + "\n" + pad(ctx) + '}'
+}
+
+fn fmtClassMember(member, ctx) {
+  if member.type == "ClassField" {
+    const s = member.static ? "static " : ""
+    const key = member.computed ? "[" + fmtExpression(member.name, ctx) + "]" : member.name.name
+    if member.value {
+      return pad(ctx) + s + key + " = " + fmtExpression(member.value, ctx)
+    }
+    return pad(ctx) + s + key
+  }
+  // ClassMethod
+  const inner = indented(ctx)
+  const s = member.static ? "static " : ""
+  const a = member.async ? "async " : ""
+  const gen = member.generator ? "*" : ""
+  const key = member.computed ? "[" + fmtExpression(member.name, ctx) + "]" : member.name.name
+  const kindPrefix = member.kind == "get" ? "get " : member.kind == "set" ? "set " : ""
+  const params = member.params.map((p) => fmtParam(p)).join(", ")
+  const ret = member.returnType ? ": " + fmtType(member.returnType) : ""
+  const body = member.body.map((st) => fmtStatement(st, inner)).join("\n")
+  if member.kind == "constructor" {
+    return pad(ctx) + "constructor(" + params + `) {\n` + body + "\n" + pad(ctx) + '}'
+  }
+  return pad(ctx) + s + a + kindPrefix + "fn" + gen + " " + key + "(" + params + ")" + ret + ` {\n` + body + "\n" + pad(ctx) + '}'
+}
+
+fn fmtTryCatch(stmt, ctx) {
+  const inner = indented(ctx)
+  const tryBody = stmt.tryBlock.map((s) => fmtStatement(s, inner)).join("\n")
+  const catchParam = stmt.catchParam ? " (" + stmt.catchParam.name + ")" : ""
+  const catchBody = stmt.catchBlock.map((s) => fmtStatement(s, inner)).join("\n")
+  let out = pad(ctx) + `try {\n` + tryBody + "\n" + pad(ctx) + '}' + " catch" + catchParam + ` {\n` + catchBody + "\n" + pad(ctx) + '}'
+  if stmt.finallyBlock {
+    const finallyBody = stmt.finallyBlock.map((s) => fmtStatement(s, inner)).join("\n")
+    out = out + ` finally {\n` + finallyBody + "\n" + pad(ctx) + '}'
+  }
+  return out
+}
+
+fn fmtSwitch(stmt, ctx) {
+  const inner = indented(ctx)
+  const cases = stmt.cases.map((c) => fmtSwitchCase(c, inner)).join("\n")
+  return pad(ctx) + "switch " + fmtExpression(stmt.discriminant, ctx) + ` {\n` + cases + "\n" + pad(ctx) + '}'
+}
+
+fn fmtSwitchCase(c, ctx) {
+  const inner = indented(ctx)
+  const header = c.test ? "case " + fmtExpression(c.test, ctx) : "default"
+  const body = c.consequent.map((s) => fmtStatement(s, inner)).join("\n")
+  return pad(ctx) + header + ` {\n` + body + "\n" + pad(ctx) + '}'
+}
+
+fn fmtMatch(stmt, ctx) {
+  const inner = indented(ctx)
+  const cases = stmt.cases.map((c) => fmtMatchCase(c, inner)).join("\n")
+  return pad(ctx) + "match " + fmtExpression(stmt.discriminant, ctx) + ` {\n` + cases + "\n" + pad(ctx) + '}'
+}
+
+fn fmtMatchCase(c, ctx) {
+  const inner = indented(ctx)
+  const header = c.pattern ? "case " + fmtExpression(c.pattern, ctx) : "default"
+  const guard = c.guard ? " if " + fmtExpression(c.guard, ctx) : ""
+  const body = c.body.map((s) => fmtStatement(s, inner)).join("\n")
+  return pad(ctx) + header + guard + ` {\n` + body + "\n" + pad(ctx) + '}'
+}
+
+fn fmtEnum(stmt, ctx) {
+  const inner = indented(ctx)
+  const members = stmt.members.map((m) => {
+    if m.value { return pad(inner) + m.name.name + " = " + fmtExpression(m.value, inner) }
+    return pad(inner) + m.name.name
+  }).join("\n")
+  return pad(ctx) + "enum " + stmt.name.name + ` {\n` + members + "\n" + pad(ctx) + '}'
+}
+
+fn fmtInterface(stmt, ctx) {
+  const inner = indented(ctx)
+  const ext = stmt.extends ? " extends " + stmt.extends.map((e) => e.name).join(", ") : ""
+  const props = stmt.properties.map((p) => {
+    const opt = p.optional ? "?" : ""
+    if p.method {
+      const params = p.params ? p.params.map((t) => fmtType(t)).join(", ") : ""
+      return pad(inner) + p.name.name + opt + "(" + params + "): " + fmtType(p.valueType)
+    }
+    return pad(inner) + p.name.name + opt + ": " + fmtType(p.valueType)
+  }).join("\n")
+  return pad(ctx) + "interface " + stmt.name.name + ext + ` {\n` + props + "\n" + pad(ctx) + '}'
+}
+
+fn fmtTypeAlias(stmt, ctx) {
+  const typeParams = stmt.typeParams ? "<" + stmt.typeParams.join(", ") + ">" : ""
+  return pad(ctx) + "type " + stmt.name.name + typeParams + " = " + fmtType(stmt.value)
+}
+
+// ── Expressions ────────────────────────────────────────────────────
+
+fn fmtExpression(expr, ctx) {
+  switch expr.type {
+    case "Identifier" { return expr.name }
+    case "Literal" { return fmtLiteral(expr) }
+    case "CallExpression" { return fmtCall(expr, ctx) }
+    case "BinaryExpression" { return fmtBinary(expr, ctx) }
+    case "UnaryExpression" { return expr.operator + fmtExpression(expr.argument, ctx) }
+    case "UpdateExpression" {
+      if expr.prefix { return expr.operator + fmtExpression(expr.argument, ctx) }
+      return fmtExpression(expr.argument, ctx) + expr.operator
+    }
+    case "TemplateLiteral" { return fmtTemplate(expr, ctx) }
+    case "MemberExpression" { return fmtMember(expr, ctx) }
+    case "ArrayExpression" { return fmtArray(expr, ctx) }
+    case "ObjectExpression" { return fmtObject(expr, ctx) }
+    case "ArrowFunction" { return fmtArrow(expr, ctx) }
+    case "AssignmentExpression" { return fmtExpression(expr.left, ctx) + " = " + fmtExpression(expr.right, ctx) }
+    case "CompoundAssignmentExpression" { return fmtExpression(expr.left, ctx) + " " + expr.operator + " " + fmtExpression(expr.right, ctx) }
+    case "NewExpression" {
+      const args = expr.arguments.map((a) => fmtExpression(a, ctx)).join(", ")
+      return "new " + fmtExpression(expr.callee, ctx) + "(" + args + ")"
+    }
+    case "AwaitExpression" { return "await " + fmtExpression(expr.argument, ctx) }
+    case "SpreadExpression" { return "..." + fmtExpression(expr.argument, ctx) }
+    case "TernaryExpression" { return fmtExpression(expr.condition, ctx) + " ? " + fmtExpression(expr.consequent, ctx) + " : " + fmtExpression(expr.alternate, ctx) }
+    case "TypeofExpression" { return "typeof " + fmtExpression(expr.argument, ctx) }
+    case "VoidExpression" { return "void " + fmtExpression(expr.argument, ctx) }
+    case "DeleteExpression" { return "delete " + fmtExpression(expr.argument, ctx) }
+    case "YieldExpression" {
+      const del = expr.delegate ? "*" : ""
+      if !expr.argument { return "yield" + del }
+      return "yield" + del + " " + fmtExpression(expr.argument, ctx)
+    }
+    case "AsExpression" { return fmtExpression(expr.expression, ctx) + " as " + fmtType(expr.typeAnnotation) }
+    case "IfExpression" {
+      const inner = indented(ctx)
+      const cond = fmtExpression(expr.condition, ctx)
+      const thenBody = expr.consequent.map((s) => fmtStatement(s, inner)).join("\n")
+      const elseBody = expr.alternate.map((s) => fmtStatement(s, inner)).join("\n")
+      return "if " + cond + ` {\n` + thenBody + "\n" + pad(ctx) + `} else {\n` + elseBody + "\n" + pad(ctx) + '}'
+    }
+    case "RegExpLiteral" {
+      return expr.flags ? "/" + expr.pattern + "/" + expr.flags : "/" + expr.pattern + "/"
+    }
+    case "ObjectPattern" { return fmtPattern(expr) }
+    case "ArrayPattern" { return fmtPattern(expr) }
+    default { return "/* unsupported: " + expr.type + " */" }
+  }
+}
+
+fn fmtLiteral(lit) {
+  switch lit.literalType {
+    case "number" { return String(lit.value) }
+    case "string" {
+      const escaped = String(lit.value).replace(/"/g, '\\"')
+      return '"' + escaped + '"'
+    }
+    case "boolean" { return String(lit.value) }
+    case "null" { return "null" }
+    case "undefined" { return "undefined" }
+    default { return String(lit.value) }
+  }
+}
+
+fn fmtCall(call, ctx) {
+  const callee = fmtExpression(call.callee, ctx)
+  const chain = call.optional ? "?." : ""
+  const args = call.arguments.map((a) => fmtExpression(a, ctx)).join(", ")
+  return callee + chain + "(" + args + ")"
+}
+
+fn fmtBinary(bin, ctx) {
+  const left = fmtExpression(bin.left, ctx)
+  const right = fmtExpression(bin.right, ctx)
+  return left + " " + bin.operator + " " + right
+}
+
+fn fmtMember(mem, ctx) {
+  const obj = fmtExpression(mem.object, ctx)
+  const chain = mem.optional ? "?." : ""
+  if mem.computed {
+    return obj + chain + "[" + fmtExpression(mem.property, ctx) + "]"
+  }
+  const prop = fmtExpression(mem.property, ctx)
+  return obj + chain + (chain ? "" : ".") + prop
+}
+
+fn fmtArray(arr, ctx) {
+  const els = arr.elements.map((e) => fmtExpression(e, ctx)).join(", ")
+  return "[" + els + "]"
+}
+
+fn fmtObject(obj, ctx) {
+  if obj.properties.length == 0 { return '{}' }
+  const props = obj.properties.map((p) => fmtObjectProp(p, ctx)).join(", ")
+  return '{ ' + props + ' }'
+}
+
+fn fmtObjectProp(prop, ctx) {
+  if prop.shorthand { return fmtExpression(prop.key, ctx) }
+  let keyStr = ""
+  if prop.computed {
+    keyStr = "[" + fmtExpression(prop.key, ctx) + "]"
+  } else {
+    keyStr = fmtExpression(prop.key, ctx)
+  }
+  return keyStr + ": " + fmtExpression(prop.value, ctx)
+}
+
+fn fmtArrow(f, ctx) {
+  const prefix = f.async ? "async " : ""
+  const params = f.params.map((p) => fmtParam(p)).join(", ")
+  const ret = f.returnType ? ": " + fmtType(f.returnType) : ""
+  if Array.isArray(f.body) {
+    const inner = indented(ctx)
+    const body = f.body.map((s) => fmtStatement(s, inner)).join("\n")
+    return prefix + "(" + params + ")" + ret + ` => {\n` + body + "\n" + pad(ctx) + '}'
+  }
+  return prefix + "(" + params + ")" + ret + " => " + fmtExpression(f.body, ctx)
+}
+
+fn fmtTemplate(tmpl, ctx) {
+  let out = '`'
+  for part in tmpl.parts {
+    if part.kind == "Text" {
+      out = out + part.value
+    } else {
+      out = out + '${' + fmtExpression(part.expression, ctx) + '}'
+    }
+  }
+  out = out + '`'
+  return out
+}
+
+// ── Patterns ────────────────────────────────────────────────────
+
+fn fmtPattern(pat) {
+  if pat.type == "ObjectPattern" {
+    const props = pat.properties.map((p) => {
+      if p.shorthand { return p.key.name }
+      const val = p.value.type == "Identifier" ? p.value.name : fmtPattern(p.value)
+      let out = p.key.name + ": " + val
+      if p.defaultValue { out = out + " = " + fmtExpression(p.defaultValue, { indent: 0, options: { indentSize: 2, maxLineWidth: 100 } }) }
+      return out
+    })
+    if pat.rest { props.push("..." + pat.rest.name) }
+    return '{ ' + props.join(", ") + ' }'
+  }
+  // ArrayPattern
+  const els = pat.elements.map((e) => {
+    if e == null { return "" }
+    if e.type == "Identifier" { return e.name }
+    return fmtPattern(e)
+  })
+  if pat.rest { els.push("..." + pat.rest.name) }
+  return "[" + els.join(", ") + "]"
+}
+
+// ── Types ────────────────────────────────────────────────────
+
+fn fmtType(t) {
+  switch t.kind {
+    case "named" { return t.name }
+    case "array" { return fmtType(t.elementType) + "[]" }
+    case "union" { return t.types.map((x) => fmtType(x)).join(" | ") }
+    case "intersection" { return t.types.map((x) => fmtType(x)).join(" & ") }
+    case "generic" { return t.name + "<" + t.args.map((x) => fmtType(x)).join(", ") + ">" }
+    case "function" {
+      const params = t.params.map((x) => fmtType(x)).join(", ")
+      return "(" + params + ") => " + fmtType(t.returnType)
+    }
+    case "object" {
+      const props = t.properties.map((p) => {
+        const opt = p.optional ? "?" : ""
+        return p.key + opt + ": " + fmtType(p.value)
+      }).join(", ")
+      return '{ ' + props + ' }'
+    }
+    case "tuple" { return "[" + t.elements.map((x) => fmtType(x)).join(", ") + "]" }
+    case "literal" { return JSON.stringify(t.value) }
+    default { return "any" }
+  }
+}

@@ -1,7 +1,9 @@
 import { Lexer } from "./lexer/lexer.no"
 import { Parser } from "./parser/parser.no"
-import { generateJS } from "./generator/js-generator.no"
+import { generateJS, generateJSWithSourceMap } from "./generator/js-generator.no"
 import { typeCheck } from "./type-checker.no"
+import { SourceMapBuilder } from "./generator/source-map.no"
+import { format } from "./formatter/formatter.no"
 
 // Compile Nodeon source to JavaScript
 export fn compile(source, options) {
@@ -12,8 +14,24 @@ export fn compile(source, options) {
   return { js: js, ast: ast, diagnostics: diagnostics }
 }
 
+// Compile with source map
+export fn compileWithSourceMap(source, sourceFile, outputFile, options) {
+  const opts = options ?? {}
+  const ast = compileToAST(source)
+  const result = generateJSWithSourceMap(ast, sourceFile, source, outputFile, opts.minify ?? false)
+  return { js: result.js, ast: ast, sourceMap: result.sourceMap }
+}
+
 // Parse Nodeon source to AST
 export fn compileToAST(source) {
   const tokens = new Lexer(source).tokenize()
   return new Parser(tokens).parseProgram()
 }
+
+// Re-exports
+export { Lexer } from "./lexer/lexer.no"
+export { Parser } from "./parser/parser.no"
+export { generateJS, generateJSWithSourceMap } from "./generator/js-generator.no"
+export { SourceMapBuilder } from "./generator/source-map.no"
+export { typeCheck } from "./type-checker.no"
+export { format } from "./formatter/formatter.no"

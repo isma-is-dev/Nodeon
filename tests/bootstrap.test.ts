@@ -112,6 +112,103 @@ describe("bootstrap: .no modules compile", () => {
     expect(js).toContain("parseProgram");
     expect(js).toContain("parseStatement");
   });
+
+  it("compiler/formatter/formatter.no compiles", () => {
+    const js = compileNoFile("compiler/formatter/formatter.no");
+    expect(js).toContain("function format");
+    expect(js).toContain("fmtStatement");
+    expect(js.length).toBeGreaterThan(10000);
+  });
+
+  it("compiler/generator/source-map.no compiles", () => {
+    const js = compileNoFile("compiler/generator/source-map.no");
+    expect(js).toContain("class SourceMapBuilder");
+    expect(js).toContain("vlqEncode");
+  });
+
+  it("compiler/errors.no compiles", () => {
+    const js = compileNoFile("compiler/errors.no");
+    expect(js).toContain("class NodeonError");
+    expect(js).toContain("findSuggestions");
+  });
+
+  it("compiler/ast/visitor.no compiles", () => {
+    const js = compileNoFile("compiler/ast/visitor.no");
+    expect(js).toContain("walkProgram");
+    expect(js).toContain("walkStatement");
+    expect(js).toContain("walkExpression");
+  });
+
+  it("cli/utils/colors.no compiles", () => {
+    const js = compileNoFile("cli/utils/colors.no");
+    expect(js).toContain("RED");
+    expect(js).toContain("RESET");
+  });
+
+  it("cli/utils/strings.no compiles", () => {
+    const js = compileNoFile("cli/utils/strings.no");
+    expect(js).toContain("levenshtein");
+    expect(js).toContain("suggestClosest");
+  });
+
+  it("cli/utils/errors.no compiles", () => {
+    const js = compileNoFile("cli/utils/errors.no");
+    expect(js).toContain("formatError");
+    expect(js).toContain("appendSourceContext");
+  });
+
+  it("cli/utils/runtime.no compiles", () => {
+    const js = compileNoFile("cli/utils/runtime.no");
+    expect(js).toContain("runInSandbox");
+    expect(js).toContain("sandboxGlobals");
+  });
+
+  it("cli/utils/compile.no compiles", () => {
+    const js = compileNoFile("cli/utils/compile.no");
+    expect(js).toContain("compileFile");
+    expect(js).toContain("computeCacheKey");
+  });
+
+  it("cli/commands/build.no compiles", () => {
+    const js = compileNoFile("cli/commands/build.no");
+    expect(js).toContain("runBuild");
+  });
+
+  it("cli/commands/run.no compiles", () => {
+    const js = compileNoFile("cli/commands/run.no");
+    expect(js).toContain("runRun");
+  });
+
+  it("cli/commands/check.no compiles", () => {
+    const js = compileNoFile("cli/commands/check.no");
+    expect(js).toContain("runCheck");
+  });
+
+  it("cli/commands/fmt.no compiles", () => {
+    const js = compileNoFile("cli/commands/fmt.no");
+    expect(js).toContain("runFmt");
+  });
+
+  it("cli/commands/help.no compiles", () => {
+    const js = compileNoFile("cli/commands/help.no");
+    expect(js).toContain("printHelp");
+    expect(js).toContain("printVersion");
+  });
+
+  it("cli/commands/init.no compiles", () => {
+    const js = compileNoFile("cli/commands/init.no");
+    expect(js).toContain("runInit");
+  });
+
+  it("cli/commands/repl.no compiles", () => {
+    const js = compileNoFile("cli/commands/repl.no");
+    expect(js).toContain("startRepl");
+  });
+
+  it("cli/index.no compiles", () => {
+    const js = compileNoFile("cli/index.no");
+    expect(js).toContain("main");
+  });
 });
 
 describe("bootstrap: self-compilation (compiled compiler compiles itself)", () => {
@@ -134,6 +231,13 @@ describe("bootstrap: self-compilation (compiled compiler compiles itself)", () =
       "compiler/parser/parser-statements.no", "compiler/parser/parser.no",
       "compiler/compile.no", "compiler/resolver.no",
       "compiler/generator/js-generator.no", "compiler/type-checker.no",
+      "compiler/formatter/formatter.no", "compiler/generator/source-map.no",
+      "compiler/errors.no", "compiler/ast/visitor.no",
+      "cli/utils/colors.no", "cli/utils/strings.no",
+      "cli/utils/errors.no", "cli/utils/runtime.no", "cli/utils/compile.no",
+      "cli/commands/build.no", "cli/commands/run.no", "cli/commands/check.no",
+      "cli/commands/fmt.no", "cli/commands/help.no", "cli/commands/init.no",
+      "cli/commands/repl.no", "cli/index.no",
     ];
 
     for (const rel of noFiles) {

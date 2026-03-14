@@ -1,0 +1,205 @@
+// AST Visitor / Walker Pattern
+// Generic traversal utilities for the Nodeon AST.
+
+// ── Walk Functions ─────────────────────────────────────────────────
+
+export fn walkProgram(program, stmtVisitor, exprVisitor) {
+  for stmt in program.body {
+    walkStatement(stmt, stmtVisitor, exprVisitor)
+  }
+}
+
+export fn walkStatement(stmt, sv, ev) {
+  if sv {
+    const handler = sv[stmt.type]
+    if handler { handler(stmt) }
+  }
+
+  switch stmt.type {
+    case "FunctionDeclaration" {
+      for p in stmt.params { walkParam(p, ev) }
+      walkStatements(stmt.body, sv, ev)
+    }
+    case "VariableDeclaration" {
+      walkExpression(stmt.value, ev)
+    }
+    case "DestructuringDeclaration" {
+      walkExpression(stmt.value, ev)
+    }
+    case "ExpressionStatement" {
+      walkExpression(stmt.expression, ev)
+    }
+    case "IfStatement" {
+      walkExpression(stmt.condition, ev)
+      walkStatements(stmt.consequent, sv, ev)
+      if stmt.alternate { walkStatements(stmt.alternate, sv, ev) }
+    }
+    case "ForStatement" {
+      walkExpression(stmt.iterable, ev)
+      walkStatements(stmt.body, sv, ev)
+    }
+    case "WhileStatement" {
+      walkExpression(stmt.condition, ev)
+      walkStatements(stmt.body, sv, ev)
+    }
+    case "DoWhileStatement" {
+      walkExpression(stmt.condition, ev)
+      walkStatements(stmt.body, sv, ev)
+    }
+    case "ReturnStatement" {
+      if stmt.value { walkExpression(stmt.value, ev) }
+    }
+    case "ExportDeclaration" {
+      if stmt.declaration { walkStatement(stmt.declaration, sv, ev) }
+    }
+    case "ClassDeclaration" {
+      for m in stmt.body { walkClassMember(m, sv, ev) }
+    }
+    case "TryCatchStatement" {
+      walkStatements(stmt.tryBlock, sv, ev)
+      walkStatements(stmt.catchBlock, sv, ev)
+      if stmt.finallyBlock { walkStatements(stmt.finallyBlock, sv, ev) }
+    }
+    case "ThrowStatement" {
+      walkExpression(stmt.value, ev)
+    }
+    case "SwitchStatement" {
+      walkExpression(stmt.discriminant, ev)
+      for c in stmt.cases {
+        if c.test { walkExpression(c.test, ev) }
+        walkStatements(c.consequent, sv, ev)
+      }
+    }
+    case "MatchStatement" {
+      walkExpression(stmt.discriminant, ev)
+      for c in stmt.cases {
+        if c.pattern { walkExpression(c.pattern, ev) }
+        if c.guard { walkExpression(c.guard, ev) }
+        walkStatements(c.body, sv, ev)
+      }
+    }
+    case "LabeledStatement" {
+      walkStatement(stmt.body, sv, ev)
+    }
+    default {}
+  }
+}
+
+export fn walkStatements(stmts, sv, ev) {
+  for s in stmts { walkStatement(s, sv, ev) }
+}
+
+export fn walkExpression(expr, ev) {
+  if !ev { return }
+
+  const handler = ev[expr.type]
+  if handler { handler(expr) }
+
+  switch expr.type {
+    case "CallExpression" {
+      walkExpression(expr.callee, ev)
+      for a in expr.arguments { walkExpression(a, ev) }
+    }
+    case "BinaryExpression" {
+      walkExpression(expr.left, ev)
+      walkExpression(expr.right, ev)
+    }
+    case "UnaryExpression" { walkExpression(expr.argument, ev) }
+    case "AwaitExpression" { walkExpression(expr.argument, ev) }
+    case "SpreadExpression" { walkExpression(expr.argument, ev) }
+    case "TypeofExpression" { walkExpression(expr.argument, ev) }
+    case "VoidExpression" { walkExpression(expr.argument, ev) }
+    case "DeleteExpression" { walkExpression(expr.argument, ev) }
+    case "UpdateExpression" { walkExpression(expr.argument, ev) }
+    case "MemberExpression" {
+      walkExpression(expr.object, ev)
+      walkExpression(expr.property, ev)
+    }
+    case "ArrayExpression" {
+      for e in expr.elements { walkExpression(e, ev) }
+    }
+    case "ObjectExpression" {
+      for p in expr.properties {
+        walkExpression(p.key, ev)
+        walkExpression(p.value, ev)
+      }
+    }
+    case "ArrowFunction" {
+      for p in expr.params { walkParam(p, ev) }
+      if !Array.isArray(expr.body) {
+        walkExpression(expr.body, ev)
+      }
+    }
+    case "AssignmentExpression" {
+      walkExpression(expr.left, ev)
+      walkExpression(expr.right, ev)
+    }
+    case "CompoundAssignmentExpression" {
+      walkExpression(expr.left, ev)
+      walkExpression(expr.right, ev)
+    }
+    case "NewExpression" {
+      walkExpression(expr.callee, ev)
+      for a in expr.arguments { walkExpression(a, ev) }
+    }
+    case "TernaryExpression" {
+      walkExpression(expr.condition, ev)
+      walkExpression(expr.consequent, ev)
+      walkExpression(expr.alternate, ev)
+    }
+    case "TemplateLiteral" {
+      for part in expr.parts {
+        if part.kind == "Expression" { walkExpression(part.expression, ev) }
+      }
+    }
+    case "YieldExpression" {
+      if expr.argument { walkExpression(expr.argument, ev) }
+    }
+    case "AsExpression" {
+      walkExpression(expr.expression, ev)
+    }
+    case "IfExpression" {
+      walkExpression(expr.condition, ev)
+    }
+    default {}
+  }
+}
+
+fn walkClassMember(member, sv, ev) {
+  if member.type == "ClassField" {
+    if member.value { walkExpression(member.value, ev) }
+  } else {
+    for p in member.params { walkParam(p, ev) }
+    walkStatements(member.body, sv, ev)
+  }
+}
+
+fn walkParam(p, ev) {
+  if p.defaultValue && ev { walkExpression(p.defaultValue, ev) }
+}
+
+// ── Convenience ────────────────────────────────────────────────────
+
+export fn collectIdentifiers(program) {
+  const names = []
+  walkProgram(program, undefined, {
+    Identifier: (expr) => { names.push(expr.name) },
+  })
+  return names
+}
+
+export fn collectFunctions(program) {
+  const fns = []
+  walkProgram(program, {
+    FunctionDeclaration: (stmt) => { fns.push(stmt) },
+  })
+  return fns
+}
+
+export fn collectClasses(program) {
+  const classes = []
+  walkProgram(program, {
+    ClassDeclaration: (stmt) => { classes.push(stmt) },
+  })
+  return classes
+}

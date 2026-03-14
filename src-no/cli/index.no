@@ -1,0 +1,75 @@
+import { CYAN, RESET } from "./utils/colors.no"
+import { suggestClosest } from "./utils/strings.no"
+import { printHelp, printVersion } from "./commands/help.no"
+import { runInit } from "./commands/init.no"
+import { runBuild } from "./commands/build.no"
+import { runRun, resolveNodeonFile } from "./commands/run.no"
+import { runCheck } from "./commands/check.no"
+import { runFmt } from "./commands/fmt.no"
+import { startRepl } from "./commands/repl.no"
+
+export async fn main(argv) {
+  const args = (argv ?? process.argv).slice(2)
+  const cmd = args[0]
+
+  if !cmd || cmd == "help" || cmd == "--help" || cmd == "-h" {
+    printHelp()
+    return
+  }
+
+  if cmd == "version" || cmd == "--version" || cmd == "-v" {
+    printVersion()
+    return
+  }
+
+  if cmd == "init" {
+    runInit(args.slice(1))
+    return
+  }
+
+  if cmd == "build" {
+    runBuild(args.slice(1))
+    return
+  }
+
+  if cmd == "run" {
+    runRun(args.slice(1))
+    return
+  }
+
+  if cmd == "repl" {
+    startRepl()
+    return
+  }
+
+  if cmd == "check" {
+    runCheck(args.slice(1))
+    return
+  }
+
+  if cmd == "fmt" {
+    runFmt(args.slice(1))
+    return
+  }
+
+  // Try to run as a file
+  try {
+    const resolved = resolveNodeonFile(cmd)
+    runRun([resolved, ...args.slice(1)])
+    return
+  } catch (e) {
+    // Not a valid file — fall through
+  }
+
+  const knownCommands = ["build", "run", "repl", "check", "fmt", "help", "version", "init"]
+  const suggestion = suggestClosest(cmd, knownCommands)
+  console.error("Unknown command '" + cmd + "'")
+  console.error("See " + CYAN + "'nodeon help'" + RESET + ".")
+  if suggestion {
+    console.error("did you mean: " + suggestion + " ?")
+  }
+  process.exit(1)
+}
+
+// Auto-run when executed directly
+main()
