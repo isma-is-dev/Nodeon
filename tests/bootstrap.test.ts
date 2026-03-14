@@ -251,6 +251,43 @@ describe("bootstrap: self-compilation (compiled compiler compiles itself)", () =
   }
 });
 
+describe("bootstrap: fixpoint (TS output === self-hosted output)", () => {
+  const bundlePath = resolve(__dirname, "..", "dist-no", "nodeon-compiler.cjs");
+  const bundleExists = require("fs").existsSync(bundlePath);
+
+  if (!bundleExists) {
+    it.skip("bundle not found — run build-no.js + bundle-no.js first", () => {});
+  } else {
+    const selfCompiler = require(bundlePath);
+
+    const noFiles = [
+      "language/tokens.no", "language/keywords.no", "language/operators.no",
+      "language/symbols.no", "language/precedence.no",
+      "compiler/lexer/lexer.no", "compiler/parser/parser-base.no",
+      "compiler/parser/parser-types.no", "compiler/parser/parser-expressions.no",
+      "compiler/parser/parser-statements.no", "compiler/parser/parser.no",
+      "compiler/compile.no", "compiler/resolver.no",
+      "compiler/generator/js-generator.no", "compiler/type-checker.no",
+      "compiler/formatter/formatter.no", "compiler/generator/source-map.no",
+      "compiler/errors.no", "compiler/ast/visitor.no",
+      "cli/utils/colors.no", "cli/utils/strings.no",
+      "cli/utils/errors.no", "cli/utils/runtime.no", "cli/utils/compile.no",
+      "cli/commands/build.no", "cli/commands/run.no", "cli/commands/check.no",
+      "cli/commands/fmt.no", "cli/commands/help.no", "cli/commands/init.no",
+      "cli/commands/repl.no", "cli/index.no",
+    ];
+
+    for (const rel of noFiles) {
+      it(`fixpoint: ${rel}`, () => {
+        const src = readFileSync(resolve(SRC_NO, rel), "utf8");
+        const tsJs = compile(src).js.trim();
+        const selfJs = selfCompiler.compile(src).js.trim();
+        expect(selfJs).toBe(tsJs);
+      });
+    }
+  }
+});
+
 function stripModuleSyntax(js: string): string {
   return js
     .replace(/^export /gm, "")
