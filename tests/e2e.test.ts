@@ -972,3 +972,50 @@ describe("export aliases", () => {
     expect(js).toContain('"mod"');
   });
 });
+
+describe("If-expressions", () => {
+  function compileToJS(src: string): string {
+    return compile(src).js;
+  }
+
+  it("compiles basic if-expression to IIFE", () => {
+    const js = compileToJS('let x = if true { "yes" } else { "no" }');
+    expect(js).toContain("(() =>");
+    expect(js).toContain("if");
+    expect(js).toContain("else");
+  });
+
+  it("if-expression in variable assignment", () => {
+    const js = compileToJS('let val = if 1 > 0 { "positive" } else { "negative" }');
+    expect(js).toContain("let val");
+    expect(js).toContain("(() =>");
+  });
+
+  it("if-expression produces correct AST node", () => {
+    const ast = compileToAST('let x = if true { 1 } else { 2 }');
+    expect(ast.body.length).toBe(1);
+    const decl = ast.body[0] as any;
+    expect(decl.type).toBe("VariableDeclaration");
+    expect(decl.value.type).toBe("IfExpression");
+    expect(decl.value.consequent.length).toBe(1);
+    expect(decl.value.alternate.length).toBe(1);
+  });
+
+  it("if-expression with multi-statement blocks", () => {
+    const js = compileToJS(`let x = if true {
+  let a = 1
+  a + 1
+} else {
+  let b = 2
+  b + 2
+}`);
+    expect(js).toContain("(() =>");
+    expect(js).toContain("return");
+  });
+
+  it("regular if-statement still works", () => {
+    const js = compileToJS('if true {\n  let x = 1\n}');
+    expect(js).toContain("if");
+    expect(js).not.toContain("(() =>");
+  });
+});

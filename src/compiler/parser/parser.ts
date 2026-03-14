@@ -68,6 +68,7 @@ import {
   ExportSpecifier,
   LabeledStatement,
   AsExpression,
+  IfExpression,
 } from "@ast/nodes";
 
 // PRECEDENCE and COMPOUND_ASSIGN imported from @language/precedence
@@ -1239,6 +1240,16 @@ export class Parser extends ParserBase {
     if (token.type === TokenType.Keyword && token.value === "super") {
       this.advance();
       return { type: "Identifier", name: "super" } as Identifier;
+    }
+
+    // If-expression: if condition { ... } else { ... }
+    if (token.type === TokenType.Keyword && token.value === "if") {
+      this.advance();
+      const condition = this.parseExpression();
+      const consequent = this.parseBlock();
+      this.consumeKeyword("else");
+      const alternate = this.parseBlock();
+      return { type: "IfExpression", condition, consequent, alternate } as IfExpression;
     }
 
     // Dynamic import: import("./module")

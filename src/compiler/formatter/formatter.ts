@@ -344,6 +344,13 @@ function fmtExpression(expr: Expression, ctx: FmtContext): string {
     }
     case "AsExpression":
       return `${fmtExpression(expr.expression, ctx)} as ${fmtType(expr.typeAnnotation)}`;
+    case "IfExpression": {
+      const inner = indented(ctx);
+      const cond = fmtExpression(expr.condition, ctx);
+      const thenBody = expr.consequent.map((s: any) => fmtStatement(s, inner)).join("\n");
+      const elseBody = expr.alternate.map((s: any) => fmtStatement(s, inner)).join("\n");
+      return `if ${cond} {\n${thenBody}\n${pad(ctx)}} else {\n${elseBody}\n${pad(ctx)}}`;
+    }
     case "RegExpLiteral":
       return expr.flags ? `/${expr.pattern}/${expr.flags}` : `/${expr.pattern}/`;
     case "ObjectPattern": return fmtPattern(expr);

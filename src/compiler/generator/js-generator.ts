@@ -618,6 +618,26 @@ function emitExpression(expr: Expression, ctx: GenContext): string {
       return expr.flags ? `/${expr.pattern}/${expr.flags}` : `/${expr.pattern}/`;
     case "AsExpression":
       return emitExpression(expr.expression, ctx); // type-only — strip assertion
+    case "IfExpression": {
+      // Compile to IIFE: (() => { if (cond) { ... return last; } else { ... return last; } })()
+      const cond = emitExpression(expr.condition, ctx);
+      const thenStmts = expr.consequent.map((s: any) => emitStatement(s, ctx));
+      const elseStmts = expr.alternate.map((s: any) => emitStatement(s, ctx));
+      // Make last statement in each branch a return
+      const wrapReturn = (stmts: string[]) => {
+        if (stmts.length === 0) return ["return undefined;"];
+        const last = stmts[stmts.length - 1];
+        // If last statement doesn't already start with return, wrap it
+        const trimmed = last.trim();
+        if (!trimmed.startsWith("return ") && !trimmed.startsWith("return;")) {
+          stmts[stmts.length - 1] = `return ${trimmed}`;
+        }
+        return stmts;
+      };
+      const thenBody = wrapReturn([...thenStmts]).join("; ");
+      const elseBody = wrapReturn([...elseStmts]).join("; ");
+      return `(() => { if${ctx.sp}(${cond})${ctx.sp}{ ${thenBody} }${ctx.sp}else${ctx.sp}{ ${elseBody} } })()`;
+    }
     default:
       throw new Error(`Unsupported expression type: ${(expr as any).type}`);
   }

@@ -69,6 +69,7 @@ export interface ExpressionVisitor {
   DeleteExpression?: (expr: any) => void;
   YieldExpression?: (expr: any) => void;
   AsExpression?: (expr: any) => void;
+  IfExpression?: (expr: any) => void;
   RegExpLiteral?: (expr: any) => void;
   ObjectPattern?: (expr: any) => void;
   ArrayPattern?: (expr: any) => void;
@@ -243,6 +244,10 @@ export function walkExpression(expr: Expression, ev?: ExpressionVisitor): void {
       break;
     case "AsExpression":
       walkExpression(expr.expression, ev);
+      break;
+    case "IfExpression":
+      walkExpression(expr.condition, ev);
+      // IfExpression branches contain statements — would need sv to walk
       break;
     // Identifier, Literal, RegExpLiteral, ObjectPattern, ArrayPattern
     // — leaf nodes, no children to recurse into

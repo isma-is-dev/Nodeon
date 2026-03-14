@@ -200,6 +200,7 @@ function inferExpression(expr: Expression, env: TypeEnv): NType {
     case "TernaryExpression": return inferExpression(expr.consequent, env);
     case "AsExpression": return annotationToType(expr.typeAnnotation);
     case "AwaitExpression": return inferExpression(expr.argument, env);
+    case "IfExpression": return inferExpression(expr.consequent.length > 0 ? (expr.consequent[expr.consequent.length - 1] as any).expression ?? (expr.consequent[expr.consequent.length - 1] as any).value ?? expr.consequent[expr.consequent.length - 1] : expr as any, env);
     case "NewExpression":
       if (expr.callee.type === "Identifier") return { kind: "named", name: expr.callee.name };
       return ANY;

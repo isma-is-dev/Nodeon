@@ -298,6 +298,7 @@ export type Expression =
   | DeleteExpression
   | YieldExpression
   | AsExpression
+  | IfExpression
   | ObjectPattern
   | ArrayPattern;
 
@@ -430,6 +431,13 @@ export type AsExpression = {
   type: "AsExpression";
   expression: Expression;
   typeAnnotation: TypeAnnotation;
+};
+
+export type IfExpression = {
+  type: "IfExpression";
+  condition: Expression;
+  consequent: Statement[];
+  alternate: Statement[];
 };
 
 export type Identifier = {
