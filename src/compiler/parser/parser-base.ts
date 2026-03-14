@@ -1,5 +1,6 @@
 import { Token, TokenType } from "@language/tokens";
 import { Identifier } from "@ast/nodes";
+import { NodeonError, ErrorCode } from "@compiler/errors";
 
 /**
  * Base class for the Parser — handles token navigation and consumption.
@@ -145,8 +146,15 @@ export class ParserBase {
 
   protected error(token: Token, message: string): never {
     const loc = token.loc;
+    // Infer error code from message pattern
+    let code = ErrorCode.E0100;
+    if (message.startsWith("Expected '") || message.startsWith("Expected \"")) code = ErrorCode.E0101;
+    else if (message.includes("Expected expression")) code = ErrorCode.E0105;
+    else if (message.includes("Expected") && message.includes("name")) code = ErrorCode.E0107;
+    else if (message.includes("Expected '{'")) code = ErrorCode.E0108;
+
     if (loc) {
-      throw new SyntaxError(`${message} at ${loc.line}:${loc.column}`);
+      throw new NodeonError(code, message, loc.line, loc.column);
     }
     throw new SyntaxError(`${message} at position ${token.position}`);
   }
