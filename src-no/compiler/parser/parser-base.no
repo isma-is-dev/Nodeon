@@ -1,0 +1,128 @@
+// Base class for the Parser — handles token navigation and consumption.
+// Subclassed by Parser which adds all statement/expression parsing.
+export class ParserBase {
+  constructor(tokens) {
+    this.tokens = tokens
+    this.current = 0
+  }
+
+  // ── Token Navigation ──────────────────────────────────────────
+
+  fn advance() {
+    if !this.isAtEnd() { this.current = this.current + 1 }
+    return this.previous()
+  }
+
+  fn peek() {
+    return this.tokens[this.current]
+  }
+
+  fn peekNext() {
+    return this.tokens[this.current + 1]
+  }
+
+  fn peekAt(offset) {
+    return this.tokens[this.current + offset]
+  }
+
+  fn previous() {
+    return this.tokens[this.current - 1]
+  }
+
+  fn isAtEnd() {
+    return this.peek().type == "EOF"
+  }
+
+  // ── Token Checks ──────────────────────────────────────────────
+
+  fn checkKeyword(value) {
+    const tok = this.peek()
+    return tok.type == "Keyword" && tok.value == value
+  }
+
+  fn checkContextualKeyword(value) {
+    const tok = this.peek()
+    return tok.type == "Identifier" && tok.value == value
+  }
+
+  fn consumeContextualKeyword(value) {
+    const tok = this.peek()
+    if tok.type == "Identifier" && tok.value == value {
+      this.advance()
+      return
+    }
+    this.error(tok, "Expected '{value}'")
+  }
+
+  fn checkOperator(value) {
+    const tok = this.peek()
+    return tok.type == "Operator" && tok.value == value
+  }
+
+  fn checkDelimiter(value) {
+    const tok = this.peek()
+    return tok.type == "Delimiter" && tok.value == value
+  }
+
+  // ── Token Consumption ─────────────────────────────────────────
+
+  fn consumeKeyword(value) {
+    const tok = this.peek()
+    if tok.type == "Keyword" && tok.value == value {
+      this.advance()
+      return
+    }
+    this.error(tok, "Expected keyword '{value}'")
+  }
+
+  fn consumeIdentifier(message) {
+    const tok = this.peek()
+    if tok.type == "Identifier" {
+      this.advance()
+      return { type: "Identifier", name: tok.value }
+    }
+    // Allow some keywords to be used as identifiers in certain contexts
+    if tok.type == "Keyword" && ["print", "from", "async", "of", "get", "set"].includes(tok.value) {
+      this.advance()
+      return { type: "Identifier", name: tok.value }
+    }
+    this.error(tok, message)
+  }
+
+  fn consumeDelimiter(value, message) {
+    const tok = this.peek()
+    if tok.type == "Delimiter" && tok.value == value {
+      this.advance()
+      return
+    }
+    this.error(tok, message)
+  }
+
+  fn consumeOperator(value, message) {
+    const tok = this.peek()
+    if tok.type == "Operator" && tok.value == value {
+      this.advance()
+      return
+    }
+    this.error(tok, message)
+  }
+
+  fn matchDelimiter(value) {
+    const tok = this.peek()
+    if tok.type == "Delimiter" && tok.value == value {
+      this.advance()
+      return true
+    }
+    return false
+  }
+
+  // ── Error Reporting ───────────────────────────────────────────
+
+  fn error(token, message) {
+    const loc = token.loc
+    if loc {
+      throw new SyntaxError("{message} at {loc.line}:{loc.column}")
+    }
+    throw new SyntaxError("{message} at position {token.position}")
+  }
+}

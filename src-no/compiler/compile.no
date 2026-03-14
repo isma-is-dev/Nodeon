@@ -1,0 +1,15 @@
+import { Lexer } from "./lexer/lexer.no"
+
+// Compile Nodeon source to JavaScript
+export fn compile(source, options) {
+  const opts = options ?? {}
+  const ast = compileToAST(source)
+  const js = generateJS(ast, opts.minify ?? false)
+  return { js: js, ast: ast }
+}
+
+// Parse Nodeon source to AST
+export fn compileToAST(source) {
+  const tokens = new Lexer(source).tokenize()
+  return { type: "Program", body: tokens }
+}

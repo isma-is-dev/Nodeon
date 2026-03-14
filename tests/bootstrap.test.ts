@@ -46,6 +46,19 @@ describe("bootstrap: .no modules compile", () => {
     expect(js).toContain("tokenize");
     expect(js.length).toBeGreaterThan(5000);
   });
+
+  it("compiler/parser/parser-base.no compiles", () => {
+    const js = compileNoFile("compiler/parser/parser-base.no");
+    expect(js).toContain("class ParserBase");
+    expect(js).toContain("checkKeyword");
+    expect(js).toContain("consumeIdentifier");
+  });
+
+  it("compiler/compile.no compiles", () => {
+    const js = compileNoFile("compiler/compile.no");
+    expect(js).toContain("compile");
+    expect(js).toContain("compileToAST");
+  });
 });
 
 function stripModuleSyntax(js: string): string {
