@@ -710,6 +710,13 @@ function emitTemplate(t: TemplateLiteral, ctx: GenContext): string {
 function emitMember(m: MemberExpression, ctx: GenContext): string {
   const obj = emitExpression(m.object, ctx);
   if (m.computed) {
+    // Array slicing: arr[1..3] → arr.slice(1, 3)
+    if (m.property.type === "BinaryExpression" && m.property.operator === "..") {
+      const start = emitExpression(m.property.left, ctx);
+      const end = emitExpression(m.property.right, ctx);
+      const dot = m.optional ? "?." : ".";
+      return `${obj}${dot}slice(${start},${ctx.sp}${end})`;
+    }
     const bracket = m.optional ? "?.[" : "[";
     return `${obj}${bracket}${emitExpression(m.property, ctx)}]`;
   }

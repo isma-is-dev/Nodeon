@@ -973,6 +973,34 @@ describe("export aliases", () => {
   });
 });
 
+describe("Array slicing sugar", () => {
+  it("arr[1..3] compiles to arr.slice(1, 3)", () => {
+    const js = compile("let x = arr[1..3]").js;
+    expect(js).toContain(".slice(1, 3)");
+  });
+
+  it("arr[0..5] compiles to arr.slice(0, 5)", () => {
+    const js = compile("let x = arr[0..5]").js;
+    expect(js).toContain(".slice(0, 5)");
+  });
+
+  it("works with expressions in range bounds", () => {
+    const js = compile("let x = arr[a..b]").js;
+    expect(js).toContain(".slice(a, b)");
+  });
+
+  it("works with optional chaining", () => {
+    const js = compile("let x = arr?.[1..3]").js;
+    expect(js).toContain("?.slice(1, 3)");
+  });
+
+  it("regular computed access still works", () => {
+    const js = compile("let x = arr[0]").js;
+    expect(js).toContain("arr[0]");
+    expect(js).not.toContain("slice");
+  });
+});
+
 describe("If-expressions", () => {
   function compileToJS(src: string): string {
     return compile(src).js;
