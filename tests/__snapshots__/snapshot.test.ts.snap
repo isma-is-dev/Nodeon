@@ -1,0 +1,80 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`snapshot tests > classes.no 1`] = `
+"class Animal {
+  constructor(name) {
+    this.name = name;
+  }
+
+  speak() {
+    return console.log(\`I am \${this.name}\`);
+  }
+}
+class Dog extends Animal {
+  speak() {
+    return console.log(\`\${this.name} barks!\`);
+  }
+}"
+`;
+
+exports[`snapshot tests > control-flow.no 1`] = `
+"if (x > 0) {
+  console.log("positive");
+} else {
+  console.log("non-positive");
+}
+for (let i = 0; i <= 5; i++) {
+  console.log(i);
+}
+for (const item of items) {
+  console.log(item);
+}
+while (count > 0) {
+  let count = count - 1;
+}
+switch (color) {
+  case "red":
+    console.log("stop");
+    break;
+  case "green":
+    console.log("go");
+    break;
+  default:
+    console.log("unknown");
+    break;
+}"
+`;
+
+exports[`snapshot tests > functions.no 1`] = `
+"function add(a, b) {
+  return a + b;
+}
+function greet(name) {
+  return \`Hello \${name}\`;
+}
+function double(x) {
+  return x * 2;
+}
+async function fetchData(url) {
+  return url;
+}"
+`;
+
+exports[`snapshot tests > types.no 1`] = `
+"
+
+const Color = Object.freeze({
+  Red: 0,
+  Green: 1,
+  Blue: 2
+});
+let x = 42;
+const label = "items";"
+`;
+
+exports[`snapshot tests > variables.no 1`] = `
+"let x = 42;
+const PI = 3.14;
+let name = "Nodeon";
+let count = 10;"
+`;

@@ -1,0 +1,30 @@
+// Control flow
+if x > 0 {
+  print("positive")
+} else {
+  print("non-positive")
+}
+
+for i in 0..5 {
+  print(i)
+}
+
+for item in items {
+  print(item)
+}
+
+while count > 0 {
+  count = count - 1
+}
+
+switch color {
+  case "red" {
+    print("stop")
+  }
+  case "green" {
+    print("go")
+  }
+  default {
+    print("unknown")
+  }
+}

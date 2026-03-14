@@ -1,0 +1,13 @@
+// Type-only declarations (erased in output)
+type ID = string | number
+type Pair<A, B> = { first: A, second: B }
+
+interface Shape {
+  area(): number,
+  perimeter(): number
+}
+
+enum Color { Red, Green, Blue }
+
+let x: number = 42
+const label: string = "items"

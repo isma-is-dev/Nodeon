@@ -1,0 +1,5 @@
+// Variable declarations
+x = 42
+const PI = 3.14
+let name = "Nodeon"
+let count: number = 10
