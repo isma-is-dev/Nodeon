@@ -66,6 +66,11 @@ export class ParserBase {
     return tok.type === TokenType.Operator && tok.value === value;
   }
 
+  protected checkExactOperator(value: string): boolean {
+    const tok = this.peek();
+    return tok.type === TokenType.Operator && tok.value === value;
+  }
+
   protected checkDelimiter(value: string): boolean {
     const tok = this.peek();
     return tok.type === TokenType.Delimiter && tok.value === value;

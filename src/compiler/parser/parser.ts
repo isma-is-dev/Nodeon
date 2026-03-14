@@ -1545,10 +1545,10 @@ export class Parser extends ParserBase {
       }
     }
 
-    // Union type: string | number (only if | is not ||)
-    if (this.checkOperator("|") && !this.checkOperator("||")) {
+    // Union type: string | number (exact token match, not prefix)
+    if (this.checkExactOperator("|")) {
       const types: TypeAnnotation[] = [type];
-      while (this.checkOperator("|") && !this.checkOperator("||")) {
+      while (this.checkExactOperator("|")) {
         this.advance();
         let next = this.parseTypePrimary();
         while (this.checkDelimiter("[")) {
@@ -1566,10 +1566,10 @@ export class Parser extends ParserBase {
       type = { kind: "union", types };
     }
 
-    // Intersection type: A & B (only if & is not &&)
-    if (this.checkOperator("&") && !this.checkOperator("&&")) {
+    // Intersection type: A & B (exact token match, not prefix)
+    if (this.checkExactOperator("&")) {
       const types: TypeAnnotation[] = [type];
-      while (this.checkOperator("&") && !this.checkOperator("&&")) {
+      while (this.checkExactOperator("&")) {
         this.advance();
         let next = this.parseTypePrimary();
         while (this.checkDelimiter("[")) {
