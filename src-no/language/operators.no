@@ -1,0 +1,29 @@
+// Single-character operators
+export const OPERATORS = new Set([
+  "+", "-", "*", "/", "=",
+  "<", ">", "!", ".", "%",
+  "&", "|", "~", "^", "?",
+])
+
+// Two-character operators
+export const TWO_CHAR_OPERATORS = new Set([
+  "==", "!=", "<=", ">=", "..",
+  "=>", "&&", "||", "??",
+  "+=", "-=", "*=", "/=", "%=",
+  "++", "--", "**", "?.",
+  "<<", ">>", "|>",
+  "&=", "|=", "^=",
+])
+
+// Three-character operators
+export const THREE_CHAR_OPERATORS = new Set([
+  "...", "===", "!==",
+  "**=", "&&=", "||=", "??=",
+  ">>>",
+  "<<=", ">>=",
+])
+
+// Four-character operators
+export const FOUR_CHAR_OPERATORS = new Set([
+  ">>>=",
+])

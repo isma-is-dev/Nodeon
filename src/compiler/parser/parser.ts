@@ -108,7 +108,7 @@ export class Parser extends ParserBase {
       if (tok.type === TokenType.Keyword && [
         "fn", "if", "for", "while", "do", "return", "import", "export",
         "class", "try", "throw", "const", "let", "var", "switch", "match",
-        "enum", "interface", "type", "break", "continue"
+        "enum", "interface", "break", "continue"
       ].includes(tok.value)) {
         return; // Don't consume — let the parser try parsing this as a new statement
       }
@@ -150,7 +150,6 @@ export class Parser extends ParserBase {
         case "match": stmt = this.parseMatchStatement(); break;
         case "enum": stmt = this.parseEnumDeclaration(); break;
         case "interface": stmt = this.parseInterfaceDeclaration(); break;
-        case "type": stmt = this.parseTypeAliasDeclaration(); break;
         case "break": {
           this.advance();
           let label: string | undefined;
@@ -175,6 +174,12 @@ export class Parser extends ParserBase {
         default: stmt = this.parseExpressionStatement(); break;
       }
     } else if (tok.type === TokenType.Identifier) {
+      // Contextual keyword: type Foo = ...
+      if (tok.value === "type" && this.peekNext()?.type === TokenType.Identifier) {
+        stmt = this.parseTypeAliasDeclaration();
+        if (loc) stmt.loc = loc;
+        return stmt;
+      }
       const next = this.peekNext();
       // Labeled statement: label: for/while/do
       if (next?.type === TokenType.Delimiter && next.value === ":") {
@@ -394,7 +399,7 @@ export class Parser extends ParserBase {
           const name = tok.value;
           this.advance();
           let alias: string | undefined;
-          if (this.checkKeyword("as")) {
+          if (this.checkContextualKeyword("as")) {
             this.advance();
             const aliasTok = this.peek();
             if (aliasTok.type !== TokenType.Identifier) this.error(aliasTok, "Expected alias name");
@@ -449,7 +454,7 @@ export class Parser extends ParserBase {
     if (this.checkOperator("*")) {
       this.advance();
       let exportAllAlias: string | undefined;
-      if (this.checkKeyword("as")) {
+      if (this.checkContextualKeyword("as")) {
         this.advance();
         exportAllAlias = this.consumeIdentifier("Expected alias name").name;
       }
@@ -466,7 +471,7 @@ export class Parser extends ParserBase {
       while (!this.checkDelimiter("}") && !this.isAtEnd()) {
         const name = this.consumeIdentifier("Expected export name").name;
         let alias: string | undefined;
-        if (this.checkKeyword("as")) {
+        if (this.checkContextualKeyword("as")) {
           this.advance();
           alias = this.consumeIdentifier("Expected alias name").name;
         }
@@ -867,7 +872,7 @@ export class Parser extends ParserBase {
   }
 
   private parseTypeAliasDeclaration(): TypeAliasDeclaration {
-    this.consumeKeyword("type");
+    this.consumeContextualKeyword("type");
     const name = this.consumeIdentifier("Expected type alias name");
     const typeParams = this.parseTypeParams();
     this.consumeOperator("=", "Expected '=' after type alias name");
@@ -938,7 +943,7 @@ export class Parser extends ParserBase {
       }
 
       // Type assertion: value as Type (stripped in output)
-      if (tok.type === TokenType.Keyword && tok.value === "as") {
+      if (tok.type === TokenType.Identifier && tok.value === "as") {
         this.advance(); // consume 'as'
         const typeAnnotation = this.parseTypeAnnotation();
         left = { type: "AsExpression", expression: left, typeAnnotation } as AsExpression;

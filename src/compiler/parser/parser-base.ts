@@ -47,6 +47,20 @@ export class ParserBase {
     return tok.type === TokenType.Keyword && tok.value === value;
   }
 
+  protected checkContextualKeyword(value: string): boolean {
+    const tok = this.peek();
+    return tok.type === TokenType.Identifier && tok.value === value;
+  }
+
+  protected consumeContextualKeyword(value: string): void {
+    const tok = this.peek();
+    if (tok.type === TokenType.Identifier && tok.value === value) {
+      this.advance();
+      return;
+    }
+    this.error(tok, `Expected '${value}'`);
+  }
+
   protected checkOperator(value: string): boolean {
     const tok = this.peek();
     return tok.type === TokenType.Operator && tok.value === value;

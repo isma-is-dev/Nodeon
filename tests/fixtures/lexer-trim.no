@@ -1,0 +1,94 @@
+class Lexer {
+  constructor(source) {
+    this.src = source
+    this.pos = 0
+    this.line = 1
+    this.column = 1
+  }
+
+  fn tokenize() {
+    const tokens = []
+
+    while !this.isAtEnd() {
+      this.skipWhitespaceAndComments()
+      if this.isAtEnd() { break }
+
+      const char = this.peek()
+      const loc = this.loc()
+
+      if char == "$" || this.isAlpha(char) || char == "_" {
+        tokens.push(this.readIdentifier(loc))
+        continue
+      }
+
+      if this.isDigit(char) {
+        tokens.push(this.readNumber(loc))
+        continue
+      }
+    }
+
+    tokens.push(this.makeToken("EOF", "", this.loc()))
+    return tokens
+  }
+
+  fn loc() {
+    return { line: this.line, column: this.column, offset: this.pos }
+  }
+
+  fn makeToken(type, value, loc) {
+    return { type: type, value: value, position: loc.offset, loc: loc }
+  }
+
+  fn peek() {
+    return this.src[this.pos] ?? ""
+  }
+
+  fn isAtEnd() {
+    return this.pos >= this.src.length
+  }
+
+  fn advance() {
+    const ch = this.src[this.pos] ?? ""
+    this.pos = this.pos + 1
+    return ch
+  }
+
+  fn isAlpha(ch) {
+    return (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z")
+  }
+
+  fn isDigit(ch) {
+    return ch >= "0" && ch <= "9"
+  }
+
+  fn isAlphaNumeric(ch) {
+    return this.isAlpha(ch) || this.isDigit(ch)
+  }
+
+  fn readIdentifier(loc) {
+    let value = ""
+    while !this.isAtEnd() && (this.isAlphaNumeric(this.peek()) || this.peek() == "_" || this.peek() == "$") {
+      value = value + this.advance()
+    }
+    return this.makeToken("Identifier", value, loc)
+  }
+
+  fn readNumber(loc) {
+    let value = ""
+    while !this.isAtEnd() && this.isDigit(this.peek()) {
+      value = value + this.advance()
+    }
+    return this.makeToken("Number", value, loc)
+  }
+
+  fn skipWhitespaceAndComments() {
+    while !this.isAtEnd() {
+      const ch = this.peek()
+      if ch == " " || ch == "\t" || ch == "\r" || ch == "\n" {
+        this.advance()
+        continue
+      }
+      break
+    }
+  }
+}

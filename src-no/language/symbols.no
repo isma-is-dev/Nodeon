@@ -1,0 +1,2 @@
+// Delimiter characters
+export const DELIMITERS = new Set(['{', '}', '(', ')', ',', '[', ']', ':', ';'])

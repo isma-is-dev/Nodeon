@@ -45,6 +45,11 @@ export const KEYWORDS = new Set([
   "match",
   "enum",
   "interface",
+]);
+
+// Contextual keywords: treated as identifiers by the lexer,
+// but recognized by the parser in specific positions.
+export const CONTEXTUAL_KEYWORDS = new Set([
   "type",
   "as",
 ]);

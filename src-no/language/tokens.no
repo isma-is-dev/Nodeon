@@ -1,0 +1,28 @@
+// Token types used by the lexer
+export enum TokenType {
+  Identifier = "Identifier",
+  Number = "Number",
+  String = "String",
+  RawString = "RawString",
+  TemplateLiteral = "TemplateLiteral",
+  RegExp = "RegExp",
+  Keyword = "Keyword",
+  Operator = "Operator",
+  Delimiter = "Delimiter",
+  EOF = "EOF",
+}
+
+// Source location for error reporting and source maps
+interface SourceLocation {
+  line: number,
+  column: number,
+  offset: number,
+}
+
+// A single token produced by the lexer
+interface Token {
+  type: string,
+  value: string,
+  position: number,
+  loc: SourceLocation,
+}
