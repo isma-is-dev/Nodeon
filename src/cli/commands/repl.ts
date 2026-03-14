@@ -1,6 +1,6 @@
 import readline from "readline";
 import { compile } from "@compiler/compile";
-import { runInContext } from "vm";
+import { createContext, runInContext } from "vm";
 import { CYAN, GREEN, DIM, YELLOW, RESET } from "../utils/colors";
 import { formatError } from "../utils/errors";
 
@@ -15,7 +15,7 @@ export function startRepl() {
     encodeURIComponent, decodeURIComponent,
     Array, Object, String, Number, Boolean, Map, Set, Promise, Symbol,
   };
-  const ctx = { ...sandbox } as any;
+  const ctx = createContext({ ...sandbox });
 
   const rl = readline.createInterface({
     input: process.stdin,
@@ -49,7 +49,7 @@ export function startRepl() {
   const evalInput = (input: string) => {
     try {
       const { js } = compile(input);
-      const result = runInContext(js, ctx, { filename: "repl.js" });
+      const result = runInContext(js, ctx);
       if (result !== undefined) {
         console.log(`${CYAN}${formatValue(result)}${RESET}`);
       }
