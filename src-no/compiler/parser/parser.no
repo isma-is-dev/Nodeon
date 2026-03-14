@@ -1,0 +1,147 @@
+import { ParserStatements } from "./parser-statements.no"
+
+// Main Parser class — program parsing and statement dispatch.
+// Inheritance chain: ParserBase -> ParserTypes -> ParserExpressions -> ParserStatements -> Parser
+
+export class Parser extends ParserStatements {
+  constructor(tokens) {
+    super(tokens)
+    this.errors = []
+  }
+
+  fn parseProgram() {
+    const body = []
+    while !this.isAtEnd() {
+      try {
+        body.push(this.parseStatement())
+      } catch (err) {
+        if err instanceof SyntaxError {
+          this.errors.push(err)
+          this.recover()
+        } else {
+          throw err
+        }
+      }
+    }
+    return { type: "Program", body: body }
+  }
+
+  fn recover() {
+    while !this.isAtEnd() {
+      const tok = this.peek()
+      if tok.type == "Delimiter" && (tok.value == '}' || tok.value == ';') {
+        this.advance()
+        return
+      }
+      if tok.type == "Keyword" && [
+        "fn", "if", "for", "while", "do", "return", "import", "export",
+        "class", "try", "throw", "const", "let", "var", "switch", "match",
+        "enum", "interface", "break", "continue"
+      ].includes(tok.value) {
+        return
+      }
+      this.advance()
+    }
+  }
+
+  fn parseStatement() {
+    const tok = this.peek()
+    const loc = tok.loc ? { line: tok.loc.line, column: tok.loc.column } : undefined
+    let stmt = null
+
+    if tok.type == "Keyword" {
+      switch tok.value {
+        case "fn" {
+          const next = this.peekNext()
+          stmt = this.parseFunctionDeclaration(false, next?.type == "Operator" && next?.value == "*")
+        }
+        case "async" { stmt = this.parseAsync() }
+        case "if" { stmt = this.parseIfStatement() }
+        case "for" { stmt = this.parseForStatement() }
+        case "while" { stmt = this.parseWhileStatement() }
+        case "do" { stmt = this.parseDoWhileStatement() }
+        case "return" { stmt = this.parseReturnStatement() }
+        case "import" { stmt = this.parseImportDeclaration() }
+        case "export" { stmt = this.parseExportDeclaration() }
+        case "class" { stmt = this.parseClassDeclaration() }
+        case "try" { stmt = this.parseTryCatch() }
+        case "throw" { stmt = this.parseThrowStatement() }
+        case "const" { stmt = this.parseConstDeclaration() }
+        case "let" { stmt = this.parseLetDeclaration() }
+        case "var" { stmt = this.parseVarDeclaration() }
+        case "switch" { stmt = this.parseSwitchStatement() }
+        case "match" { stmt = this.parseMatchStatement() }
+        case "enum" { stmt = this.parseEnumDeclaration() }
+        case "interface" { stmt = this.parseInterfaceDeclaration() }
+        case "break" {
+          this.advance()
+          let label = undefined
+          if this.peek().type == "Identifier" {
+            label = this.peek().value
+            this.advance()
+          }
+          stmt = { type: "BreakStatement", label: label }
+        }
+        case "continue" {
+          this.advance()
+          let label = undefined
+          if this.peek().type == "Identifier" {
+            label = this.peek().value
+            this.advance()
+          }
+          stmt = { type: "ContinueStatement", label: label }
+        }
+        case "debugger" {
+          this.advance()
+          stmt = { type: "DebuggerStatement" }
+        }
+        default { stmt = this.parseExpressionStatement() }
+      }
+    } else {
+      if tok.type == "Identifier" {
+        // Contextual keyword: type Foo = ...
+        if tok.value == "type" && this.peekNext()?.type == "Identifier" {
+          stmt = this.parseTypeAliasDeclaration()
+          if loc { stmt.loc = loc }
+          return stmt
+        }
+        const next = this.peekNext()
+        // Labeled statement: label: for/while/do
+        if next?.type == "Delimiter" && next.value == ":" {
+          const after = this.peekAt(2)
+          if after?.type == "Keyword" && (after.value == "for" || after.value == "while" || after.value == "do") {
+            const label = tok.value
+            this.advance()
+            this.advance()
+            const body = this.parseStatement()
+            stmt = { type: "LabeledStatement", label: label, body: body }
+          } else {
+            stmt = this.parseIdentifierStatement(tok, next)
+          }
+        } else {
+          stmt = this.parseIdentifierStatement(tok, next)
+        }
+      } else {
+        stmt = this.parseExpressionStatement()
+      }
+    }
+
+    if loc { stmt.loc = loc }
+    return stmt
+  }
+
+  fn parseIdentifierStatement(tok, next) {
+    // Bare assignment: x = value (implicit let)
+    if next?.type == "Operator" && next.value == "=" {
+      const afterEq = this.peekAt(2)
+      if afterEq?.type != "Operator" || (afterEq.value != "=" && afterEq.value != ">") {
+        return this.parseVariableDeclaration("let")
+      }
+    }
+    // Bare typed declaration: x: Type = value (implicit let)
+    if next?.type == "Delimiter" && next.value == ":" {
+      return this.parseVariableDeclaration("let")
+    }
+    return this.parseExpressionStatement()
+  }
+}

@@ -80,6 +80,38 @@ describe("bootstrap: .no modules compile", () => {
     expect(js).toContain("function typeCheck");
     expect(js).toContain("inferExpression");
   });
+
+  it("compiler/parser/parser-types.no compiles", () => {
+    const js = compileNoFile("compiler/parser/parser-types.no");
+    expect(js).toContain("class ParserTypes");
+    expect(js).toContain("parseTypeAnnotation");
+    expect(js).toContain("parseObjectPattern");
+  });
+
+  it("compiler/parser/parser-expressions.no compiles", () => {
+    const js = compileNoFile("compiler/parser/parser-expressions.no");
+    expect(js).toContain("class ParserExpressions");
+    expect(js).toContain("parseExpression");
+    expect(js).toContain("parsePrimary");
+    expect(js).toContain("parseStringLiteral");
+    expect(js.length).toBeGreaterThan(10000);
+  });
+
+  it("compiler/parser/parser-statements.no compiles", () => {
+    const js = compileNoFile("compiler/parser/parser-statements.no");
+    expect(js).toContain("class ParserStatements");
+    expect(js).toContain("parseBlock");
+    expect(js).toContain("parseImportDeclaration");
+    expect(js).toContain("parseClassDeclaration");
+    expect(js.length).toBeGreaterThan(15000);
+  });
+
+  it("compiler/parser/parser.no compiles", () => {
+    const js = compileNoFile("compiler/parser/parser.no");
+    expect(js).toContain("class Parser");
+    expect(js).toContain("parseProgram");
+    expect(js).toContain("parseStatement");
+  });
 });
 
 function stripModuleSyntax(js: string): string {

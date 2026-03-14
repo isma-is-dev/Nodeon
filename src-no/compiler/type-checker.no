@@ -257,7 +257,11 @@ fn checkStatement(stmt, env, diags) {
       if guard { env.define(guard.name, guard.narrowedType) }
       checkStatements(stmt.consequent, env, diags)
       env.pop()
-      if stmt.alternate { env.push(); checkStatements(stmt.alternate, env, diags); env.pop() }
+      if stmt.alternate {
+        env.push()
+        checkStatements(stmt.alternate, env, diags)
+        env.pop()
+      }
     }
     case "ReturnStatement" {
       if stmt.value { inferExpression(stmt.value, env) }
@@ -270,11 +274,15 @@ fn checkStatement(stmt, env, diags) {
     }
     case "WhileStatement" {
       inferExpression(stmt.condition, env)
-      env.push(); checkStatements(stmt.body, env, diags); env.pop()
+      env.push()
+      checkStatements(stmt.body, env, diags)
+      env.pop()
     }
     case "DoWhileStatement" {
       inferExpression(stmt.condition, env)
-      env.push(); checkStatements(stmt.body, env, diags); env.pop()
+      env.push()
+      checkStatements(stmt.body, env, diags)
+      env.pop()
     }
     case "ImportDeclaration" {
       if stmt.defaultImport { env.define(stmt.defaultImport, ANY) }
@@ -284,14 +292,20 @@ fn checkStatement(stmt, env, diags) {
       if stmt.declaration { checkStatement(stmt.declaration, env, diags) }
     }
     case "TryCatchStatement" {
-      env.push(); checkStatements(stmt.tryBlock, env, diags); env.pop()
+      env.push()
+      checkStatements(stmt.tryBlock, env, diags)
+      env.pop()
       if stmt.catchBlock.length > 0 {
         env.push()
         if stmt.catchParam { env.define(stmt.catchParam.name, ANY) }
         checkStatements(stmt.catchBlock, env, diags)
         env.pop()
       }
-      if stmt.finallyBlock { env.push(); checkStatements(stmt.finallyBlock, env, diags); env.pop() }
+      if stmt.finallyBlock {
+        env.push()
+        checkStatements(stmt.finallyBlock, env, diags)
+        env.pop()
+      }
     }
     case "EnumDeclaration" {
       env.define(stmt.name.name, { kind: "named", name: stmt.name.name })
