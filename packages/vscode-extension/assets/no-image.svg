@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=VT323&amp;display=swap');
+    </style>
+    <filter id="neon-glow" filterUnits="userSpaceOnUse">
+      <feFlood flood-color="#e53935" flood-opacity="0.8" result="flood"/>
+      <feComposite in="flood" in2="SourceGraphic" operator="in" result="colored"/>
+      <feGaussianBlur in="colored" stdDeviation="0.8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <text
+    x="50%"
+    y="60%"
+    text-anchor="middle"
+    font-size="20"
+    font-weight="400"
+    font-family="'VT323', monospace"
+    fill="#e53935"
+    filter="url(#neon-glow)"
+  >
+    NODEON
+  </text>
+
+</svg>

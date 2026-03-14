@@ -1,5 +1,7 @@
 # Nodeon
 
+![Nodeon Logo](packages/vscode-extension/assets/no-image.svg)
+
 **Nodeon** is a programming language that compiles to JavaScript. It combines Python's simplicity with TypeScript's robustness while maintaining full compatibility with the JS/Node.js ecosystem.
 
 ```
