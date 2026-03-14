@@ -4,5 +4,8 @@ fn greet(name) {
 
 greet("Ismael")
 
-x :number = 3
+x: string | number = 'asdf'
+x = 3
 print("x = {x}")
+let y: string = "hello"
+print("y = {y}")

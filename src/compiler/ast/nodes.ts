@@ -54,6 +54,7 @@ export type FunctionDeclaration = {
   async: boolean;
   generator: boolean;
   returnType?: TypeAnnotation;
+  typeParams?: string[];
 };
 
 export type Param = {
@@ -139,6 +140,7 @@ export type ClassDeclaration = {
   name: Identifier;
   superClass: Identifier | null;
   body: ClassMember[];
+  typeParams?: string[];
 };
 
 export type ClassMember = ClassMethod | ClassField;
@@ -343,6 +345,7 @@ export type ArrowFunction = {
   body: Statement[] | Expression;
   async: boolean;
   returnType?: TypeAnnotation;
+  typeParams?: string[];
 };
 
 export type AssignmentExpression = {

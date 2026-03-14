@@ -804,4 +804,17 @@ describe("type checker", () => {
     const diags = typeCheck(ast);
     expect(diags.length).toBe(0);
   });
+
+  // ── Generics ─────────────────────────────────────────────────
+  it("compiles generic function, stripping type params", () => {
+    const js = compile("fn identity<T>(x: T): T { return x }").js;
+    expect(js).toContain("function identity(x)");
+    expect(js).not.toContain("<T>");
+  });
+
+  it("compiles generic class, stripping type params", () => {
+    const js = compile("class Box<T> { fn get(): T { return this.value } }").js;
+    expect(js).toContain("class Box {");
+    expect(js).not.toContain("<T>");
+  });
 });

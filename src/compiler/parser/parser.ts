@@ -197,6 +197,8 @@ export class Parser extends ParserBase {
       this.advance();
     }
     const name = this.consumeIdentifier("Expected function name");
+    // Optional generic type parameters: fn identity<T>(x: T): T
+    const typeParams = this.parseTypeParams();
     this.consumeDelimiter("(", "Expected '('");
     const params = this.parseParamList();
     this.consumeDelimiter(")", "Expected ')'");
@@ -213,11 +215,11 @@ export class Parser extends ParserBase {
       this.advance();
       const expr = this.parseExpression();
       const body: Statement[] = [{ type: "ExpressionStatement", expression: expr }];
-      return { type: "FunctionDeclaration", name, params, body, async: isAsync, generator: isGenerator, returnType };
+      return { type: "FunctionDeclaration", name, params, body, async: isAsync, generator: isGenerator, returnType, typeParams };
     }
 
     const body = this.parseBlock();
-    return { type: "FunctionDeclaration", name, params, body, async: isAsync, generator: isGenerator, returnType };
+    return { type: "FunctionDeclaration", name, params, body, async: isAsync, generator: isGenerator, returnType, typeParams };
   }
 
   private parseParamList(): Param[] {
@@ -439,6 +441,8 @@ export class Parser extends ParserBase {
   private parseClassDeclaration(): ClassDeclaration {
     this.consumeKeyword("class");
     const name = this.consumeIdentifier("Expected class name");
+    // Optional generic type parameters: class Box<T>
+    const typeParams = this.parseTypeParams();
     let superClass: Identifier | null = null;
 
     if (this.checkKeyword("extends")) {
@@ -547,7 +551,7 @@ export class Parser extends ParserBase {
     }
 
     this.consumeDelimiter("}", "Expected '}'");
-    return { type: "ClassDeclaration", name, superClass, body };
+    return { type: "ClassDeclaration", name, superClass, body, typeParams };
   }
 
   private parseTryCatch(): TryCatchStatement {
@@ -1338,6 +1342,31 @@ export class Parser extends ParserBase {
       parts.push({ kind: "Text", value: "" });
     }
     return { type: "TemplateLiteral", parts };
+  }
+
+  // ── Generic Type Parameters ─────────────────────────────────────
+
+  private parseTypeParams(): string[] | undefined {
+    // Check for < — but only if it's actually a type param list, not a comparison
+    if (!this.checkOperator("<")) return undefined;
+
+    // Peek ahead: <Identifier, ...> means type params
+    const next = this.peekNext();
+    if (!next || next.type !== TokenType.Identifier) return undefined;
+
+    this.advance(); // consume <
+    const params: string[] = [];
+
+    do {
+      const param = this.consumeIdentifier("Expected type parameter name");
+      params.push(param.name);
+    } while (this.checkDelimiter(",") && (this.advance(), true));
+
+    if (this.checkOperator(">")) {
+      this.advance(); // consume >
+    }
+
+    return params.length > 0 ? params : undefined;
   }
 
   // ── Type Annotation Parsing ──────────────────────────────────────
