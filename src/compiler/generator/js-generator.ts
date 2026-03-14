@@ -394,9 +394,9 @@ function emitTryCatch(stmt: TryCatchStatement, ctx: GenContext): string {
 
 function emitSwitch(stmt: SwitchStatement, ctx: GenContext): string {
   const inner = indented(ctx);
-  const caseInner = indented(inner);
   const disc = emitExpression(stmt.discriminant, ctx);
   const cases = stmt.cases.map((c) => {
+    const caseInner = childScope(indented(inner));
     const header = c.test
       ? `${pad(inner)}case ${emitExpression(c.test, inner)}:`
       : `${pad(inner)}default:`;
@@ -412,12 +412,12 @@ function emitSwitch(stmt: SwitchStatement, ctx: GenContext): string {
 }
 
 function emitMatch(stmt: MatchStatement, ctx: GenContext): string {
-  const inner = indented(ctx);
   const disc = emitExpression(stmt.discriminant, ctx);
   const parts: string[] = [];
 
   for (let i = 0; i < stmt.cases.length; i++) {
     const c = stmt.cases[i];
+    const inner = childScope(indented(ctx));
     const body = c.body.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl);
 
     if (c.pattern === null) {
