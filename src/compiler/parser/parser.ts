@@ -409,6 +409,7 @@ export class Parser extends ParserBase {
   private parseImportDeclaration(): ImportDeclaration {
     this.consumeKeyword("import");
     let defaultImport: string | null = null;
+    let namespaceImport: string | null = null;
     const namedImports: ImportSpecifier[] = [];
 
     if (this.checkDelimiter("{")) {
@@ -443,7 +444,7 @@ export class Parser extends ParserBase {
       }
       const tok = this.peek();
       if (tok.type !== TokenType.Identifier) this.error(tok, "Expected module name");
-      defaultImport = `* as ${tok.value}`;
+      namespaceImport = tok.value;
       this.advance();
     } else {
       const tok = this.peek();
@@ -458,7 +459,7 @@ export class Parser extends ParserBase {
       this.error(srcTok, "Expected module source string");
     }
     this.advance();
-    return { type: "ImportDeclaration", defaultImport, namedImports, source: srcTok.value };
+    return { type: "ImportDeclaration", defaultImport, namespaceImport, namedImports, source: srcTok.value };
   }
 
   private parseExportDeclaration(): ExportDeclaration {

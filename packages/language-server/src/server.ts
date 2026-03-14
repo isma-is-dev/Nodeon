@@ -413,11 +413,10 @@ function analyzeSemantics(ast: Program, source: string): Diagnostic[] {
       }
       case 'ImportDeclaration': {
         if (stmt.defaultImport) {
-          // Ignore "* as X" — take just the alias name
-          const importName = stmt.defaultImport.startsWith('* as ')
-            ? stmt.defaultImport.slice(5)
-            : stmt.defaultImport;
-          declare(importName, line, 'import');
+          declare(stmt.defaultImport, line, 'import');
+        }
+        if (stmt.namespaceImport) {
+          declare(stmt.namespaceImport, line, 'import');
         }
         for (const spec of stmt.namedImports) {
           declare(spec.alias ?? spec.name, line, 'import');
@@ -1184,9 +1183,10 @@ function collectSemanticTokens(ast: Program, source: string): SemanticToken[] {
       }
       case 'ImportDeclaration': {
         if (stmt.defaultImport) {
-          const importName = stmt.defaultImport.startsWith('* as ')
-            ? stmt.defaultImport.slice(5) : stmt.defaultImport;
-          addToken(line, importName, 'variable', ['declaration', 'readonly']);
+          addToken(line, stmt.defaultImport, 'variable', ['declaration', 'readonly']);
+        }
+        if (stmt.namespaceImport) {
+          addToken(line, stmt.namespaceImport, 'variable', ['declaration', 'readonly']);
         }
         for (const spec of stmt.namedImports) {
           const alias = spec.alias ?? spec.name;

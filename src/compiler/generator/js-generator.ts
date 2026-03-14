@@ -302,8 +302,8 @@ function emitImport(stmt: ImportDeclaration, ctx: GenContext): string {
     const names = stmt.namedImports.map(s => s.alias ? `${s.name} as ${s.alias}` : s.name).join("," + ctx.sp);
     return `import${ctx.sp}{${ctx.sp}${names}${ctx.sp}}${ctx.sp}from${ctx.sp}${JSON.stringify(src)};`;
   }
-  if (stmt.defaultImport && stmt.defaultImport.startsWith("*")) {
-    return `import ${stmt.defaultImport}${ctx.sp}from${ctx.sp}${JSON.stringify(src)};`;
+  if (stmt.namespaceImport) {
+    return `import * as ${stmt.namespaceImport}${ctx.sp}from${ctx.sp}${JSON.stringify(src)};`;
   }
   return `import ${stmt.defaultImport}${ctx.sp}from${ctx.sp}${JSON.stringify(src)};`;
 }

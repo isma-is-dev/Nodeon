@@ -128,6 +128,7 @@ export type ImportSpecifier = {
 export type ImportDeclaration = {
   type: "ImportDeclaration";
   defaultImport: string | null;
+  namespaceImport: string | null; // import * as name
   namedImports: ImportSpecifier[];
   source: string;
 };
