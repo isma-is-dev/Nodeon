@@ -2,6 +2,9 @@ import { Token, TokenType } from "@language/tokens";
 import { Identifier } from "@ast/nodes";
 import { NodeonError, ErrorCode } from "@compiler/errors";
 
+// Contextual keywords: can be used as identifiers in most positions
+const CONTEXTUAL_KW = ["print", "from", "async", "of", "get", "set", "static", "default", "as", "type", "enum", "interface"];
+
 /**
  * Base class for the Parser — handles token navigation and consumption.
  * Subclassed by Parser which adds all statement/expression parsing.
@@ -96,10 +99,7 @@ export class ParserBase {
     }
     // Allow contextual keywords to be used as identifiers in certain contexts
     // (e.g., variable names, parameter names, property keys)
-    if (tok.type === TokenType.Keyword && [
-      "print", "from", "async", "of", "get", "set",
-      "static", "default", "as", "type", "enum", "interface",
-    ].includes(tok.value)) {
+    if (tok.type === TokenType.Keyword && CONTEXTUAL_KW.includes(tok.value)) {
       this.advance();
       return { type: "Identifier", name: tok.value };
     }
@@ -142,7 +142,14 @@ export class ParserBase {
     return false;
   }
 
-  // ── Error Reporting ───────────────────────────────────────────
+  // ── Utilities ─────────────────────────────────────────────────────
+
+  protected isIdentifierLike(tok: Token): boolean {
+    return tok.type === TokenType.Identifier ||
+      (tok.type === TokenType.Keyword && CONTEXTUAL_KW.includes(tok.value));
+  }
+
+  // ── Error Reporting ─────────────────────────────────────────────────
 
   protected error(token: Token, message: string): never {
     const loc = token.loc;

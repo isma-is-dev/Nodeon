@@ -354,7 +354,7 @@ export class Parser extends ParserBase {
         continue;
       }
       const tok = this.peek();
-      if (tok.type !== TokenType.Identifier) this.error(tok, "Expected parameter name");
+      if (!this.isIdentifierLike(tok)) this.error(tok, "Expected parameter name");
       this.advance();
       // Optional type annotation: fn add(a: number, b: number) { ... }
       let typeAnnotation: TypeAnnotation | undefined;
@@ -456,14 +456,14 @@ export class Parser extends ParserBase {
       if (!this.checkDelimiter("}")) {
         do {
           const tok = this.peek();
-          if (tok.type !== TokenType.Identifier) this.error(tok, "Expected import name");
+          if (!this.isIdentifierLike(tok)) this.error(tok, "Expected import name");
           const name = tok.value;
           this.advance();
           let alias: string | undefined;
-          if (this.checkContextualKeyword("as")) {
+          if (this.checkContextualKeyword("as") || this.checkKeyword("as")) {
             this.advance();
             const aliasTok = this.peek();
-            if (aliasTok.type !== TokenType.Identifier) this.error(aliasTok, "Expected alias name");
+            if (!this.isIdentifierLike(aliasTok)) this.error(aliasTok, "Expected alias name");
             alias = aliasTok.value;
             this.advance();
           }
@@ -476,7 +476,7 @@ export class Parser extends ParserBase {
       this.advance(); // *
       // consume 'as' — it's an identifier, not a keyword
       const asTok = this.peek();
-      if (asTok.type === TokenType.Identifier && asTok.value === "as") {
+      if ((asTok.type === TokenType.Identifier || asTok.type === TokenType.Keyword) && asTok.value === "as") {
         this.advance();
       } else {
         this.error(asTok, "Expected 'as' after '*'");
@@ -1296,8 +1296,8 @@ export class Parser extends ParserBase {
       return this.parseCallArguments({ type: "Identifier", name: "import" } as Identifier, false);
     }
 
-    // Identifier or keyword used as identifier (print)
-    if (token.type === TokenType.Identifier || (token.type === TokenType.Keyword && token.value === "print")) {
+    // Identifier or contextual keyword used as identifier (print, type, as, etc.)
+    if (this.isIdentifierLike(token)) {
       this.advance();
       return { type: "Identifier", name: token.value } as Identifier;
     }
