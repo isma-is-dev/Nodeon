@@ -1,6 +1,6 @@
 # Nodeon
 
-**Nodeon** es un lenguaje de programación que compila a JavaScript. Combina la simplicidad de Python con la robustez de TypeScript, manteniendo compatibilidad total con el ecosistema JS/Node.js.
+**Nodeon** is a programming language that compiles to JavaScript. It combines Python's simplicity with TypeScript's robustness while maintaining full compatibility with the JS/Node.js ecosystem.
 
 ```
 fn greet(name) {
@@ -10,41 +10,45 @@ fn greet(name) {
 greet("World")
 ```
 
-## Por qué Nodeon
+## Why Nodeon
 
-- **Sin ruido** — no semicolons, no paréntesis obligatorios en `if`/`for`/`while`, retornos implícitos
-- **Interpolación natural** — `"Hello {name}"` con doble comilla, `'raw strings'` sin interpolación
-- **Tipado opcional** — escribe tipos cuando los necesites (roadmap)
-- **Igualdad estricta por defecto** — `==` compila a `===`, `!=` a `!==`
-- **Ecosistema JS completo** — imports, clases, async/await, todo compila a JS estándar
-- **DX primero** — CLI con errores coloreados, extensión VS Code, Language Server
+- **No noise** — no semicolons, no mandatory parentheses in `if`/`for`/`while`, implicit returns
+- **Natural interpolation** — `"Hello {name}"` with double quotes, `'raw strings'` without interpolation
+- **Optional typing** — write types when you need them, erased at compile time
+- **Strict equality by default** — `==` compiles to `===`, `!=` to `!==`
+- **Full JS ecosystem** — imports, classes, async/await, everything compiles to standard JS
+- **DX first** — CLI with colored errors, VS Code extension, full Language Server
+- **Self-hosting** — the compiler is written in Nodeon and compiles itself
 
-## Instalación
+## Installation
 
-Requisitos: **Node.js 18+**, npm.
+Requirements: **Node.js 18+**, npm.
 
 ```bash
-npm install           # dependencias del compilador/CLI
-npm test              # ejecutar 109 tests
+npm install           # install dependencies
+npm test              # run 307 tests
 ```
 
 ## CLI
 
 ```bash
-# Compilar .no → .js
+# Compile .no → .js
 node cli/bin.js build hello.no
 
-# Compilar con minificación
+# Compile with minification
 node cli/bin.js build -min hello.no
 
-# Compilar y ejecutar en memoria
+# Compile with source map
+node cli/bin.js build --map hello.no
+
+# Compile and run in memory
 node cli/bin.js run hello.no
 
-# Versión
+# Version
 node cli/bin.js --version
 ```
 
-Los errores de compilación muestran línea, columna y caret:
+Compilation errors show line, column, and caret:
 ```
 error: Unexpected character '@' at 3:5
   --> example.no:3:5
@@ -52,7 +56,7 @@ error: Unexpected character '@' at 3:5
      |     ^
 ```
 
-## Sintaxis rápida
+## Quick Syntax Reference
 
 | Nodeon | JavaScript |
 |--------|-----------|
@@ -65,179 +69,220 @@ error: Unexpected character '@' at 3:5
 | `for item in items { ... }` | `for (const item of items) { ... }` |
 | `x == 5` | `x === 5` |
 | `obj?.prop ?? fallback` | `obj?.prop ?? fallback` |
-| `x += 1` | `x += 1;` |
+| `match x { case 1 { ... } }` | `if (x === 1) { ... }` |
+| `const { a, b } = obj` | `const { a, b } = obj;` |
+| `fn add(a: number, b: number) { ... }` | `function add(a, b) { ... }` |
 
 ### Strings
-- **Doble comilla** `"Hello {name}"` — interpolación con `{expr}`
-- **Comilla simple** `'raw {no interpolation}'` — literal, sin interpolación
-- **Backtick** `` `Hello ${name}` `` — interpolación JS estándar
+- **Double-quoted** `"Hello {name}"` — interpolation with `{expr}`
+- **Single-quoted** `'raw {no interpolation}'` — literal, no interpolation
+- **Backtick** `` `Hello ${name}` `` — JS-standard interpolation
 
-### Funciones
+### Functions
 ```
-fn double(x) { x * 2 }                    # retorno implícito
-fn clamp(v, min = 0, max = 100) { ... }   # parámetros por defecto
-fn sum(...nums) { ... }                    # rest parameters
-async fn fetch(url) { ... }               # async functions
-add = (a, b) => a + b                     # arrow functions
+fn double(x) { x * 2 }                    // implicit return
+fn clamp(v, min = 0, max = 100) { ... }   // default parameters
+fn sum(...nums) { ... }                    // rest parameters
+async fn fetch(url) { ... }               // async functions
+add = (a, b) => a + b                     // arrow functions
+fn* generate() { yield 1 }               // generators
 ```
 
-### Clases
+### Classes
 ```
 class Dog extends Animal {
+  #name                              // private field
+  static count = 0                   // static field
+
   constructor(name) {
-    this.name = name
+    super()
+    this.#name = name
   }
 
   fn bark() {
-    print("{this.name} says Woof!")
-  }
-
-  async fn fetch(url) {
-    return await get(url)
+    print("{this.#name} says Woof!")
   }
 }
 ```
 
-### Control de flujo
+### Control Flow
 ```
-# if / else if / else
+// if / else if / else
 if score >= 90 { print("A") }
 else if score >= 80 { print("B") }
 else { print("F") }
 
-# switch (block-style, sin fall-through accidental)
+// switch (block-style, no fall-through)
 switch color {
   case "red" { print("Stop") }
   case "green" { print("Go") }
   default { print("Unknown") }
 }
 
-# loops
+// pattern matching with guard clauses
+match shape {
+  case "circle" { return PI * r * r }
+  case "square" when side > 0 { return side * side }
+  default { return 0 }
+}
+
+// loops
 for i in 0..10 { print(i) }
 for item in items { print(item) }
 while x > 0 { x = x - 1 }
 do { x = x - 1 } while x > 0
+```
 
-# break / continue
-for i in 0..100 {
-  if i == 50 { break }
-  if i % 2 == 0 { continue }
-  print(i)
+### Destructuring & Types
+```
+const { name, age } = person         // object destructuring
+const [first, ...rest] = items       // array destructuring
+
+fn add(a: number, b: number): number {   // type annotations
+  return a + b                           // (erased at compile time)
 }
 ```
 
-### Operadores
+### Enums & Interfaces
 ```
-# Aritméticos: + - * / % **
-# Comparación: == != < > <= >= (== compila a ===)
-# Lógicos: && || !
-# Asignación compuesta: += -= *= /= %= **= &&= ||= ??=
-# Incremento/Decremento: ++ --
-# Nullish coalescing: ??
-# Optional chaining: ?.
-# Rango: ..
-# Spread: ...
-# Typeof: typeof x
-# Instanceof: x instanceof Error
+enum Color { Red, Green, Blue }      // → Object.freeze({Red: 0, ...})
+
+interface Shape {                    // type-only (stripped from output)
+  area(): number
+}
 ```
 
-### Comentarios
+### Comments
 ```
-# Nodeon-style (preferido)
-// JS-style también funciona
-/* Bloques multilínea */
+// Line comment
+/* Block comment */
 ```
 
-Para más detalle revisa `nodeon-design.md`.
+> **Note:** `#` is NOT for comments — it's for private class fields (`#name`).
 
-## Estructura del proyecto
+## Project Structure
 
 ```
-src/
+src/                          # TypeScript compiler (reference implementation)
   compiler/
-    lexer/         # Tokenizador con tracking de línea/columna
-    parser/        # Pratt parser con soporte completo ES2020+
-    ast/           # Definiciones de nodos AST
-    generator/     # Generador de código JS
-    compile.ts     # API pública: compile(), compileToAST()
-  language/        # Keywords, operadores, tokens, símbolos
-cli/               # CLI nodeon (build/run/version)
+    lexer/                    # Tokenizer with line:col tracking
+    parser/                   # Pratt parser (1700 lines)
+    ast/                      # 70+ AST node type definitions
+    generator/                # JS code generator + source map builder
+    type-checker.ts           # Structural type checker with inference
+    compile.ts                # Public API: compile(), compileToAST()
+  language/                   # Keywords, operators, tokens, precedence
+src-no/                       # Self-hosted compiler (15 .no modules)
+  compiler/                   # Componentized: lexer, parser (5 files), generator, type-checker
+  language/                   # Language definitions in Nodeon
+dist-no/                      # Compiled self-hosted compiler
+  nodeon-compiler.cjs         # Bundled compiler (98.5kb)
+cli/                          # CLI (build/run/version)
 packages/
-  language-server/ # Servidor LSP (diagnostics stub)
-  vscode-extension/ # Extensión VS Code (syntax + LSP client)
-tests/             # Vitest: lexer, parser, e2e (109 tests)
-examples/          # Programas .no de ejemplo
+  language-server/            # Full LSP server (1400+ lines)
+  vscode-extension/           # VS Code extension (syntax + LSP client)
+scripts/                      # Build scripts for bootstrap pipeline
+tests/                        # 307 Vitest tests (lexer, parser, e2e, bootstrap)
+examples/                     # Example .no programs
+docs/                         # Technical documentation
 ```
 
-## Tests
+## Testing
 
 ```bash
-npm test              # ejecutar todos los tests
-npm run test:watch    # modo watch
+npm test              # run all 307 tests
+npm run test:watch    # watch mode
 ```
 
-**109 tests** cubriendo:
-- **Lexer** — tokens, números (hex/bin/oct/sci/bigint), strings, template literals, operadores, comentarios, tracking de posición
-- **Parser** — declaraciones, funciones, control de flujo, switch, try/catch/finally, expresiones, interpolación, clases, imports
-- **E2E** — compilación completa .no → .js verificando output correcto
+**307 tests** covering:
+- **Lexer** — tokens, numbers (hex/bin/oct/sci/bigint), strings, template literals, operators, comments, position tracking
+- **Parser** — declarations, functions, control flow, switch, try/catch, expressions, interpolation, classes, imports, destructuring, pattern matching, type annotations
+- **E2E** — full compilation .no → .js verifying correct output
+- **Bootstrap** — self-compilation: compiled compiler compiles all 15 of its own .no source files
 
-## Desarrollo
+## VS Code Extension
 
-### Compilador / CLI
-```bash
-npm install
-node cli/bin.js build examples/hello.no
-node cli/bin.js run examples/features.no
-```
+The extension provides professional IDE support:
 
-### Language Server
-```bash
-cd packages/language-server
-npm install
-npm run build
-```
+- **Syntax highlighting** — functions, methods, classes, parameters, properties, constants, types, interpolation, regex
+- **Semantic tokens** — AST-based highlighting that differentiates function calls, method calls, class references, parameters, and properties
+- **Diagnostics** — real-time parse errors + type warnings + semantic analysis (undefined variables, unused declarations)
+- **Hover** — keyword documentation + symbol info
+- **Completions** — keywords + built-ins + document symbols
+- **Go-to-Definition** — jump to fn/class/variable declarations
+- **Find References** — locate all usages of a symbol
+- **Rename Symbol** — rename across document
+- **Formatting** — auto-indent with brace tracking
+- **Code Actions** — quick fixes (declare with `let`, type suggestions)
 
-### Extensión VS Code
+### Install Extension
 ```bash
 cd packages/vscode-extension
 npm install
 npm run build
-# F5 en VS Code para debug
+# F5 in VS Code to launch Extension Development Host
 ```
 
-### Empaquetar VSIX
+### Package VSIX
 ```bash
 cd packages/vscode-extension
 npx vsce package
 code --install-extension nodeon-vscode-extension-0.0.1.vsix
 ```
 
+## Self-Hosting
+
+The Nodeon compiler is self-hosting — it can compile its own source code:
+
+```bash
+node scripts/build-no.js     # Compile 15 .no files → dist-no/*.js
+node scripts/bundle-no.js    # Bundle → dist-no/nodeon-compiler.cjs
+```
+
+The self-hosted compiler is a full reimplementation in Nodeon (15 modules, ~3000 lines) with a componentized parser architecture:
+
+```
+ParserBase → ParserTypes → ParserExpressions → ParserStatements → Parser
+```
+
+## Documentation
+
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for exhaustive technical documentation covering:
+- Complete language specification
+- Compiler pipeline (lexer → parser → type checker → generator)
+- AST node reference (70+ node types)
+- LSP implementation details
+- Self-hosting bootstrap process
+- Design decisions and rationale
+
 ## Roadmap
 
-### Fase actual ✅
-- [x] Lexer completo con line/col tracking
-- [x] Parser Pratt con soporte ES2020+
-- [x] Generador JS con minificación
-- [x] CLI build/run con errores coloreados
-- [x] 109 tests con Vitest
-- [x] Extensión VS Code con syntax highlighting
-- [x] Language Server stub
+### Completed ✅
+- [x] Lexer with line:col tracking
+- [x] Pratt parser with ES2020+ support
+- [x] JS generator with minification
+- [x] CLI build/run with colored errors
+- [x] Destructuring (object/array)
+- [x] Type annotations (TypeScript-style erasure)
+- [x] Pattern matching with guard clauses
+- [x] Source maps (V3 spec with VLQ encoding)
+- [x] Full LSP (diagnostics, hover, completions, go-to-definition, formatting, rename, references, semantic tokens, code actions)
+- [x] VS Code extension with professional syntax highlighting
+- [x] Self-hosting bootstrap (compiler compiles itself)
+- [x] 307 tests with Vitest
+- [x] GitHub Actions CI (Node 18/20/22)
 
-### Próximos pasos 🚧
-- [ ] **Type system** — tipado opcional con inferencia
-- [ ] **Destructuring** — `{ a, b } = obj`, `[x, y] = arr`
-- [ ] **Pattern matching** — `match expr { ... }`
-- [ ] **LSP completo** — hover, completions, go-to-definition, formatting
-- [ ] **Source maps** — mapear JS output a líneas .no
-- [ ] **CI/CD** — GitHub Actions para tests + publicación
+### Next 🚧
 - [ ] **npm publish** — `npm install -g nodeon`
+- [ ] **Multi-file compilation** — resolve imports across .no files
+- [ ] **Exhaustive type checking** — narrowing, exhaustiveness checks
+- [ ] **VS Code Marketplace** — publish extension
 
-### Futuro 🔭
-- [ ] **Nodeon stdlib** — wrappers idiomáticos para fs, path, http
-- [ ] **Self-hosting** — compilador escrito en Nodeon
-- [ ] **WASM target** — compilar a WebAssembly
-- [ ] **Bundler integrado** — resolver imports y generar un solo .js
+### Future 🔭
+- [ ] **Nodeon stdlib** — idiomatic wrappers for fs, path, http
+- [ ] **WASM target** — compile to WebAssembly
+- [ ] **Integrated bundler** — resolve imports and emit a single .js
 
-## Licencia
+## License
 
 MIT

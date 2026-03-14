@@ -1,56 +1,84 @@
 {
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Nodeon",
   "scopeName": "source.nodeon",
   "patterns": [
     { "include": "#comments" },
     { "include": "#strings" },
+    { "include": "#regex" },
+    { "include": "#class-declaration" },
+    { "include": "#function-declaration" },
+    { "include": "#arrow-function" },
     { "include": "#type-annotation-block" },
+    { "include": "#import-statement" },
     { "include": "#private-field" },
     { "include": "#keywords" },
+    { "include": "#support-globals" },
     { "include": "#type-standalone" },
     { "include": "#constants" },
     { "include": "#numbers" },
     { "include": "#operators" },
-    { "include": "#function-declaration" },
+    { "include": "#punctuation" },
+    { "include": "#method-call" },
     { "include": "#function-call" },
+    { "include": "#constant-identifier" },
     { "include": "#identifiers" }
   ],
   "repository": {
     "comments": {
       "patterns": [
-        { "name": "comment.line.double-slash.nodeon", "match": "//.*$" },
-        { "name": "comment.block.nodeon", "begin": "/\\*", "end": "\\*/" }
+        {
+          "name": "comment.line.double-slash.nodeon",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.nodeon",
+          "begin": "/\\*",
+          "end": "\\*/",
+          "captures": { "0": { "name": "punctuation.definition.comment.nodeon" } }
+        }
       ]
     },
     "strings": {
       "patterns": [
         {
+          "comment": "Double-quoted string with {interpolation} (only when { is followed by identifier start)",
           "name": "string.quoted.double.nodeon",
           "begin": "\"",
           "end": "\"",
+          "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.nodeon" } },
+          "endCaptures":   { "0": { "name": "punctuation.definition.string.end.nodeon" } },
           "patterns": [
             { "name": "constant.character.escape.nodeon", "match": "\\\\." },
             {
+              "comment": "Nodeon interpolation: {expr} — only when { is followed by identifier start char",
               "name": "meta.embedded.expression.nodeon",
-              "begin": "\\{",
+              "begin": "\\{(?=[a-zA-Z_$!(\\[])",
               "end": "\\}",
               "beginCaptures": { "0": { "name": "punctuation.section.interpolation.begin.nodeon" } },
-              "endCaptures": { "0": { "name": "punctuation.section.interpolation.end.nodeon" } },
-              "patterns": [{ "include": "#expressions" }]
+              "endCaptures":   { "0": { "name": "punctuation.section.interpolation.end.nodeon" } },
+              "patterns": [{ "include": "source.nodeon" }]
             }
           ]
         },
         {
+          "comment": "Single-quoted raw string (no interpolation)",
           "name": "string.quoted.single.nodeon",
           "begin": "'",
           "end": "'",
+          "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.nodeon" } },
+          "endCaptures":   { "0": { "name": "punctuation.definition.string.end.nodeon" } },
           "patterns": [
             { "name": "constant.character.escape.nodeon", "match": "\\\\." }
           ]
         },
         {
+          "comment": "Backtick template literal with ${interpolation}",
           "name": "string.quoted.template.nodeon",
           "begin": "`",
           "end": "`",
+          "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.nodeon" } },
+          "endCaptures":   { "0": { "name": "punctuation.definition.string.end.nodeon" } },
           "patterns": [
             { "name": "constant.character.escape.nodeon", "match": "\\\\." },
             {
@@ -58,28 +86,102 @@
               "begin": "\\$\\{",
               "end": "\\}",
               "beginCaptures": { "0": { "name": "punctuation.section.interpolation.begin.nodeon" } },
-              "endCaptures": { "0": { "name": "punctuation.section.interpolation.end.nodeon" } },
-              "patterns": [{ "include": "#expressions" }]
+              "endCaptures":   { "0": { "name": "punctuation.section.interpolation.end.nodeon" } },
+              "patterns": [{ "include": "source.nodeon" }]
             }
           ]
+        }
+      ]
+    },
+    "regex": {
+      "comment": "Regular expression literals /pattern/flags",
+      "patterns": [
+        {
+          "name": "string.regexp.nodeon",
+          "match": "(?<=[=(:,\\[!&|?+\\-~*/^%]|^|return|case)\\s*/(?![/*])(?:\\\\.|\\[(?:\\\\.|[^\\]])*\\]|[^/\\\\\\n])+/[gimsuy]*",
+          "captures": { "0": { "name": "string.regexp.nodeon" } }
+        }
+      ]
+    },
+    "class-declaration": {
+      "comment": "class Name extends Parent",
+      "patterns": [
+        {
+          "match": "\\b(class)\\s+([A-Z_$][_$a-zA-Z0-9]*)(?:\\s+(extends)\\s+([A-Z_$][_$a-zA-Z0-9]*))?",
+          "captures": {
+            "1": { "name": "keyword.declaration.class.nodeon" },
+            "2": { "name": "entity.name.type.class.nodeon" },
+            "3": { "name": "keyword.declaration.extends.nodeon" },
+            "4": { "name": "entity.other.inherited-class.nodeon" }
+          }
+        }
+      ]
+    },
+    "function-declaration": {
+      "comment": "fn name(...) or async fn name(...)",
+      "patterns": [
+        {
+          "match": "\\b(async\\s+)?(fn)\\s+(\\*)?\\s*([_$a-zA-Z][_$a-zA-Z0-9]*)\\s*(?=[<(])",
+          "captures": {
+            "1": { "name": "storage.modifier.async.nodeon" },
+            "2": { "name": "keyword.declaration.function.nodeon" },
+            "3": { "name": "keyword.generator.asterisk.nodeon" },
+            "4": { "name": "entity.name.function.nodeon" }
+          }
+        }
+      ]
+    },
+    "arrow-function": {
+      "comment": "Arrow function params => body",
+      "patterns": [
+        {
+          "comment": "Single param arrow: x =>",
+          "match": "\\b([_$a-zA-Z][_$a-zA-Z0-9]*)\\s*(?==>)",
+          "captures": {
+            "1": { "name": "variable.parameter.nodeon" }
+          }
+        }
+      ]
+    },
+    "import-statement": {
+      "comment": "import/export with module source highlighting",
+      "patterns": [
+        {
+          "comment": "import ... from 'source'",
+          "match": "\\b(import)\\s+(.+?)\\s+(from)\\s+(['\"].*?['\"])",
+          "captures": {
+            "1": { "name": "keyword.control.import.nodeon" },
+            "2": { "name": "meta.import.names.nodeon" },
+            "3": { "name": "keyword.control.from.nodeon" },
+            "4": { "name": "string.quoted.module.nodeon" }
+          }
+        },
+        {
+          "comment": "export * from 'source'",
+          "match": "\\b(export)\\s+(\\*)\\s+(from)\\s+(['\"].*?['\"])",
+          "captures": {
+            "1": { "name": "keyword.control.export.nodeon" },
+            "2": { "name": "constant.language.import-export-all.nodeon" },
+            "3": { "name": "keyword.control.from.nodeon" },
+            "4": { "name": "string.quoted.module.nodeon" }
+          }
         }
       ]
     },
     "private-field": {
       "patterns": [
         {
-          "name": "variable.other.private.nodeon",
+          "name": "variable.other.property.private.nodeon",
           "match": "#[_$a-zA-Z][_$a-zA-Z0-9]*"
         }
       ]
     },
     "type-annotation-block": {
-      "comment": "Matches : followed by type expressions (primitives, user types, unions, arrays)",
+      "comment": "Type annotations after : (params, variables, return types)",
       "patterns": [
         {
-          "comment": "Full type annotation: : string | number, : MyType[], : Promise<T>",
-          "begin": "(?<=\\)|[_$a-zA-Z0-9])\\s*(:)\\s*(?=[a-zA-Z])",
-          "end": "(?=[=){,;]|$)",
+          "begin": "(?<=\\)|[_$a-zA-Z0-9])\\s*(:)\\s*(?=[a-zA-Z{(\\[])",
+          "end": "(?=[=){,;]|\\s*\\{|$)",
           "beginCaptures": {
             "1": { "name": "keyword.operator.type.annotation.nodeon" }
           },
@@ -92,39 +194,35 @@
     "type-expression": {
       "patterns": [
         {
-          "comment": "Primitive types: string, number, boolean, void, any, never, null, undefined",
+          "comment": "Primitive types",
           "name": "support.type.primitive.nodeon",
-          "match": "\\b(string|number|boolean|void|any|never|null|undefined|bigint|symbol)\\b"
+          "match": "\\b(string|number|boolean|void|any|never|null|undefined|bigint|symbol|object)\\b"
         },
         {
-          "comment": "User-defined types (PascalCase): MyClass, Promise, Array, Map",
+          "comment": "User-defined types (PascalCase)",
           "name": "entity.name.type.nodeon",
           "match": "\\b([A-Z][_$a-zA-Z0-9]*)\\b"
         },
         {
-          "comment": "Union/intersection pipe",
           "name": "keyword.operator.type.union.nodeon",
           "match": "[|&]"
         },
         {
-          "comment": "Array bracket notation",
-          "name": "punctuation.bracket.type.nodeon",
+          "name": "punctuation.bracket.type.array.nodeon",
           "match": "\\[\\]"
         },
         {
-          "comment": "Generic angle brackets",
           "name": "punctuation.bracket.angle.nodeon",
           "match": "[<>]"
         },
         {
-          "comment": "Comma separator in generics",
           "name": "punctuation.separator.comma.nodeon",
           "match": ","
         }
       ]
     },
     "type-standalone": {
-      "comment": "Builtin type names used standalone (not after colon), e.g. in generics or as expressions",
+      "comment": "Type names in generics and union positions",
       "patterns": [
         {
           "name": "support.type.primitive.nodeon",
@@ -135,69 +233,110 @@
     "keywords": {
       "patterns": [
         {
-          "name": "keyword.control.nodeon",
-          "match": "\\b(if|else|for|in|of|while|do|return|break|continue|switch|case|default|try|catch|finally|throw|yield|debugger|match)\\b"
+          "name": "keyword.control.flow.nodeon",
+          "match": "\\b(if|else|for|while|do|return|break|continue|switch|case|default|try|catch|finally|throw|yield|debugger|match)\\b"
+        },
+        {
+          "name": "keyword.control.loop.nodeon",
+          "match": "\\b(in|of)\\b"
         },
         {
           "name": "keyword.declaration.nodeon",
-          "match": "\\b(fn|async|class|extends|import|export|from|enum|interface)\\b"
+          "match": "\\b(fn|async|class|extends|import|export|from|enum|interface|type)\\b"
         },
         {
           "name": "storage.type.nodeon",
-          "match": "\\b(const|let|var)\\b"
+          "match": "\\b(const|let|var|static)\\b"
         },
         {
-          "name": "keyword.operator.nodeon",
+          "name": "keyword.operator.expression.nodeon",
           "match": "\\b(new|typeof|instanceof|void|delete|await|as)\\b"
-        },
+        }
+      ]
+    },
+    "support-globals": {
+      "comment": "Built-in objects and functions",
+      "patterns": [
         {
           "name": "support.function.builtin.nodeon",
-          "match": "\\b(print)\\b"
+          "match": "\\b(print|parseInt|parseFloat|isNaN|isFinite|encodeURIComponent|decodeURIComponent|encodeURI|decodeURI)\\b"
+        },
+        {
+          "name": "support.class.builtin.nodeon",
+          "match": "\\b(console|Math|Date|JSON|Object|Array|String|Number|Boolean|RegExp|Map|Set|WeakMap|WeakSet|Promise|Symbol|Proxy|Reflect|Error|TypeError|RangeError|SyntaxError|Buffer|Intl)\\b"
+        },
+        {
+          "name": "support.variable.builtin.nodeon",
+          "match": "\\b(process|globalThis|global|module|exports|require|__dirname|__filename|Infinity|NaN)\\b"
         }
       ]
     },
     "constants": {
       "patterns": [
-        { "name": "constant.language.boolean.nodeon", "match": "\\b(true|false)\\b" },
-        { "name": "constant.language.null.nodeon", "match": "\\b(null|undefined)\\b" },
-        { "name": "variable.language.this.nodeon", "match": "\\b(this|super)\\b" }
+        { "name": "constant.language.boolean.true.nodeon",  "match": "\\btrue\\b" },
+        { "name": "constant.language.boolean.false.nodeon", "match": "\\bfalse\\b" },
+        { "name": "constant.language.null.nodeon",          "match": "\\bnull\\b" },
+        { "name": "constant.language.undefined.nodeon",     "match": "\\bundefined\\b" },
+        { "name": "variable.language.this.nodeon",          "match": "\\bthis\\b" },
+        { "name": "variable.language.super.nodeon",         "match": "\\bsuper\\b" }
       ]
     },
     "numbers": {
       "patterns": [
-        { "name": "constant.numeric.hex.nodeon", "match": "\\b0[xX][0-9A-Fa-f]+n?\\b" },
-        { "name": "constant.numeric.binary.nodeon", "match": "\\b0[bB][01]+n?\\b" },
-        { "name": "constant.numeric.octal.nodeon", "match": "\\b0[oO][0-7]+n?\\b" },
-        { "name": "constant.numeric.decimal.nodeon", "match": "\\b[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?n?\\b" }
+        { "name": "constant.numeric.hex.nodeon",     "match": "\\b0[xX][0-9A-Fa-f_]+n?\\b" },
+        { "name": "constant.numeric.binary.nodeon",  "match": "\\b0[bB][01_]+n?\\b" },
+        { "name": "constant.numeric.octal.nodeon",   "match": "\\b0[oO][0-7_]+n?\\b" },
+        { "name": "constant.numeric.decimal.nodeon", "match": "\\b[0-9][0-9_]*(\\.[0-9_]+)?([eE][+-]?[0-9_]+)?n?\\b" },
+        { "name": "constant.numeric.decimal.nodeon", "match": "\\.[0-9][0-9_]*([eE][+-]?[0-9_]+)?\\b" }
       ]
     },
     "operators": {
       "patterns": [
-        { "name": "keyword.operator.comparison.nodeon", "match": "===|!==|==|!=|<=|>=|<|>" },
-        { "name": "keyword.operator.assignment.compound.nodeon", "match": "\\+=|-=|\\*=|/=|%=|\\*\\*=|&&=|\\|\\|=|\\?\\?=" },
-        { "name": "keyword.operator.arithmetic.nodeon", "match": "\\+\\+|--|\\*\\*|\\+|-|\\*|/|%" },
-        { "name": "keyword.operator.logical.nodeon", "match": "&&|\\|\\||!" },
-        { "name": "keyword.operator.nullish.nodeon", "match": "\\?\\?" },
-        { "name": "keyword.operator.spread.nodeon", "match": "\\.\\.\\." },
-        { "name": "keyword.operator.range.nodeon", "match": "\\.\\." },
-        { "name": "keyword.operator.arrow.nodeon", "match": "=>" },
-        { "name": "keyword.operator.pipe.nodeon", "match": "\\|>" },
-        { "name": "keyword.operator.optional-chaining.nodeon", "match": "\\?\\." }
+        { "name": "keyword.operator.comparison.nodeon",          "match": "===|!==|==|!=|<=|>=|<|>" },
+        { "name": "keyword.operator.assignment.compound.nodeon", "match": "\\+=|-=|\\*=|/=|%=|\\*\\*=|&&=|\\|\\|=|\\?\\?=|<<=|>>=|>>>=|\\^=|&=|\\|=" },
+        { "name": "keyword.operator.assignment.nodeon",          "match": "=" },
+        { "name": "keyword.operator.arithmetic.nodeon",          "match": "\\+\\+|--|\\*\\*|\\+|-|\\*|/|%" },
+        { "name": "keyword.operator.logical.nodeon",             "match": "&&|\\|\\||!" },
+        { "name": "keyword.operator.bitwise.nodeon",             "match": ">>>|>>|<<|~|\\^|&|\\|" },
+        { "name": "keyword.operator.ternary.nodeon",             "match": "\\?" },
+        { "name": "keyword.operator.nullish.nodeon",             "match": "\\?\\?" },
+        { "name": "keyword.operator.spread.nodeon",              "match": "\\.\\.\\." },
+        { "name": "keyword.operator.range.nodeon",               "match": "\\.\\." },
+        { "name": "keyword.operator.arrow.nodeon",               "match": "=>" },
+        { "name": "keyword.operator.pipe.nodeon",                "match": "\\|>" },
+        { "name": "keyword.operator.optional-chaining.nodeon",   "match": "\\?\\." }
       ]
     },
-    "function-declaration": {
-      "comment": "Function declaration: fn name(...)",
+    "punctuation": {
+      "patterns": [
+        { "name": "punctuation.separator.comma.nodeon",     "match": "," },
+        { "name": "punctuation.terminator.semicolon.nodeon", "match": ";" },
+        { "name": "punctuation.accessor.nodeon",            "match": "\\." },
+        { "name": "meta.brace.curly.nodeon",                "match": "[{}]" },
+        { "name": "meta.brace.round.nodeon",                "match": "[()]" },
+        { "name": "meta.brace.square.nodeon",               "match": "[\\[\\]]" }
+      ]
+    },
+    "method-call": {
+      "comment": "Method call on object: obj.method(...)",
       "patterns": [
         {
-          "match": "\\b(fn)\\s+([_$a-zA-Z][_$a-zA-Z0-9]*)\\s*(?=[<(])",
+          "match": "(?<=\\.)\\s*([_$a-zA-Z][_$a-zA-Z0-9]*)\\s*(?=\\()",
           "captures": {
-            "1": { "name": "keyword.declaration.nodeon" },
-            "2": { "name": "entity.name.function.declaration.nodeon" }
+            "1": { "name": "entity.name.function.member.nodeon" }
+          }
+        },
+        {
+          "comment": "Property access: obj.prop (not followed by parens)",
+          "match": "(?<=\\.)\\s*([_$a-zA-Z][_$a-zA-Z0-9]*)(?!\\s*\\()",
+          "captures": {
+            "1": { "name": "variable.other.property.nodeon" }
           }
         }
       ]
     },
     "function-call": {
+      "comment": "Free function call: name(...)",
       "patterns": [
         {
           "match": "\\b([_$a-zA-Z][_$a-zA-Z0-9]*)\\s*(?=\\()",
@@ -207,23 +346,26 @@
         }
       ]
     },
-    "identifiers": {
+    "constant-identifier": {
+      "comment": "ALL_CAPS identifiers as constants",
       "patterns": [
-        { "name": "variable.other.nodeon", "match": "\\b[_$a-zA-Z][_$a-zA-Z0-9]*\\b" }
+        {
+          "name": "variable.other.constant.nodeon",
+          "match": "\\b[A-Z][A-Z0-9_]+\\b"
+        }
       ]
     },
-    "expressions": {
+    "identifiers": {
       "patterns": [
-        { "include": "#comments" },
-        { "include": "#strings" },
-        { "include": "#private-field" },
-        { "include": "#keywords" },
-        { "include": "#type-standalone" },
-        { "include": "#constants" },
-        { "include": "#numbers" },
-        { "include": "#operators" },
-        { "include": "#function-call" },
-        { "include": "#identifiers" }
+        {
+          "comment": "PascalCase identifiers (likely types/classes) used standalone",
+          "name": "entity.name.type.nodeon",
+          "match": "\\b(?<=new\\s)[A-Z][_$a-zA-Z0-9]*\\b"
+        },
+        {
+          "name": "variable.other.readwrite.nodeon",
+          "match": "\\b[_$a-zA-Z][_$a-zA-Z0-9]*\\b"
+        }
       ]
     }
   }

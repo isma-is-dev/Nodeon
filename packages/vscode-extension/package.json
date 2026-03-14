@@ -41,7 +41,44 @@
         "scopeName": "source.nodeon",
         "path": "./syntaxes/nodeon.tmLanguage.json"
       }
-    ]
+    ],
+    "semanticTokenScopes": [
+      {
+        "language": "nodeon",
+        "scopes": {
+          "function": ["entity.name.function.nodeon"],
+          "function.declaration": ["entity.name.function.declaration.nodeon"],
+          "function.defaultLibrary": ["support.function.builtin.nodeon"],
+          "method": ["entity.name.function.member.nodeon"],
+          "method.declaration": ["entity.name.function.member.nodeon"],
+          "variable": ["variable.other.readwrite.nodeon"],
+          "variable.readonly": ["variable.other.constant.nodeon"],
+          "variable.declaration": ["variable.other.readwrite.nodeon"],
+          "parameter": ["variable.parameter.nodeon"],
+          "parameter.declaration": ["variable.parameter.nodeon"],
+          "property": ["variable.other.property.nodeon"],
+          "property.declaration": ["variable.other.property.nodeon"],
+          "class": ["entity.name.type.class.nodeon"],
+          "class.declaration": ["entity.name.type.class.nodeon"],
+          "enum": ["entity.name.type.enum.nodeon"],
+          "enumMember": ["variable.other.enummember.nodeon"],
+          "interface": ["entity.name.type.interface.nodeon"],
+          "type": ["entity.name.type.nodeon"],
+          "namespace": ["entity.name.namespace.nodeon"]
+        }
+      }
+    ],
+    "configurationDefaults": {
+      "editor.semanticHighlighting.enabled": true,
+      "[nodeon]": {
+        "editor.semanticHighlighting.enabled": true,
+        "editor.bracketPairColorization.enabled": true,
+        "editor.guides.bracketPairs": "active",
+        "editor.tabSize": 2,
+        "editor.insertSpaces": true,
+        "editor.formatOnType": true
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run build --production",

@@ -61,9 +61,13 @@ connection.onInitialize((_params: InitializeParams): InitializeResult => {
           tokenTypes: [
             'function', 'variable', 'class', 'parameter', 'keyword',
             'string', 'number', 'comment', 'operator', 'type',
-            'enum', 'interface', 'property'
+            'enum', 'interface', 'property', 'method', 'namespace',
+            'enumMember', 'typeParameter', 'decorator'
           ],
-          tokenModifiers: ['declaration', 'readonly', 'async', 'static']
+          tokenModifiers: [
+            'declaration', 'readonly', 'async', 'static',
+            'defaultLibrary', 'modification', 'definition'
+          ]
         },
         full: true
       }
@@ -1005,68 +1009,345 @@ connection.onReferences((params: ReferenceParams): Location[] => {
 const TOKEN_TYPES = [
   'function', 'variable', 'class', 'parameter', 'keyword',
   'string', 'number', 'comment', 'operator', 'type',
-  'enum', 'interface', 'property'
+  'enum', 'interface', 'property', 'method', 'namespace',
+  'enumMember', 'typeParameter', 'decorator'
+];
+const TOKEN_MODIFIERS = [
+  'declaration', 'readonly', 'async', 'static',
+  'defaultLibrary', 'modification', 'definition'
 ];
 
 function tokenTypeIndex(type: string): number {
   return TOKEN_TYPES.indexOf(type);
 }
 
+function modifierBitmask(...mods: string[]): number {
+  let mask = 0;
+  for (const m of mods) {
+    const idx = TOKEN_MODIFIERS.indexOf(m);
+    if (idx >= 0) mask |= (1 << idx);
+  }
+  return mask;
+}
+
+interface SemanticToken {
+  line: number;
+  char: number;
+  length: number;
+  type: string;
+  modifiers: string[];
+}
+
+function collectSemanticTokens(ast: Program, source: string): SemanticToken[] {
+  const tokens: SemanticToken[] = [];
+  const lines = source.split('\n');
+
+  function getPos(node: any): { line: number; char: number } | null {
+    if (node?.loc) return { line: node.loc.line - 1, char: node.loc.column - 1 };
+    return null;
+  }
+
+  function findInLine(line: number, name: string, startCol?: number): number {
+    const text = lines[line] || '';
+    const from = startCol ?? 0;
+    // Find exact word match
+    const regex = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g');
+    regex.lastIndex = from;
+    const m = regex.exec(text);
+    return m ? m.index : -1;
+  }
+
+  function addToken(line: number, name: string, type: string, modifiers: string[] = [], startCol?: number): void {
+    const col = findInLine(line, name, startCol);
+    if (col < 0) return;
+    tokens.push({ line, char: col, length: name.length, type, modifiers });
+  }
+
+  function walkStmts(stmts: Statement[]): void {
+    for (const s of stmts) walkStmt(s);
+  }
+
+  function walkStmt(stmt: Statement): void {
+    const pos = getPos(stmt);
+    const line = pos?.line ?? 0;
+
+    switch (stmt.type) {
+      case 'FunctionDeclaration': {
+        addToken(line, stmt.name.name, 'function', ['declaration', 'definition']);
+        for (const p of stmt.params) {
+          if (!p.pattern) addToken(line, p.name, 'parameter', ['declaration']);
+          if (p.defaultValue) walkExpr(p.defaultValue, line);
+        }
+        walkStmts(stmt.body);
+        break;
+      }
+      case 'ClassDeclaration': {
+        addToken(line, stmt.name.name, 'class', ['declaration', 'definition']);
+        if (stmt.superClass) addToken(line, stmt.superClass.name, 'class');
+        for (const member of stmt.body) {
+          const mline = getPos(member)?.line ?? line;
+          if (member.type === 'ClassField') {
+            addToken(mline, member.name.name, 'property', ['declaration']);
+            if (member.value) walkExpr(member.value, mline);
+          } else {
+            // ClassMethod
+            const mods: string[] = ['declaration'];
+            if (member.static) mods.push('static');
+            if (member.async) mods.push('async');
+            const methodType = member.name.name === 'constructor' ? 'function' : 'method';
+            addToken(mline, member.name.name, methodType, mods);
+            for (const p of member.params) {
+              if (!p.pattern) addToken(mline, p.name, 'parameter', ['declaration']);
+              if (p.defaultValue) walkExpr(p.defaultValue, mline);
+            }
+            walkStmts(member.body);
+          }
+        }
+        break;
+      }
+      case 'VariableDeclaration': {
+        const vmod: string[] = ['declaration'];
+        if (stmt.kind === 'const') vmod.push('readonly');
+        addToken(line, stmt.name.name, 'variable', vmod);
+        walkExpr(stmt.value, line);
+        break;
+      }
+      case 'EnumDeclaration': {
+        addToken(line, stmt.name.name, 'enum', ['declaration']);
+        for (const m of stmt.members) {
+          addToken(getPos(m)?.line ?? line, m.name.name, 'enumMember', ['declaration']);
+          if (m.value) walkExpr(m.value, getPos(m)?.line ?? line);
+        }
+        break;
+      }
+      case 'InterfaceDeclaration': {
+        addToken(line, stmt.name.name, 'interface', ['declaration']);
+        break;
+      }
+      case 'IfStatement': {
+        walkExpr(stmt.condition, line);
+        walkStmts(stmt.consequent);
+        if (stmt.alternate) walkStmts(stmt.alternate);
+        break;
+      }
+      case 'ForStatement': {
+        walkExpr(stmt.iterable, line);
+        if (stmt.variable.type === 'Identifier') {
+          addToken(line, stmt.variable.name, 'variable', ['declaration']);
+        }
+        walkStmts(stmt.body);
+        break;
+      }
+      case 'WhileStatement': {
+        walkExpr(stmt.condition, line);
+        walkStmts(stmt.body);
+        break;
+      }
+      case 'DoWhileStatement': {
+        walkStmts(stmt.body);
+        walkExpr(stmt.condition, line);
+        break;
+      }
+      case 'ReturnStatement': {
+        if (stmt.value) walkExpr(stmt.value, line);
+        break;
+      }
+      case 'ThrowStatement': {
+        walkExpr(stmt.value, line);
+        break;
+      }
+      case 'ExpressionStatement': {
+        walkExpr(stmt.expression, line);
+        break;
+      }
+      case 'ImportDeclaration': {
+        if (stmt.defaultImport) {
+          const importName = stmt.defaultImport.startsWith('* as ')
+            ? stmt.defaultImport.slice(5) : stmt.defaultImport;
+          addToken(line, importName, 'variable', ['declaration', 'readonly']);
+        }
+        for (const spec of stmt.namedImports) {
+          const alias = spec.alias ?? spec.name;
+          addToken(line, alias, 'variable', ['declaration', 'readonly']);
+        }
+        break;
+      }
+      case 'ExportDeclaration': {
+        if (stmt.declaration) walkStmt(stmt.declaration);
+        break;
+      }
+      case 'TryCatchStatement': {
+        walkStmts(stmt.tryBlock);
+        if (stmt.catchParam) addToken(line, stmt.catchParam.name, 'parameter', ['declaration']);
+        walkStmts(stmt.catchBlock);
+        if (stmt.finallyBlock) walkStmts(stmt.finallyBlock);
+        break;
+      }
+      case 'SwitchStatement': {
+        walkExpr(stmt.discriminant, line);
+        for (const c of stmt.cases) {
+          if (c.test) walkExpr(c.test, line);
+          walkStmts(c.consequent);
+        }
+        break;
+      }
+      case 'MatchStatement': {
+        walkExpr(stmt.discriminant, line);
+        for (const c of stmt.cases) {
+          if (c.pattern) walkExpr(c.pattern, line);
+          if (c.guard) walkExpr(c.guard, line);
+          walkStmts(c.body);
+        }
+        break;
+      }
+      case 'DestructuringDeclaration': {
+        walkExpr(stmt.value, line);
+        break;
+      }
+    }
+  }
+
+  function walkExpr(expr: Expression | null | undefined, fallbackLine: number): void {
+    if (!expr) return;
+    const pos = getPos(expr);
+    const line = pos?.line ?? fallbackLine;
+
+    switch (expr.type) {
+      case 'Identifier':
+        // Don't add semantic token for identifiers here — they get correct
+        // coloring from TextMate. Only function calls and special forms get tokens.
+        break;
+      case 'CallExpression': {
+        // Highlight the callee as function
+        if (expr.callee.type === 'Identifier') {
+          const cPos = getPos(expr.callee);
+          addToken(cPos?.line ?? line, expr.callee.name, 'function');
+        } else if (expr.callee.type === 'MemberExpression' && !expr.callee.computed) {
+          const prop = expr.callee.property as any;
+          if (prop?.type === 'Identifier') {
+            addToken(getPos(prop)?.line ?? line, prop.name, 'method');
+          }
+        }
+        walkExpr(expr.callee.type === 'MemberExpression' ? (expr.callee as any).object : null, line);
+        for (const arg of expr.arguments) walkExpr(arg, line);
+        break;
+      }
+      case 'MemberExpression': {
+        walkExpr(expr.object, line);
+        if (expr.computed) walkExpr(expr.property, line);
+        else if ((expr.property as any)?.type === 'Identifier') {
+          addToken(getPos(expr.property)?.line ?? line, (expr.property as any).name, 'property');
+        }
+        break;
+      }
+      case 'NewExpression': {
+        if (expr.callee.type === 'Identifier') {
+          addToken(getPos(expr.callee)?.line ?? line, (expr.callee as any).name, 'class');
+        }
+        for (const arg of expr.arguments) walkExpr(arg, line);
+        break;
+      }
+      case 'BinaryExpression': {
+        walkExpr(expr.left, line);
+        walkExpr(expr.right, line);
+        break;
+      }
+      case 'UnaryExpression':
+      case 'UpdateExpression':
+      case 'AwaitExpression':
+      case 'SpreadExpression':
+      case 'TypeofExpression':
+      case 'VoidExpression':
+      case 'DeleteExpression': {
+        walkExpr((expr as any).argument, line);
+        break;
+      }
+      case 'ArrowFunction': {
+        for (const p of expr.params) {
+          if (!p.pattern) addToken(line, p.name, 'parameter', ['declaration']);
+          if (p.defaultValue) walkExpr(p.defaultValue, line);
+        }
+        if (Array.isArray(expr.body)) walkStmts(expr.body);
+        else walkExpr(expr.body, line);
+        break;
+      }
+      case 'ArrayExpression': {
+        for (const el of expr.elements) walkExpr(el, line);
+        break;
+      }
+      case 'ObjectExpression': {
+        for (const prop of expr.properties) {
+          if (prop.key?.type === 'Identifier') {
+            addToken(getPos(prop)?.line ?? line, prop.key.name, 'property', ['declaration']);
+          }
+          walkExpr(prop.value, line);
+        }
+        break;
+      }
+      case 'TernaryExpression': {
+        walkExpr(expr.condition, line);
+        walkExpr(expr.consequent, line);
+        walkExpr(expr.alternate, line);
+        break;
+      }
+      case 'AssignmentExpression': {
+        walkExpr(expr.left, line);
+        walkExpr(expr.right, line);
+        break;
+      }
+      case 'CompoundAssignmentExpression': {
+        walkExpr(expr.left, line);
+        walkExpr(expr.right, line);
+        break;
+      }
+      case 'TemplateLiteral': {
+        for (const part of expr.parts) {
+          if (part.kind === 'Expression') walkExpr(part.expression, line);
+        }
+        break;
+      }
+      case 'YieldExpression': {
+        if (expr.argument) walkExpr(expr.argument, line);
+        break;
+      }
+    }
+  }
+
+  walkStmts(ast.body);
+  return tokens;
+}
+
 connection.languages.semanticTokens.on((params: SemanticTokensParams): SemanticTokens => {
   const doc = documents.get(params.textDocument.uri);
   if (!doc) return { data: [] };
+
+  const ast = astCache.get(doc.uri);
+  if (!ast) return { data: [] };
 
   const source = doc.getText();
   const data: number[] = [];
 
   try {
-    const tokens = new Lexer(source).tokenize();
+    const semanticTokens = collectSemanticTokens(ast, source);
+    // Sort by position
+    semanticTokens.sort((a, b) => a.line - b.line || a.char - b.char);
+
     let prevLine = 0;
     let prevChar = 0;
 
-    for (const token of tokens) {
-      if (token.type === 'EOF') break;
-      if (!token.loc) continue;
-
-      const line = token.loc.line - 1;
-      const char = token.loc.column - 1;
-      const length = token.value.length;
-
-      let typeIdx = -1;
-      switch (token.type) {
-        case 'Keyword':
-          typeIdx = tokenTypeIndex('keyword');
-          break;
-        case 'Identifier':
-          typeIdx = tokenTypeIndex('variable');
-          break;
-        case 'Number':
-          typeIdx = tokenTypeIndex('number');
-          break;
-        case 'String':
-        case 'RawString':
-        case 'TemplateLiteral':
-          typeIdx = tokenTypeIndex('string');
-          break;
-        case 'Operator':
-          typeIdx = tokenTypeIndex('operator');
-          break;
-        case 'RegExp':
-          typeIdx = tokenTypeIndex('string');
-          break;
-      }
-
+    for (const tok of semanticTokens) {
+      const typeIdx = tokenTypeIndex(tok.type);
       if (typeIdx < 0) continue;
 
-      const deltaLine = line - prevLine;
-      const deltaChar = deltaLine === 0 ? char - prevChar : char;
+      const deltaLine = tok.line - prevLine;
+      const deltaChar = deltaLine === 0 ? tok.char - prevChar : tok.char;
 
-      data.push(deltaLine, deltaChar, length, typeIdx, 0);
-      prevLine = line;
-      prevChar = char;
+      data.push(deltaLine, deltaChar, tok.length, typeIdx, modifierBitmask(...tok.modifiers));
+      prevLine = tok.line;
+      prevChar = tok.char;
     }
   } catch {
-    // If lexing fails, return empty tokens — diagnostics will show the error
+    // If analysis fails, return empty — diagnostics show errors
   }
 
   return { data };
