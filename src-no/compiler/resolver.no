@@ -1,0 +1,39 @@
+import { existsSync } from "fs"
+import { resolve, dirname, join } from "path"
+
+// Resolve a Nodeon import source to an absolute .no file path.
+// Tries: source.no, source/index.no
+// Returns null for bare imports (npm packages, builtins).
+export fn resolveImport(source, fromFile) {
+  // Skip bare imports (npm packages, builtins like "fs", "path")
+  if !source.startsWith(".") && !source.startsWith("/") {
+    return null
+  }
+
+  const dir = dirname(fromFile)
+  const candidates = [
+    join(dir, source.endsWith(".no") ? source : source + ".no"),
+    join(dir, source, "index.no"),
+  ]
+
+  for candidate in candidates {
+    const abs = resolve(candidate)
+    if existsSync(abs) { return abs }
+  }
+
+  return null
+}
+
+// Rewrite a relative import source from .no convention to .js for output.
+export fn rewriteImportSource(source) {
+  if !source.startsWith(".") && !source.startsWith("/") {
+    return source
+  }
+  if source.endsWith(".js") || source.endsWith(".mjs") || source.endsWith(".json") {
+    return source
+  }
+  if source.endsWith(".no") {
+    return source.slice(0, -3) + ".js"
+  }
+  return source + ".js"
+}

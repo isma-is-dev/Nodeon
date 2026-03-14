@@ -59,6 +59,12 @@ describe("bootstrap: .no modules compile", () => {
     expect(js).toContain("compile");
     expect(js).toContain("compileToAST");
   });
+
+  it("compiler/resolver.no compiles", () => {
+    const js = compileNoFile("compiler/resolver.no");
+    expect(js).toContain("resolveImport");
+    expect(js).toContain("rewriteImportSource");
+  });
 });
 
 function stripModuleSyntax(js: string): string {
