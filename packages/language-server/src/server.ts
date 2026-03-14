@@ -228,9 +228,18 @@ function analyzeSemantics(ast: Program, source: string): Diagnostic[] {
     const scope = currentScope();
     const existing = scope.symbols.get(name);
     if (existing) {
+      const isMutableVarKind = (k: SymbolInfo['kind']) => k === 'let' || k === 'var' || k === 'for';
+
       // Same symbol already registered (e.g. hoisted fn/class and then visited
       // again in normal AST walk). Keep previous usage state and avoid resetting.
       if (existing.line === line && existing.kind === kind) {
+        return;
+      }
+
+      // In Nodeon, mutable variables can be rewritten in the same scope.
+      // Avoid false redeclaration warnings for repeated mutable assignments.
+      if (isMutableVarKind(existing.kind) && isMutableVarKind(kind)) {
+        scope.symbols.set(name, { line: existing.line, used: existing.used, kind: existing.kind });
         return;
       }
 
