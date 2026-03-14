@@ -24,7 +24,8 @@ export interface CompileOptions {
 
 export function compile(source: string, options: CompileOptions = {}): CompileResult {
   const ast = compileToAST(source);
-  const diagnostics = options.check ? typeCheck(ast) : [];
+  const parserErrors = ((ast as any).errors ?? []).map((e: any) => ({ message: e.message, source: "parser" as const }));
+  const diagnostics: TypeDiagnostic[] = options.check ? [...parserErrors, ...typeCheck(ast)] : parserErrors;
   const js = generateJS(ast, options.minify ?? false);
   return { js, ast, diagnostics };
 }

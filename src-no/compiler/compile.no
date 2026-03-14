@@ -9,7 +9,13 @@ import { format } from "./formatter/formatter.no"
 export fn compile(source, options) {
   const opts = options ?? {}
   const ast = compileToAST(source)
-  const diagnostics = opts.check ? typeCheck(ast) : []
+  const rawErrors = ast.errors ?? []
+  const parserErrors = []
+  for err in rawErrors {
+    parserErrors.push({ message: err.message, source: "parser" })
+  }
+  const typeErrors = opts.check ? typeCheck(ast) : []
+  const diagnostics = parserErrors.concat(typeErrors)
   const js = generateJS(ast, opts.minify ?? false)
   return { js: js, ast: ast, diagnostics: diagnostics }
 }

@@ -23,17 +23,39 @@ export class Parser extends ParserStatements {
         }
       }
     }
-    return { type: "Program", body: body }
+    return { type: "Program", body: body, errors: this.errors }
   }
 
   fn recover() {
+    let braceDepth = 0
     while !this.isAtEnd() {
       const tok = this.peek()
-      if tok.type == "Delimiter" && (tok.value == '}' || tok.value == ';') {
+
+      // Track brace depth so we don't skip past closing braces of outer scopes
+      if tok.type == "Delimiter" && tok.value == '{' {
+        braceDepth = braceDepth + 1
+        this.advance()
+        continue
+      }
+      if tok.type == "Delimiter" && tok.value == '}' {
+        if braceDepth > 0 {
+          braceDepth = braceDepth - 1
+          this.advance()
+          continue
+        }
+        // At depth 0, consume the stray } and stop
         this.advance()
         return
       }
-      if tok.type == "Keyword" && [
+
+      // Semicolons at depth 0 are valid recovery points
+      if tok.type == "Delimiter" && tok.value == ';' && braceDepth == 0 {
+        this.advance()
+        return
+      }
+
+      // Statement-starting keywords at depth 0 — stop and let parser try again
+      if braceDepth == 0 && tok.type == "Keyword" && [
         "fn", "if", "for", "while", "do", "return", "import", "export",
         "class", "try", "throw", "const", "let", "var", "switch", "match",
         "enum", "interface", "break", "continue"

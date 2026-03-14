@@ -96,7 +96,7 @@ export class Parser extends ParserBase {
         }
       }
     }
-    return { type: "Program", body };
+    return { type: "Program", body, errors: this.errors } as any;
   }
 
   private recover(): void {
