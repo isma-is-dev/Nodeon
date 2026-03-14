@@ -3,6 +3,7 @@
   "patterns": [
     { "include": "#comments" },
     { "include": "#strings" },
+    { "include": "#type-annotation" },
     { "include": "#keywords" },
     { "include": "#constants" },
     { "include": "#numbers" },
@@ -62,15 +63,33 @@
         }
       ]
     },
+    "type-annotation": {
+      "patterns": [
+        {
+          "comment": "Type annotation after colon: x: Type, param: Type, fn(): Type",
+          "match": ":\\s*(string|number|boolean|void|any|never|null|undefined|bigint|symbol)\\b",
+          "captures": {
+            "1": { "name": "support.type.primitive.nodeon" }
+          }
+        },
+        {
+          "comment": "Type annotation with user-defined type: x: MyType",
+          "match": ":\\s*([A-Z][_$a-zA-Z0-9]*)\\b",
+          "captures": {
+            "1": { "name": "entity.name.type.nodeon" }
+          }
+        }
+      ]
+    },
     "keywords": {
       "patterns": [
         {
           "name": "keyword.control.nodeon",
-          "match": "\\b(if|else|for|in|of|while|do|return|break|continue|switch|case|default|try|catch|finally|throw|yield|debugger)\\b"
+          "match": "\\b(if|else|for|in|of|while|do|return|break|continue|switch|case|default|try|catch|finally|throw|yield|debugger|match)\\b"
         },
         {
           "name": "keyword.declaration.nodeon",
-          "match": "\\b(fn|async|class|extends|import|export|from)\\b"
+          "match": "\\b(fn|async|class|extends|import|export|from|enum|interface)\\b"
         },
         {
           "name": "storage.type.nodeon",
@@ -78,7 +97,7 @@
         },
         {
           "name": "keyword.operator.nodeon",
-          "match": "\\b(new|typeof|instanceof|void|delete|await)\\b"
+          "match": "\\b(new|typeof|instanceof|void|delete|await|as)\\b"
         },
         {
           "name": "support.function.builtin.nodeon",
@@ -134,6 +153,7 @@
       "patterns": [
         { "include": "#comments" },
         { "include": "#strings" },
+        { "include": "#type-annotation" },
         { "include": "#keywords" },
         { "include": "#constants" },
         { "include": "#numbers" },
