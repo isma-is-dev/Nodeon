@@ -97,17 +97,24 @@ export function generateJSWithSourceMap(
       builder.addLineMapping(stmt.loc.line, genLine, sourceIndex);
     }
 
-    outputLines.push(code);
-
-    // For multi-line output (functions, classes, etc.), map inner lines too
+    // For multi-line output (functions, classes, etc.), map inner lines
+    // using loc from inner statements when available
     const codeLines = code.split("\n");
-    if (codeLines.length > 1 && stmt.loc) {
+    if (codeLines.length > 1) {
+      // Collect inner statement locs for more accurate mapping
+      const innerLocs = collectInnerLocs(stmt);
+      outputLines.push(codeLines[0]);
       for (let i = 1; i < codeLines.length; i++) {
-        builder.addLineMapping(stmt.loc.line, genLine + i, sourceIndex);
+        const innerLoc = innerLocs[i - 1];
+        if (innerLoc) {
+          builder.addLineMapping(innerLoc.line, genLine + i, sourceIndex);
+        } else if (stmt.loc) {
+          builder.addLineMapping(stmt.loc.line, genLine + i, sourceIndex);
+        }
+        outputLines.push(codeLines[i]);
       }
-      // Adjust outputLines: replace the single entry with first line, push rest
-      outputLines.pop();
-      outputLines.push(...codeLines);
+    } else {
+      outputLines.push(code);
     }
   }
 
@@ -115,6 +122,59 @@ export function generateJSWithSourceMap(
   const sourceMap = builder.toJSON(outputFile);
 
   return { js, sourceMap };
+}
+
+// Collect loc info from inner statements for accurate source map mapping
+function collectInnerLocs(stmt: Statement): Array<{ line: number; column: number } | null> {
+  const locs: Array<{ line: number; column: number } | null> = [];
+
+  function collect(stmts: Statement[]): void {
+    for (const s of stmts) {
+      if (s.loc) {
+        locs.push({ line: s.loc.line, column: s.loc.column });
+      } else {
+        locs.push(null);
+      }
+      // Recurse into compound statements
+      if (s.type === "IfStatement") {
+        collect(s.consequent);
+        if (s.alternate) collect(s.alternate);
+      } else if (s.type === "ForStatement" || s.type === "WhileStatement") {
+        collect(s.body);
+      } else if (s.type === "TryCatchStatement") {
+        collect(s.tryBlock);
+        collect(s.catchBlock);
+        if (s.finallyBlock) collect(s.finallyBlock);
+      }
+    }
+  }
+
+  switch (stmt.type) {
+    case "FunctionDeclaration": collect(stmt.body); break;
+    case "ClassDeclaration":
+      for (const m of stmt.body) {
+        if (m.type === "ClassMethod") collect(m.body);
+      }
+      break;
+    case "IfStatement":
+      collect(stmt.consequent);
+      if (stmt.alternate) collect(stmt.alternate);
+      break;
+    case "ForStatement": case "WhileStatement": collect(stmt.body); break;
+    case "TryCatchStatement":
+      collect(stmt.tryBlock);
+      collect(stmt.catchBlock);
+      if (stmt.finallyBlock) collect(stmt.finallyBlock);
+      break;
+    case "SwitchStatement":
+      for (const c of stmt.cases) collect(c.consequent);
+      break;
+    case "MatchStatement":
+      for (const c of stmt.cases) collect(c.body);
+      break;
+  }
+
+  return locs;
 }
 
 type GenContext = {
