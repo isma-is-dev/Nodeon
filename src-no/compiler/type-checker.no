@@ -16,8 +16,8 @@ class TypeEnv {
   }
   fn push() { this.scopes.push({ bindings: new Map() }) }
   fn pop() { this.scopes.pop() }
-  fn define(name, typ) {
-    this.scopes[this.scopes.length - 1].bindings.set(name, typ)
+  fn define(name, type) {
+    this.scopes[this.scopes.length - 1].bindings.set(name, type)
   }
   fn lookup(name) {
     let i = this.scopes.length - 1

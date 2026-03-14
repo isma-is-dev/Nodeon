@@ -79,7 +79,7 @@ export class ParserStatements extends ParserExpressions {
         continue
       }
       const tok = this.peek()
-      if tok.type != "Identifier" { this.error(tok, "Expected parameter name") }
+      if !this.isIdentifierLike(tok) { this.error(tok, "Expected parameter name") }
       this.advance()
       let typeAnnotation = undefined
       if this.checkDelimiter(":") {
@@ -158,14 +158,14 @@ export class ParserStatements extends ParserExpressions {
       if !this.checkDelimiter('}') {
         do {
           const tok = this.peek()
-          if tok.type != "Identifier" { this.error(tok, "Expected import name") }
+          if !this.isIdentifierLike(tok) { this.error(tok, "Expected import name") }
           const name = tok.value
           this.advance()
           let alias = undefined
-          if this.checkContextualKeyword("as") {
+          if this.checkContextualKeyword("as") || this.checkKeyword("as") {
             this.advance()
             const aliasTok = this.peek()
-            if aliasTok.type != "Identifier" { this.error(aliasTok, "Expected alias name") }
+            if !this.isIdentifierLike(aliasTok) { this.error(aliasTok, "Expected alias name") }
             alias = aliasTok.value
             this.advance()
           }
@@ -177,15 +177,15 @@ export class ParserStatements extends ParserExpressions {
       if this.checkOperator("*") {
         this.advance()
         const asTok = this.peek()
-        if asTok.type == "Identifier" && asTok.value == "as" { this.advance() }
+        if (asTok.type == "Identifier" || asTok.type == "Keyword") && asTok.value == "as" { this.advance() }
         else { this.error(asTok, "Expected 'as' after '*'") }
         const tok = this.peek()
-        if tok.type != "Identifier" { this.error(tok, "Expected module name") }
+        if !this.isIdentifierLike(tok) { this.error(tok, "Expected module name") }
         defaultImport = "* as " + tok.value
         this.advance()
       } else {
         const tok = this.peek()
-        if tok.type != "Identifier" { this.error(tok, "Expected module name") }
+        if !this.isIdentifierLike(tok) { this.error(tok, "Expected module name") }
         defaultImport = tok.value
         this.advance()
       }

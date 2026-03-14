@@ -98,7 +98,7 @@ export class ParserBase {
     // (e.g., variable names, parameter names, property keys)
     if (tok.type === TokenType.Keyword && [
       "print", "from", "async", "of", "get", "set",
-      "static", "default", "as", "type",
+      "static", "default", "as", "type", "enum", "interface",
     ].includes(tok.value)) {
       this.advance();
       return { type: "Identifier", name: tok.value };

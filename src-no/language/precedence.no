@@ -1,6 +1,6 @@
 // Shared operator precedence table
 // Used by both the parser and the JS code generator
-export const BIN_PRECEDENCE = {
+export const PRECEDENCE = {
   "|>": 1,
   "..": 1,
   "??": 2,

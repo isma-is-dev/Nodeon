@@ -1,4 +1,4 @@
-import { BIN_PRECEDENCE, COMPOUND_ASSIGN } from "../../language/precedence.no"
+import { PRECEDENCE, COMPOUND_ASSIGN } from "../../language/precedence.no"
 import { ParserTypes } from "./parser-types.no"
 import { Lexer } from "../lexer/lexer.no"
 
@@ -54,8 +54,8 @@ export class ParserExpressions extends ParserTypes {
       }
 
       // Binary operators
-      if tok.type == "Operator" && BIN_PRECEDENCE[tok.value] != undefined {
-        const opPrec = BIN_PRECEDENCE[tok.value]
+      if tok.type == "Operator" && PRECEDENCE[tok.value] != undefined {
+        const opPrec = PRECEDENCE[tok.value]
         if opPrec <= prec { break }
         this.advance()
         const right = this.parseExpression(tok.value == "**" ? opPrec - 1 : opPrec)
@@ -65,7 +65,7 @@ export class ParserExpressions extends ParserTypes {
 
       // instanceof / in as binary operators (keywords)
       if tok.type == "Keyword" && (tok.value == "instanceof" || tok.value == "in") {
-        const opPrec = BIN_PRECEDENCE[tok.value]
+        const opPrec = PRECEDENCE[tok.value]
         if opPrec <= prec { break }
         this.advance()
         const right = this.parseExpression(opPrec)
@@ -255,7 +255,7 @@ export class ParserExpressions extends ParserTypes {
       this.advance()
       return this.parseCallArguments({ type: "Identifier", name: "import" }, false)
     }
-    if token.type == "Identifier" || (token.type == "Keyword" && token.value == "print") {
+    if this.isIdentifierLike(token) {
       this.advance()
       return { type: "Identifier", name: token.value }
     }

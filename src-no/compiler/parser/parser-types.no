@@ -27,7 +27,7 @@ export class ParserTypes extends ParserBase {
   // ── Type Annotation Parsing ──────────────────────────────────────
 
   fn parseTypeAnnotation() {
-    let parsed = this.parseTypePrimary()
+    let type = this.parseTypePrimary()
 
     // Array type: number[]
     while this.checkDelimiter("[") {
@@ -35,7 +35,7 @@ export class ParserTypes extends ParserBase {
       if next && next.type == "Delimiter" && next.value == "]" {
         this.advance()
         this.advance()
-        parsed = { kind: "array", elementType: parsed }
+        type = { kind: "array", elementType: type }
       } else {
         break
       }
@@ -43,7 +43,7 @@ export class ParserTypes extends ParserBase {
 
     // Union type: string | number
     if this.checkOperator("|") && !this.checkOperator("||") {
-      const types = [parsed]
+      const types = [type]
       while this.checkOperator("|") && !this.checkOperator("||") {
         this.advance()
         let next = this.parseTypePrimary()
@@ -59,12 +59,12 @@ export class ParserTypes extends ParserBase {
         }
         types.push(next)
       }
-      parsed = { kind: "union", types: types }
+      type = { kind: "union", types: types }
     }
 
     // Intersection type: A & B
     if this.checkOperator("&") && !this.checkOperator("&&") {
-      const types = [parsed]
+      const types = [type]
       while this.checkOperator("&") && !this.checkOperator("&&") {
         this.advance()
         let next = this.parseTypePrimary()
@@ -80,10 +80,10 @@ export class ParserTypes extends ParserBase {
         }
         types.push(next)
       }
-      parsed = { kind: "intersection", types: types }
+      type = { kind: "intersection", types: types }
     }
 
-    return parsed
+    return type
   }
 
   fn parseTypePrimary() {

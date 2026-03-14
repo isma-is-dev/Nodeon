@@ -1,3 +1,6 @@
+// Contextual keywords: can be used as identifiers in most positions
+const CONTEXTUAL_KW = ["print", "from", "async", "of", "get", "set", "static", "default", "as", "type", "enum", "interface"]
+
 // Base class for the Parser — handles token navigation and consumption.
 // Subclassed by Parser which adds all statement/expression parsing.
 export class ParserBase {
@@ -81,8 +84,9 @@ export class ParserBase {
       this.advance()
       return { type: "Identifier", name: tok.value }
     }
-    // Allow some keywords to be used as identifiers in certain contexts
-    if tok.type == "Keyword" && ["print", "from", "async", "of", "get", "set"].includes(tok.value) {
+    // Allow contextual keywords to be used as identifiers in certain contexts
+    // (e.g., variable names, parameter names, property keys)
+    if tok.type == "Keyword" && CONTEXTUAL_KW.includes(tok.value) {
       this.advance()
       return { type: "Identifier", name: tok.value }
     }
@@ -126,6 +130,12 @@ export class ParserBase {
   }
 
   // ── Error Reporting ───────────────────────────────────────────
+
+  fn isIdentifierLike(tok) {
+    if tok.type == "Identifier" { return true }
+    if tok.type == "Keyword" && CONTEXTUAL_KW.includes(tok.value) { return true }
+    return false
+  }
 
   fn error(token, message) {
     const loc = token.loc
