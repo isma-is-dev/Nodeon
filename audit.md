@@ -1,6 +1,6 @@
 # Nodeon — Comprehensive Project Audit
 
-**Date:** 2025  
+**Date:** 2025 (updated March 2026)  
 **Scope:** Full repository audit — compiler, CLI, LSP, VS Code extension, self-hosting, tests, CI/CD, documentation  
 **Goal:** Identify what Nodeon needs to become a usable, professional-grade language and a realistic path toward becoming a new standard
 
@@ -31,17 +31,17 @@
 Nodeon is an impressively complete project for its stage. It has:
 
 - A **full compiler pipeline** (Lexer → Pratt Parser → Type Checker → JS Generator)
-- **Self-hosting** — the compiler can compile itself (15 .no source files, bundled to 98.5kb)
-- **307 passing tests** across lexer, parser, e2e, and bootstrap suites
+- **Self-hosting with verified fixpoint** — the compiler compiles itself and produces byte-identical output (32 .no source files, bundled to 129.1kb). TS build = Gen1 (self) = Gen2 (self²)
+- **455 passing tests** across lexer, parser, e2e, bootstrap, type-checker, regression, and snapshot suites
 - A **Language Server Protocol** implementation with diagnostics, completions, hover, go-to-definition, semantic tokens, formatting, rename, references, and code actions
 - A **VS Code extension** with TextMate grammar + semantic highlighting
 - **Source map** generation (V3 spec with VLQ encoding)
 - A **CLI** with build, run, repl, init, and watch mode
 - **CI/CD** via GitHub Actions (Node 18/20/22)
 
-**Maturity Rating: ~65% toward a usable professional language.**
+**Maturity Rating: ~75% toward a usable professional language.**
 
-The core is solid, but significant gaps remain in error recovery, standard library, package management, documentation for end users, and ecosystem tooling. Below is a detailed breakdown.
+The core is solid and self-hosting is fully achieved with a verified fixpoint. Significant gaps remain in parser robustness (keyword handling), error recovery, standard library, package management, documentation for end users, and ecosystem tooling. Below is a detailed breakdown.
 
 ---
 
@@ -55,11 +55,11 @@ The core is solid, but significant gaps remain in error recovery, standard libra
 | Parser (Pratt) | ✅ Solid | Full expression/statement coverage, error recovery, 1699 lines |
 | JS Generator | ✅ Solid | Clean output, minification, source maps, implicit returns |
 | Type Checker | ⚠️ Basic | Inference, narrowing, assignability — but no exhaustiveness, generics, or control flow analysis |
-| CLI | ✅ Good | build, run, repl, init, watch mode, dependency graph walking, caching |
-| LSP Server | ⚠️ Good but very Unoptimized | 1426 lines, full feature set with AST-based semantic tokens | (Maybe a bit unoptimized it uses several ram (i dont know if this is okey))
+| CLI | ✅ Good | build, run, check, fmt, repl, init, watch mode, dependency graph walking, caching |
+| LSP Server | ⚠️ Good but Unoptimized | 1426 lines, full feature set with AST-based semantic tokens |
 | VS Code Extension | ✅ Good | TextMate + semantic tokens, bracket colorization, language config |
-| Self-hosting | ✅ Achieved | Compiler written in .no, compiles itself, 15 source files |
-| Tests | ✅ Good | 307 tests, comprehensive coverage of core features |
+| Self-hosting | ✅ Fixpoint | 32 .no modules, byte-identical output across TS/self/self² builds (129.1kb bundle) |
+| Tests | ✅ Good | 455 tests (lexer 34, parser 84, e2e 175, bootstrap 66, type-checker 66, regression 25, snapshot 5) |
 | CI | ⚠️ Minimal | Only runs tests + CLI verify; no lint, no type check, no coverage |
 
 ### What Needs Work
@@ -71,10 +71,10 @@ The core is solid, but significant gaps remain in error recovery, standard libra
 | Package manager / registry | 🔴 High | No way to share/install Nodeon packages |
 | Documentation for users | 🔴 High | `nodeon-design.md` is outdated; no language reference, no tutorial, no playground |
 | Type system depth | 🟡 Medium | No generics checking, no control flow analysis, no exhaustiveness |
+| Parser robustness | 🔴 High | Keywords as variables silently drop functions/classes; `!fn()` in loops breaks parser; `import as` drops imports |
 | Error recovery | 🟡 Medium | Parser recovery is basic (skip to next keyword); no partial AST for LSP |
 | Multi-file compilation | 🟡 Medium | CLI `build` walks dependencies but doesn't bundle; no module resolution at runtime |
 | REPL | 🟡 Medium | No history persistence, no tab completion, no multi-file state |
-| Formatter | 🟡 Medium | LSP has basic formatting but no standalone `nodeon fmt` command |
 | Linter | 🟡 Medium | Semantic analysis in LSP is the only lint-like feature |
 
 ---
@@ -125,7 +125,7 @@ Nodeon/
 
 ### 3.3 Architecture Concerns
 
-1. **`parser.ts` is 1699 lines in a single class** — In the self-hosted version this was split into `parser-base`, `parser-types`, `parser-expressions`, `parser-statements`, and `parser` (good!). The TypeScript version should mirror this refactor.
+1. ~~**`parser.ts` is 1699 lines in a single class**~~ — The self-hosted version splits into `parser-base`, `parser-types`, `parser-expressions`, `parser-statements`, and `parser`. **✅ Done in .no; TS version should still mirror this refactor.**
 
 2. **No intermediate representation (IR)** — The compiler goes directly from AST to JS. Adding an IR layer would enable:
    - Better optimization passes
@@ -138,7 +138,7 @@ Nodeon/
 
 5. **Runtime sandbox is limited** — `vm.runInNewContext` for `nodeon run` doesn't support `import`/`export`, limiting what programs can actually run.
 
-6. **No AST visitor pattern** — Both the generator and type checker use large `switch` statements. A visitor/walker abstraction would reduce duplication and make extensions easier.
+6. ~~**No AST visitor pattern**~~ — **✅ Implemented** in `src-no/compiler/ast/visitor.no`. The TS version should still adopt this pattern.
 
 ---
 
@@ -204,17 +204,16 @@ The REPL uses `runInContext` which shares the context object across evaluations 
 **Impact:** Potential context leaking or incorrect `this` references in REPL.  
 **Fix:** Use `vm.createContext(sandbox)` and `vm.runInContext(js, context)`.
 
-### BUG-007: `consumeIdentifier` allows limited keywords as identifiers
+### BUG-007: `consumeIdentifier` allows limited keywords as identifiers ✅ FIXED
 
 **Severity:** 🟢 Low  
-**Location:** `src/compiler/parser/parser-base.ts` lines 91-95
+**Location:** `src-no/compiler/parser/parser-base.no`
 
-Only `print`, `from`, `async`, `of`, `get`, `set` are allowed as identifiers in certain contexts. But other contextual keywords like `type`, `match`, or user-defined names that collide with keywords will fail. The self-hosted version fixed this more broadly with `consumePropertyName`.
+~~Only `print`, `from`, `async`, `of`, `get`, `set` are allowed as identifiers in certain contexts.~~
 
-**Impact:** Users can't use common words as variable names if they happen to be keywords.  
-**Fix:** Expand the contextual keyword list or use a more nuanced approach based on parser context.
+**Fix applied:** Added `consumePropertyName` method that accepts any keyword as a property name in member expressions (e.g., `stmt.type`, `node.class`). This allows keywords to appear after `.` in property access contexts.
 
-### BUG-008: `import * as name` stores `"* as name"` as a raw string
+### BUG-008: `import * as name` stores `"* as name"` as a raw string *(Open)*
 
 **Severity:** 🟢 Low  
 **Location:** `src/compiler/parser/parser.ts` line 425
@@ -223,6 +222,49 @@ Namespace imports store `defaultImport = "* as ${tok.value}"` as a concatenated 
 
 **Impact:** Makes AST manipulation, refactoring tools, and accurate LSP features harder.  
 **Fix:** Add a `namespaceImport` field to `ImportDeclaration`.
+
+### BUG-009: Keywords used as variable/parameter names silently destroy output *(Open)*
+
+**Severity:** 🔴 Critical  
+**Location:** Parser (both TS and self-hosted)
+
+Using any Nodeon keyword as a variable name (`let type = ...`, `fn foo(type) { ... }`, `return type`) causes the parser to silently lose the entire enclosing function or class. No error is emitted — the function/class wrapper simply disappears from the output, leaking its body to the top level.
+
+**Keywords confirmed to trigger this:** `type`, `match`, `as`, `class`, `static`, `in`  
+**Impact:** Silent generation of broken JS. Extremely difficult to debug.  
+**Workaround:** Renamed variables in .no source files (`type`→`parsed`/`tokType`/`typ`, etc.)  
+**Fix:** Parser should either allow keywords in variable position (like JS does for non-reserved words) or emit a clear error message.
+
+### BUG-010: `!functionCall()` inside while/for loops breaks parser *(Open)*
+
+**Severity:** 🔴 Critical  
+**Location:** Self-hosted parser (expression parsing in loop contexts)
+
+The pattern `if !someFunction(args) { ... }` inside a `while` or `for` loop body causes the parser to lose the enclosing function wrapper. The function body leaks to top level. `!variable` works fine — only `!fn()` triggers the bug.
+
+**Impact:** Silent generation of broken JS.  
+**Workaround:** Extract to variable: `const ok = someFunction(args)` then `if !ok { ... }`  
+**Fix:** Debug the Pratt parser’s unary `!` handling when followed by a call expression inside loop bodies.
+
+### BUG-011: `import { X as Y }` silently drops the import line *(Open)*
+
+**Severity:** 🟡 Medium  
+**Location:** Self-hosted parser (import parsing)
+
+Import statements using the `as` alias (`import { PRECEDENCE as BIN_PRECEDENCE } from "..."`) are silently dropped — the entire import line disappears from the output. This is because `as` is a Nodeon keyword.
+
+**Impact:** Missing imports cause runtime `ReferenceError`.  
+**Workaround:** Renamed exports to avoid needing `as` aliases.  
+**Fix:** Parser should handle `as` contextually in import specifiers.
+
+### BUG-012: `&&` and `||` had same precedence ✅ FIXED
+
+**Severity:** 🔴 High  
+**Location:** `src-no/language/precedence.no`, `src/language/precedence.ts`
+
+~~Both `&&` and `||` had precedence 3, causing missing parentheses in generated JS for mixed expressions like `a && b || c`.~~
+
+**Fix applied:** `&&` = 4, `||` = 3, matching JavaScript semantics. All higher operators shifted accordingly.
 
 ---
 
@@ -253,17 +295,11 @@ help: you might have forgotten a closing parenthesis
 - Implement "did you mean?" for misspelled identifiers/keywords
 - Color-code error output (already partially done in CLI)
 
-### 5.2 AST Visitor Pattern
+### 5.2 AST Visitor Pattern ✅ Done
 
-Create a generic walker to eliminate duplicated switch statements:
+~~Create a generic walker to eliminate duplicated switch statements.~~
 
-```
-// Proposed: src/compiler/ast/visitor.ts
-fn walkStatement(stmt, visitor) { ... }
-fn walkExpression(expr, visitor) { ... }
-```
-
-This would simplify: type checker, JS generator, LSP semantic analysis, source map generation, and any future linter/optimizer.
+**Implemented** in `src-no/compiler/ast/visitor.no` with `walkStatement` and `walkExpression`. Used by the self-hosted compiler. The TS version (`src/`) should still adopt this pattern.
 
 ### 5.3 Intermediate Representation
 
@@ -382,18 +418,21 @@ The type checker (`type-checker.ts`, 377 lines) supports:
 |---------|--------|-------|
 | `nodeon build <file>` | ✅ Works | Multi-file dependency walking, caching, minification, source maps |
 | `nodeon run <file>` | ✅ Works | Compiles + executes in VM sandbox; watch mode with `-w` |
+| `nodeon check <file>` | ✅ Works | Type check without compiling |
+| `nodeon fmt <file>` | ✅ Works | Code formatter |
 | `nodeon repl` | ⚠️ Basic | No history, no tab completion, no import support |
 | `nodeon init` | ✅ Works | Creates project scaffold with nodeon.json |
 | `nodeon help` | ✅ Works | Displays help text |
 | `nodeon version` | ✅ Works | Shows version |
+| `nodeon-self` (self-hosted) | ✅ Works | `bin/nodeon-self.js` — runs the self-hosted bundle directly, no TS/ts-node needed |
 
 ### 8.2 Missing CLI Commands
 
 | Command | Priority | Description |
 |---------|----------|-------------|
-| `nodeon fmt` | 🔴 High | Code formatter (like `gofmt` or `prettier`) |
+| ~~`nodeon fmt`~~ | ✅ Done | ~~Code formatter~~ — implemented |
 | `nodeon lint` | 🔴 High | Linter with configurable rules |
-| `nodeon check` | 🔴 High | Type check without compiling (currently `--check` flag only) |
+| ~~`nodeon check`~~ | ✅ Done | ~~Type check without compiling~~ — implemented |
 | `nodeon test` | 🟡 Medium | Built-in test runner (no need for vitest/jest) |
 | `nodeon doc` | 🟡 Medium | Documentation generator from source comments |
 | `nodeon bundle` | 🟡 Medium | Bundle multiple .no files into a single JS file |
@@ -497,23 +536,27 @@ Current watch only watches the entry file's directory. Should:
 
 | Suite | Tests | Coverage Area |
 |-------|-------|---------------|
-| `lexer.test.ts` | ~50 | Token types, edge cases, literals |
-| `parser.test.ts` | ~120 | All statement/expression types, error cases |
-| `e2e.test.ts` | ~105 | Full compile pipeline, output verification |
-| `bootstrap.test.ts` | ~32 | Self-hosting: each .no file compiles, self-compilation, lexer validity |
-| **Total** | **~307** | |
+| `lexer.test.ts` | 34 | Token types, edge cases, literals |
+| `parser.test.ts` | 84 | All statement/expression types, error cases |
+| `e2e.test.ts` | 175 | Full compile pipeline, output verification |
+| `bootstrap.test.ts` | 66 | Self-hosting: 32 compile + 33 self-compile + 1 lexer functional |
+| `type-checker.test.ts` | 66 | Type inference, assignability, narrowing, diagnostics |
+| `regression.test.ts` | 25 | Tests for fixed bugs |
+| `snapshot.test.ts` | 5 | Output snapshot verification |
+| **Total** | **455** | |
 
 ### 10.2 Testing Gaps
 
-1. **No type checker tests** — `type-checker.ts` has zero dedicated tests
+1. ~~**No type checker tests**~~ — **✅ 66 tests** in `type-checker.test.ts`
 2. **No LSP tests** — Language server has zero automated tests
 3. **No formatter tests** — No tests for code formatting
 4. **No source map tests** — No verification that source maps are correct
 5. **No CLI integration tests** — Only a basic `--version` and `build` check in CI
 6. **No fuzzing** — No fuzz testing for parser/lexer robustness
-7. **No regression tests** — No tests specifically for fixed bugs
-8. **No snapshot tests** — The snapshot test file exists but isn't comprehensive
+7. ~~**No regression tests**~~ — **✅ 25 tests** in `regression.test.ts`
+8. ~~**No snapshot tests**~~ — **✅ 5 tests** in `snapshot.test.ts`
 9. **No performance benchmarks** — No tracking of compilation speed
+10. **No fixpoint test in CI** — Self-hosting fixpoint should be verified automatically
 
 ### 10.3 CI/CD Gaps
 
@@ -667,66 +710,84 @@ Nodeon's unique value proposition:
 
 ## 14. Roadmap: Path to Professional Language
 
-### Phase 1: Foundation (1-2 months)
+> **Status as of March 2026:** Self-hosting achieved with verified fixpoint (455 tests, 32 modules).
+> Items marked ✅ are complete. Items marked 🔧 have workarounds but need proper fixes.
 
-**Goal:** Make Nodeon reliable enough for small real-world projects.
+### Phase 1: Compiler Robustness (Priority: 🔴 Critical)
 
-- [ ] Fix BUG-001 (let TDZ in switch/match)
-- [ ] Fix BUG-002 (range operator in expressions)
-- [ ] Improve error messages with source context and suggestions
-- [ ] Add type checker tests (minimum 50 tests)
-- [ ] Add LSP tests (minimum 20 tests)
-- [ ] Enable `strict: true` in tsconfig
-- [ ] Add ESLint/Biome to CI
-- [ ] Multi-file `nodeon run` support (bundle before executing)
-- [ ] `nodeon fmt` command
-- [ ] `nodeon check` command (type check without compiling)
-- [ ] Publish VS Code extension to Marketplace
+**Goal:** Fix silent parser failures and make the compiler reliable enough that it never silently produces broken output.
 
-### Phase 2: Type System (2-3 months)
+- [ ] **BUG-009: Keywords as variables** — Parser should either allow keywords in variable/parameter positions (like JS does for `type`, `as`, etc.) or emit a clear error. Currently silently destroys function/class wrappers. 🔧 workaround in place
+- [ ] **BUG-010: `!fn()` in loops** — Debug the Pratt parser's unary `!` handling when followed by a call expression inside while/for bodies. Currently silently loses function wrappers. 🔧 workaround in place
+- [ ] **BUG-011: `import { X as Y }`** — Parser should handle `as` contextually in import specifiers. Currently drops the entire import. 🔧 workaround in place
+- [ ] **BUG-001: let TDZ in switch/match** — Emit block-scoped `let` per case branch
+- [ ] **BUG-002: Range `..` in expressions** — Either error on `..` outside `for` loops or implement `Range` runtime object
+- [ ] **Error recovery** — Parser should never silently lose code. Emit error nodes in the AST and continue parsing. Balanced brace tracking for synchronization.
+- [ ] **Error messages** — Add error codes (E0001, etc.), source line context + caret, "help" suggestions, "did you mean?" for misspelled identifiers
+- [ ] **Fixpoint test in CI** — Add to `bootstrap.test.ts`: TS build → bundle → self-build → bundle → compare = identical
+- [x] ~~Fix `&&`/`||` precedence~~ ✅ (BUG-012)
+- [x] ~~Add `consumePropertyName` for keyword property access~~ ✅ (BUG-007)
+- [x] ~~`nodeon fmt` command~~ ✅
+- [x] ~~`nodeon check` command~~ ✅
+
+### Phase 2: Type System (Priority: 🟡 High)
 
 **Goal:** Make the type system useful enough that developers *want* to use types.
 
-- [ ] Generic type checking (verify type parameters)
-- [ ] Interface conformance checking
-- [ ] Control flow narrowing (typeof, instanceof, truthiness)
-- [ ] Exhaustiveness checking in match/switch
-- [ ] Cross-file type resolution (import types from other .no files)
-- [ ] Null safety (`T?` syntax, compile-time null checks)
-- [ ] Type checker integration with LSP inlay hints
+- [ ] **Generic type checking** — Verify type parameters (`fn identity<T>(x: T): T` checks return matches)
+- [ ] **Interface conformance** — Check class implementations match interface declarations
+- [ ] **Control flow narrowing** — After `if typeof x == "string"`, narrow `x` to `string` in both branches
+- [ ] **Exhaustiveness checking** — `match`/`switch` must cover all cases of a union type
+- [ ] **Cross-file type resolution** — Import types from other `.no` files (currently all imports are `any`)
+- [ ] **Null safety** — `T?` syntax, compile-time null checks, strictNullChecks mode
+- [ ] **Class member types** — Type checking for fields, methods, inheritance
+- [ ] **Recursive types** — Support types referencing themselves
+- [ ] **Discriminated unions** — `type Result = { ok: true, value: T } | { ok: false, error: E }`
+- [ ] **LSP inlay hints** — Show inferred types inline (like Rust/TS)
 
-### Phase 3: Ecosystem (3-4 months)
+### Phase 3: Ecosystem & Standard Library (Priority: 🟡 Medium)
 
-**Goal:** Make it possible to build and share Nodeon packages.
+**Goal:** Make Nodeon usable for real projects with packages and a stdlib.
 
-- [ ] npm interop for package management (`nodeon install` wrapping npm)
-- [ ] Standard library: `@nodeon/core`, `@nodeon/fs`, `@nodeon/http`, `@nodeon/test`
-- [ ] Built-in test runner (`nodeon test`)
-- [ ] Documentation generator (`nodeon doc`)
-- [ ] Project website with playground
-- [ ] "Nodeon by Example" tutorial series
+- [ ] **Standard library** — `@nodeon/core` (assert, panic, type utils), `@nodeon/fs`, `@nodeon/path`, `@nodeon/http`, `@nodeon/test`, `@nodeon/collections`, `@nodeon/fmt`
+- [ ] **npm interop** — `nodeon install` wrapping npm, resolve `node_modules`
+- [ ] **Built-in test runner** — `nodeon test` with assertions, describe/it, coverage
+- [ ] **REPL improvements** — History persistence, tab completion, multi-line, imports
+- [ ] **Linter** — `nodeon lint` with configurable rules (unused vars, unreachable code, naming)
+- [ ] **Documentation generator** — `nodeon doc` from `/** */` comments
+- [ ] **Language reference** — Formal grammar (BNF/EBNF), complete syntax reference
+- [ ] **"Nodeon by Example"** — Tutorial series (like Go by Example)
 
-### Phase 4: Polish (2-3 months)
+### Phase 4: Tooling & DX (Priority: 🟢 Normal)
 
 **Goal:** Developer experience rivaling established languages.
 
-- [ ] Debug adapter for VS Code (step debugging .no files)
-- [ ] LSP: signature help, auto-imports, workspace symbols
-- [ ] Performance benchmarking and optimization
-- [ ] Incremental compilation
-- [ ] Parallel multi-file compilation
-- [ ] REPL improvements (history, tab completion, imports)
+- [ ] **LSP: signature help** — Show parameter info while typing function calls
+- [ ] **LSP: auto-imports** — Suggest imports for undefined identifiers
+- [ ] **LSP: workspace symbols** — Cross-file symbol search
+- [ ] **LSP: cross-file rename/references** — Currently document-scoped only
+- [ ] **Debug adapter (DAP)** — Step debugging `.no` files in VS Code via source maps
+- [ ] **Performance benchmarks** — Track compilation speed, add `compile-speed.bench.ts`
+- [ ] **Incremental compilation** — Track file dependencies, only recompile changed files
+- [ ] **Parallel compilation** — `worker_threads` for multi-file builds
+- [ ] **Watch mode improvements** — Watch all dependencies, `.nodeonignore`, hot reload
+- [ ] **Publish VS Code extension** — VS Code Marketplace
+- [ ] **CI hardening** — `tsc --noEmit`, Biome linting, coverage reporting, fixpoint verification
 
-### Phase 5: Innovation (Ongoing)
+### Phase 5: Language Innovation (Priority: 🟢 Aspirational)
 
 **Goal:** Features that differentiate Nodeon from everything else.
 
-- [ ] Algebraic data types + discriminated unions
-- [ ] Effect system or ownership tracking
-- [ ] Built-in concurrency primitives
-- [ ] WebAssembly backend
-- [ ] Compile-time evaluation / macros
-- [ ] Built-in HTTP server with hot reload
+- [ ] **If-expressions** — `result = if x > 0 { "positive" } else { "negative" }`
+- [ ] **Array slicing** — `arr[1..3]` → `arr.slice(1, 3)`
+- [ ] **Named arguments** — `greet(name: "World", loud: true)`
+- [ ] **Algebraic data types** — Sum types + discriminated unions with exhaustive `match`
+- [ ] **Concurrency primitives** — Goroutine-style or actor model (compiles to workers/async)
+- [ ] **Pattern matching v2** — Destructuring patterns, nested matching, guards with bindings
+- [ ] **Compile-time evaluation / macros** — Code generation at compile time
+- [ ] **WebAssembly backend** — Compile `.no` to WASM
+- [ ] **Standalone binaries** — Bundle to single executable (via Node SEA or similar)
+- [ ] **IR layer** — Intermediate representation for optimization passes and multi-backend support
 
 ---
 
