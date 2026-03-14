@@ -226,10 +226,15 @@ function analyzeSemantics(ast: Program, source: string): Diagnostic[] {
 
   function declare(name: string, line: number, kind: SymbolInfo['kind']): void {
     const scope = currentScope();
-    if (scope.symbols.has(name)) {
-      const existing = scope.symbols.get(name)!;
-      // Allow re-assignment for 'let' and 'var', but warn for 'const', 'fn', 'class'
-      if (existing.kind === 'const' || existing.kind === 'class' || existing.kind === 'enum') {
+    const existing = scope.symbols.get(name);
+    if (existing) {
+      // Same symbol already registered (e.g. hoisted fn/class and then visited
+      // again in normal AST walk). Keep previous usage state and avoid resetting.
+      if (existing.line === line && existing.kind === kind) {
+        return;
+      }
+
+      if (existing.line !== line || existing.kind !== kind) {
         const col = findIdentifierColumn(lines[line] || '', name);
         diagnostics.push({
           severity: DiagnosticSeverity.Warning,
@@ -241,6 +246,10 @@ function analyzeSemantics(ast: Program, source: string): Diagnostic[] {
           source: 'nodeon'
         });
       }
+
+      // Preserve previous usage state when updating symbol info.
+      scope.symbols.set(name, { line, used: existing.used, kind });
+      return;
     }
     scope.symbols.set(name, { line, used: false, kind });
   }
@@ -1087,15 +1096,19 @@ function collectSemanticTokens(ast: Program, source: string): SemanticToken[] {
         for (const member of stmt.body) {
           const mline = getPos(member)?.line ?? line;
           if (member.type === 'ClassField') {
-            addToken(mline, member.name.name, 'property', ['declaration']);
+            if (member.name.type === 'Identifier') {
+              addToken(mline, member.name.name, 'property', ['declaration']);
+            }
             if (member.value) walkExpr(member.value, mline);
           } else {
             // ClassMethod
             const mods: string[] = ['declaration'];
             if (member.static) mods.push('static');
             if (member.async) mods.push('async');
-            const methodType = member.name.name === 'constructor' ? 'function' : 'method';
-            addToken(mline, member.name.name, methodType, mods);
+            if (member.name.type === 'Identifier') {
+              const methodType = member.name.name === 'constructor' ? 'function' : 'method';
+              addToken(mline, member.name.name, methodType, mods);
+            }
             for (const p of member.params) {
               if (!p.pattern) addToken(mline, p.name, 'parameter', ['declaration']);
               if (p.defaultValue) walkExpr(p.defaultValue, mline);
