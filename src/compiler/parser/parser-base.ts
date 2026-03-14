@@ -93,8 +93,12 @@ export class ParserBase {
       this.advance();
       return { type: "Identifier", name: tok.value };
     }
-    // Allow some keywords to be used as identifiers in certain contexts
-    if (tok.type === TokenType.Keyword && ["print", "from", "async", "of", "get", "set"].includes(tok.value)) {
+    // Allow contextual keywords to be used as identifiers in certain contexts
+    // (e.g., variable names, parameter names, property keys)
+    if (tok.type === TokenType.Keyword && [
+      "print", "from", "async", "of", "get", "set",
+      "static", "default", "as", "type",
+    ].includes(tok.value)) {
       this.advance();
       return { type: "Identifier", name: tok.value };
     }
