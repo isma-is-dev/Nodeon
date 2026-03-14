@@ -1,0 +1,515 @@
+import { PRECEDENCE as BIN_PRECEDENCE } from "../../language/precedence.no"
+import { rewriteImportSource } from "../resolver.no"
+
+// ── Public API ─────────────────────────────────────────────────────
+
+export fn generateJS(program, minify) {
+  const min = minify ?? false
+  const nl = min ? "" : "\n"
+  const sp = min ? "" : " "
+  const ctx = { minify: min, nl: nl, sp: sp, indentLevel: 0, indentSize: 2, declaredVars: new Set() }
+  const lines = program.body.map((stmt) => emitStatement(stmt, ctx))
+  return lines.join(nl)
+}
+
+// ── Helpers ─────────────────────────────────────────────────────
+
+fn pad(ctx) {
+  if ctx.minify { return "" }
+  return " ".repeat(ctx.indentLevel * ctx.indentSize)
+}
+
+fn indented(ctx) {
+  return {
+    minify: ctx.minify, nl: ctx.nl, sp: ctx.sp,
+    indentLevel: ctx.indentLevel + 1, indentSize: ctx.indentSize,
+    declaredVars: ctx.declaredVars,
+  }
+}
+
+fn childScope(ctx) {
+  return {
+    minify: ctx.minify, nl: ctx.nl, sp: ctx.sp,
+    indentLevel: ctx.indentLevel, indentSize: ctx.indentSize,
+    declaredVars: new Set(ctx.declaredVars),
+  }
+}
+
+// ── Statements ─────────────────────────────────────────────────────
+
+fn emitStatement(stmt, ctx) {
+  switch stmt.type {
+    case "FunctionDeclaration" { return emitFunction(stmt, ctx) }
+    case "VariableDeclaration" { return emitVariable(stmt, ctx) }
+    case "ExpressionStatement" { return emitExpression(stmt.expression, ctx) + ";" }
+    case "IfStatement" { return emitIf(stmt, ctx) }
+    case "ForStatement" { return emitFor(stmt, ctx) }
+    case "WhileStatement" { return emitWhile(stmt, ctx) }
+    case "DoWhileStatement" { return emitDoWhile(stmt, ctx) }
+    case "ReturnStatement" { return emitReturn(stmt, ctx) }
+    case "ImportDeclaration" { return emitImport(stmt, ctx) }
+    case "ExportDeclaration" { return emitExport(stmt, ctx) }
+    case "ClassDeclaration" { return emitClass(stmt, ctx) }
+    case "TryCatchStatement" { return emitTryCatch(stmt, ctx) }
+    case "ThrowStatement" { return "throw " + emitExpression(stmt.value, ctx) + ";" }
+    case "SwitchStatement" { return emitSwitch(stmt, ctx) }
+    case "BreakStatement" { return stmt.label ? "break " + stmt.label + ";" : "break;" }
+    case "ContinueStatement" { return stmt.label ? "continue " + stmt.label + ";" : "continue;" }
+    case "DestructuringDeclaration" { return emitDestructuring(stmt, ctx) }
+    case "MatchStatement" { return emitMatch(stmt, ctx) }
+    case "EnumDeclaration" { return emitEnum(stmt, ctx) }
+    case "InterfaceDeclaration" { return "" }
+    case "TypeAliasDeclaration" { return "" }
+    case "DebuggerStatement" { return "debugger;" }
+    case "LabeledStatement" { return stmt.label + ": " + emitStatement(stmt.body, ctx) }
+    default { throw new Error("Unsupported statement type: " + stmt.type) }
+  }
+}
+
+fn emitFunction(f, ctx) {
+  const asyncPrefix = f.async ? "async " : ""
+  const star = f.generator ? "*" : ""
+  const params = f.params.map((p) => emitParam(p, ctx)).join("," + ctx.sp)
+  const fnScope = childScope(indented(ctx))
+  f.params.forEach((p) => { fnScope.declaredVars.add(p.name) })
+
+  // implicit return rule (disabled for generators)
+  let body = ""
+  if !f.generator && f.body.length == 1 && f.body[0].type == "ExpressionStatement" {
+    body = pad(fnScope) + "return " + emitExpression(f.body[0].expression, fnScope) + ";"
+  } else {
+    body = f.body.map((s) => pad(fnScope) + emitStatement(s, fnScope)).join(ctx.nl)
+  }
+
+  return asyncPrefix + "function" + star + " " + f.name.name + "(" + params + ")" + ctx.sp + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '}'
+}
+
+fn emitParam(p, ctx) {
+  let out = ""
+  if p.rest { out = out + "..." }
+  if p.pattern {
+    out = out + emitPattern(p.pattern, ctx)
+  } else {
+    out = out + p.name
+  }
+  if p.defaultValue { out = out + ctx.sp + "=" + ctx.sp + emitExpression(p.defaultValue, ctx) }
+  return out
+}
+
+fn emitVariable(v, ctx) {
+  const name = v.name.name
+  const keyword = v.kind
+  if keyword == "let" && ctx.declaredVars.has(name) {
+    return name + ctx.sp + "=" + ctx.sp + emitExpression(v.value, ctx) + ";"
+  }
+  ctx.declaredVars.add(name)
+  return keyword + " " + name + ctx.sp + "=" + ctx.sp + emitExpression(v.value, ctx) + ";"
+}
+
+fn emitIf(stmt, ctx) {
+  const inner = indented(ctx)
+  const cond = emitExpression(stmt.condition, ctx)
+  const body = stmt.consequent.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl)
+  let out = "if" + ctx.sp + "(" + cond + ")" + ctx.sp + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '}'
+
+  if stmt.alternate {
+    if stmt.alternate.length == 1 && stmt.alternate[0].type == "IfStatement" {
+      out = out + ctx.sp + "else " + emitStatement(stmt.alternate[0], ctx)
+    } else {
+      const alt = stmt.alternate.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl)
+      out = out + ctx.sp + "else" + ctx.sp + '{' + ctx.nl + alt + ctx.nl + pad(ctx) + '}'
+    }
+  }
+  return out
+}
+
+fn emitFor(stmt, ctx) {
+  const forScope = childScope(indented(ctx))
+  const iter = stmt.iterable
+  const varStr = stmt.variable.type == "Identifier" ? stmt.variable.name : emitPattern(stmt.variable, ctx)
+
+  if stmt.variable.type == "Identifier" {
+    forScope.declaredVars.add(stmt.variable.name)
+  }
+  const body = stmt.body.map((s) => pad(forScope) + emitStatement(s, forScope)).join(ctx.nl)
+
+  // Range: for i in 0..10
+  if iter.type == "BinaryExpression" && iter.operator == ".." && stmt.variable.type == "Identifier" {
+    const start = emitExpression(iter.left, ctx)
+    const end = emitExpression(iter.right, ctx)
+    const v = stmt.variable.name
+    return "for" + ctx.sp + "(let " + v + ctx.sp + "=" + ctx.sp + start + ";" + ctx.sp + v + ctx.sp + "<=" + ctx.sp + end + ";" + ctx.sp + v + "++)" + ctx.sp + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '}'
+  }
+
+  // Nodeon 'in' -> JS 'of', Nodeon 'of' -> JS 'in'
+  const jsKind = stmt.kind == "of" ? "in" : "of"
+  return "for" + ctx.sp + "(const " + varStr + " " + jsKind + " " + emitExpression(iter, ctx) + ")" + ctx.sp + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '}'
+}
+
+fn emitWhile(stmt, ctx) {
+  const whileScope = childScope(indented(ctx))
+  const cond = emitExpression(stmt.condition, ctx)
+  const body = stmt.body.map((s) => pad(whileScope) + emitStatement(s, whileScope)).join(ctx.nl)
+  return "while" + ctx.sp + "(" + cond + ")" + ctx.sp + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '}'
+}
+
+fn emitDoWhile(stmt, ctx) {
+  const inner = childScope(indented(ctx))
+  const body = stmt.body.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl)
+  const cond = emitExpression(stmt.condition, ctx)
+  return "do" + ctx.sp + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '}' + ctx.sp + "while" + ctx.sp + "(" + cond + ");"
+}
+
+fn emitReturn(stmt, ctx) {
+  if !stmt.value { return "return;" }
+  return "return " + emitExpression(stmt.value, ctx) + ";"
+}
+
+fn emitImport(stmt, ctx) {
+  const src = rewriteImportSource(stmt.source)
+  if stmt.namedImports.length > 0 {
+    const names = stmt.namedImports.map((s) => s.alias ? s.name + " as " + s.alias : s.name).join("," + ctx.sp)
+    return "import" + ctx.sp + '{' + ctx.sp + names + ctx.sp + '}' + ctx.sp + "from" + ctx.sp + JSON.stringify(src) + ";"
+  }
+  if stmt.defaultImport && stmt.defaultImport.startsWith("*") {
+    return "import " + stmt.defaultImport + ctx.sp + "from" + ctx.sp + JSON.stringify(src) + ";"
+  }
+  return "import " + stmt.defaultImport + ctx.sp + "from" + ctx.sp + JSON.stringify(src) + ";"
+}
+
+fn emitExport(stmt, ctx) {
+  if stmt.exportAll {
+    const alias = stmt.exportAllAlias ? " as " + stmt.exportAllAlias : ""
+    const src = rewriteImportSource(stmt.source)
+    return "export *" + alias + " from " + JSON.stringify(src) + ";"
+  }
+
+  if stmt.namedExports {
+    const names = stmt.namedExports.map((s) => s.alias ? s.name + " as " + s.alias : s.name).join("," + ctx.sp)
+    const from = stmt.source ? " from " + JSON.stringify(rewriteImportSource(stmt.source)) : ""
+    return "export" + ctx.sp + '{' + ctx.sp + names + ctx.sp + '}' + from + ";"
+  }
+
+  const kw = stmt.isDefault ? "export default" : "export"
+  return kw + " " + emitStatement(stmt.declaration, ctx)
+}
+
+fn emitClass(cls, ctx) {
+  const inner = indented(ctx)
+  const ext = cls.superClass ? " extends " + cls.superClass.name : ""
+  const members = cls.body.map((m) => {
+    if m.type == "ClassField" { return pad(inner) + emitClassField(m, inner) }
+    return pad(inner) + emitMethod(m, inner)
+  }).join(ctx.nl + ctx.nl)
+  return "class " + cls.name.name + ext + ctx.sp + '{' + ctx.nl + members + ctx.nl + pad(ctx) + '}'
+}
+
+fn emitClassField(f, ctx) {
+  const staticPrefix = f.static ? "static " : ""
+  const name = f.computed ? "[" + emitExpression(f.name, ctx) + "]" : f.name.name
+  if f.value {
+    return staticPrefix + name + ctx.sp + "=" + ctx.sp + emitExpression(f.value, ctx) + ";"
+  }
+  return staticPrefix + name + ";"
+}
+
+fn emitMethod(m, ctx) {
+  const parts = []
+  if m.static { parts.push("static") }
+  if m.async { parts.push("async") }
+  if m.kind == "get" { parts.push("get") }
+  if m.kind == "set" { parts.push("set") }
+
+  const star = m.generator ? "*" : ""
+  const name = m.computed ? "[" + emitExpression(m.name, ctx) + "]" : m.name.name
+  const prefix = parts.length > 0 ? parts.join(" ") + " " : ""
+  const params = m.params.map((p) => emitParam(p, ctx)).join("," + ctx.sp)
+  const methScope = childScope(indented(ctx))
+  m.params.forEach((p) => { methScope.declaredVars.add(p.name) })
+
+  let body = ""
+  const isConstructor = m.kind == "constructor"
+  if !isConstructor && m.body.length == 1 && m.body[0].type == "ExpressionStatement" {
+    body = pad(methScope) + "return " + emitExpression(m.body[0].expression, methScope) + ";"
+  } else {
+    body = m.body.map((s) => pad(methScope) + emitStatement(s, methScope)).join(ctx.nl)
+  }
+
+  return prefix + star + name + "(" + params + ")" + ctx.sp + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '}'
+}
+
+fn emitTryCatch(stmt, ctx) {
+  const inner = indented(ctx)
+  const tryBody = stmt.tryBlock.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl)
+  let out = "try" + ctx.sp + '{' + ctx.nl + tryBody + ctx.nl + pad(ctx) + '}'
+
+  if stmt.catchBlock.length > 0 || stmt.catchParam {
+    const catchBody = stmt.catchBlock.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl)
+    const param = stmt.catchParam ? ctx.sp + "(" + stmt.catchParam.name + ")" : ""
+    out = out + ctx.sp + "catch" + param + ctx.sp + '{' + ctx.nl + catchBody + ctx.nl + pad(ctx) + '}'
+  }
+
+  if stmt.finallyBlock {
+    const finallyBody = stmt.finallyBlock.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl)
+    out = out + ctx.sp + "finally" + ctx.sp + '{' + ctx.nl + finallyBody + ctx.nl + pad(ctx) + '}'
+  }
+
+  return out
+}
+
+fn emitSwitch(stmt, ctx) {
+  const inner = indented(ctx)
+  const caseInner = indented(inner)
+  const disc = emitExpression(stmt.discriminant, ctx)
+  const cases = stmt.cases.map((c) => {
+    const header = c.test ? pad(inner) + "case " + emitExpression(c.test, inner) + ":" : pad(inner) + "default:"
+    const body = c.consequent.map((s) => pad(caseInner) + emitStatement(s, caseInner)).join(ctx.nl)
+    const last = c.consequent.length > 0 ? c.consequent[c.consequent.length - 1] : null
+    const exits = last && (last.type == "BreakStatement" || last.type == "ReturnStatement" || last.type == "ThrowStatement" || last.type == "ContinueStatement")
+    const brk = exits ? "" : ctx.nl + pad(caseInner) + "break;"
+    return header + ctx.nl + body + brk
+  }).join(ctx.nl)
+  return "switch" + ctx.sp + "(" + disc + ")" + ctx.sp + '{' + ctx.nl + cases + ctx.nl + pad(ctx) + '}'
+}
+
+fn emitMatch(stmt, ctx) {
+  const inner = indented(ctx)
+  const disc = emitExpression(stmt.discriminant, ctx)
+  const parts = []
+
+  let i = 0
+  while i < stmt.cases.length {
+    const c = stmt.cases[i]
+    const body = c.body.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl)
+
+    if c.pattern == null {
+      parts.push(ctx.sp + "else" + ctx.sp + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '}')
+    } else {
+      let cond = disc + ctx.sp + "===" + ctx.sp + emitExpression(c.pattern, ctx)
+      if c.guard {
+        cond = cond + ctx.sp + "&&" + ctx.sp + emitExpression(c.guard, ctx)
+      }
+      const keyword = i == 0 ? "if" : ctx.sp + "else if"
+      parts.push(keyword + ctx.sp + "(" + cond + ")" + ctx.sp + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '}')
+    }
+    i = i + 1
+  }
+
+  return parts.join("")
+}
+
+fn emitEnum(stmt, ctx) {
+  const inner = indented(ctx)
+  const entries = []
+  let autoValue = 0
+
+  for member in stmt.members {
+    if member.value != null {
+      const val = emitExpression(member.value, ctx)
+      entries.push(pad(inner) + member.name.name + ":" + ctx.sp + val)
+      if member.value.type == "Literal" && typeof member.value.value == "number" {
+        autoValue = member.value.value + 1
+      } else {
+        autoValue = autoValue + 1
+      }
+    } else {
+      entries.push(pad(inner) + member.name.name + ":" + ctx.sp + autoValue)
+      autoValue = autoValue + 1
+    }
+  }
+
+  const body = entries.join("," + ctx.nl)
+  return "const " + stmt.name.name + ctx.sp + "=" + ctx.sp + "Object.freeze(" + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '})' + ";"
+}
+
+fn emitDestructuring(stmt, ctx) {
+  const pat = emitPattern(stmt.pattern, ctx)
+  return stmt.kind + " " + pat + ctx.sp + "=" + ctx.sp + emitExpression(stmt.value, ctx) + ";"
+}
+
+fn emitPattern(pattern, ctx) {
+  if pattern.type == "ObjectPattern" { return emitObjectPattern(pattern, ctx) }
+  return emitArrayPattern(pattern, ctx)
+}
+
+fn emitObjectPattern(pat, ctx) {
+  const props = pat.properties.map((p) => {
+    let out = ""
+    if p.shorthand {
+      out = p.key.name
+    } else {
+      const val = p.value.type == "Identifier" ? p.value.name : emitPattern(p.value, ctx)
+      out = p.key.name + ":" + ctx.sp + val
+    }
+    if p.defaultValue {
+      out = out + ctx.sp + "=" + ctx.sp + emitExpression(p.defaultValue, ctx)
+    }
+    return out
+  })
+  if pat.rest { props.push("..." + pat.rest.name) }
+  return '{' + ctx.sp + props.join("," + ctx.sp) + ctx.sp + '}'
+}
+
+fn emitArrayPattern(pat, ctx) {
+  const els = pat.elements.map((e) => {
+    if e == null { return "" }
+    if e.type == "Identifier" { return e.name }
+    return emitPattern(e, ctx)
+  })
+  if pat.rest { els.push("..." + pat.rest.name) }
+  return "[" + els.join("," + ctx.sp) + "]"
+}
+
+// ── Expressions ────────────────────────────────────────────────────
+
+fn emitExpression(expr, ctx) {
+  switch expr.type {
+    case "Identifier" { return expr.name }
+    case "Literal" { return emitLiteral(expr) }
+    case "CallExpression" { return emitCall(expr, ctx) }
+    case "BinaryExpression" { return emitBinary(expr, ctx) }
+    case "UnaryExpression" { return expr.operator + emitExpression(expr.argument, ctx) }
+    case "UpdateExpression" {
+      if expr.prefix {
+        return expr.operator + emitExpression(expr.argument, ctx)
+      }
+      return emitExpression(expr.argument, ctx) + expr.operator
+    }
+    case "TemplateLiteral" { return emitTemplate(expr, ctx) }
+    case "MemberExpression" { return emitMember(expr, ctx) }
+    case "ArrayExpression" { return emitArray(expr, ctx) }
+    case "ObjectExpression" { return emitObject(expr, ctx) }
+    case "ArrowFunction" { return emitArrow(expr, ctx) }
+    case "AssignmentExpression" { return emitExpression(expr.left, ctx) + ctx.sp + "=" + ctx.sp + emitExpression(expr.right, ctx) }
+    case "CompoundAssignmentExpression" { return emitExpression(expr.left, ctx) + ctx.sp + expr.operator + ctx.sp + emitExpression(expr.right, ctx) }
+    case "NewExpression" { return emitNew(expr, ctx) }
+    case "AwaitExpression" { return "await " + emitExpression(expr.argument, ctx) }
+    case "SpreadExpression" { return "..." + emitExpression(expr.argument, ctx) }
+    case "TernaryExpression" { return emitExpression(expr.condition, ctx) + ctx.sp + "?" + ctx.sp + emitExpression(expr.consequent, ctx) + ctx.sp + ":" + ctx.sp + emitExpression(expr.alternate, ctx) }
+    case "TypeofExpression" { return "typeof " + emitExpression(expr.argument, ctx) }
+    case "VoidExpression" { return "void " + emitExpression(expr.argument, ctx) }
+    case "DeleteExpression" { return "delete " + emitExpression(expr.argument, ctx) }
+    case "YieldExpression" {
+      const delegate = expr.delegate ? "*" : ""
+      if !expr.argument { return "yield" + delegate }
+      return "yield" + delegate + " " + emitExpression(expr.argument, ctx)
+    }
+    case "ObjectPattern" { return emitObjectPattern(expr, ctx) }
+    case "ArrayPattern" { return emitArrayPattern(expr, ctx) }
+    case "RegExpLiteral" {
+      return expr.flags ? "/" + expr.pattern + "/" + expr.flags : "/" + expr.pattern + "/"
+    }
+    case "AsExpression" { return emitExpression(expr.expression, ctx) }
+    default { throw new Error("Unsupported expression type: " + expr.type) }
+  }
+}
+
+fn emitLiteral(lit) {
+  switch lit.literalType {
+    case "number" { return String(lit.value) }
+    case "string" { return JSON.stringify(lit.value) }
+    case "boolean" { return String(lit.value) }
+    case "null" { return "null" }
+    case "undefined" { return "undefined" }
+    default { return String(lit.value) }
+  }
+}
+
+fn emitCall(call, ctx) {
+  let callee = ""
+  if call.callee.type == "Identifier" && call.callee.name == "print" {
+    callee = "console.log"
+  } else {
+    callee = emitExpression(call.callee, ctx)
+  }
+  const args = call.arguments.map((a) => emitExpression(a, ctx)).join("," + ctx.sp)
+  if call.optional { return callee + "?.(" + args + ")" }
+  return callee + "(" + args + ")"
+}
+
+fn emitBinary(bin, ctx) {
+  // Pipe operator: a |> fn  -> fn(a)
+  if bin.operator == "|>" {
+    const arg = emitExpression(bin.left, ctx)
+    const f = emitExpression(bin.right, ctx)
+    return f + "(" + arg + ")"
+  }
+
+  let op = bin.operator
+  if op == "==" { op = "===" }
+  if op == "!=" { op = "!==" }
+
+  const left = parenthesizeIfNeeded(bin.left, bin.operator, ctx)
+  const right = parenthesizeIfNeeded(bin.right, bin.operator, ctx)
+  return left + ctx.sp + op + ctx.sp + right
+}
+
+fn parenthesizeIfNeeded(expr, parentOp, ctx) {
+  if expr.type != "BinaryExpression" { return emitExpression(expr, ctx) }
+  const parentPrec = BIN_PRECEDENCE[parentOp] ?? 0
+  const childPrec = BIN_PRECEDENCE[expr.operator] ?? 0
+  const inner = emitBinary(expr, ctx)
+  return childPrec < parentPrec ? "(" + inner + ")" : inner
+}
+
+fn emitTemplate(t, ctx) {
+  const body = t.parts.map((p) => {
+    if p.kind == "Text" { return p.value.replace(/`/g, '\\`').replace(/\$/g, '\\$') }
+    return "${" + emitExpression(p.expression, ctx) + '}'
+  }).join("")
+  return '`' + body + '`'
+}
+
+fn emitMember(m, ctx) {
+  const obj = emitExpression(m.object, ctx)
+  if m.computed {
+    const bracket = m.optional ? "?.[" : "["
+    return obj + bracket + emitExpression(m.property, ctx) + "]"
+  }
+  const dot = m.optional ? "?." : "."
+  return obj + dot + emitExpression(m.property, ctx)
+}
+
+fn emitArray(arr, ctx) {
+  const els = arr.elements.map((e) => emitExpression(e, ctx)).join("," + ctx.sp)
+  return "[" + els + "]"
+}
+
+fn emitObject(obj, ctx) {
+  if obj.properties.length == 0 { return '{' + '}' }
+  const props = obj.properties.map((p) => {
+    if p.shorthand { return p.key.name }
+    let keyStr = ""
+    if p.computed {
+      keyStr = "[" + emitExpression(p.key, ctx) + "]"
+    } else {
+      if p.key.type == "Identifier" {
+        keyStr = p.key.name
+      } else {
+        keyStr = JSON.stringify(p.key.value)
+      }
+    }
+    return keyStr + ":" + ctx.sp + emitExpression(p.value, ctx)
+  }).join("," + ctx.sp)
+  return '{' + ctx.sp + props + ctx.sp + '}'
+}
+
+fn emitArrow(f, ctx) {
+  const asyncPrefix = f.async ? "async " : ""
+  const params = f.params.map((p) => emitParam(p, ctx)).join("," + ctx.sp)
+  const paramStr = f.params.length == 1 && !f.params[0].rest && !f.params[0].defaultValue ? f.params[0].name : "(" + params + ")"
+
+  if Array.isArray(f.body) {
+    const inner = indented(ctx)
+    const body = f.body.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl)
+    return asyncPrefix + paramStr + ctx.sp + "=>" + ctx.sp + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '}'
+  }
+
+  return asyncPrefix + paramStr + ctx.sp + "=>" + ctx.sp + emitExpression(f.body, ctx)
+}
+
+fn emitNew(n, ctx) {
+  const callee = emitExpression(n.callee, ctx)
+  const args = n.arguments.map((a) => emitExpression(a, ctx)).join("," + ctx.sp)
+  return "new " + callee + "(" + args + ")"
+}

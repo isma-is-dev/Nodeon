@@ -65,6 +65,14 @@ describe("bootstrap: .no modules compile", () => {
     expect(js).toContain("resolveImport");
     expect(js).toContain("rewriteImportSource");
   });
+
+  it("compiler/generator/js-generator.no compiles", () => {
+    const js = compileNoFile("compiler/generator/js-generator.no");
+    expect(js).toContain("generateJS");
+    expect(js).toContain("emitStatement");
+    expect(js).toContain("emitExpression");
+    expect(js.length).toBeGreaterThan(10000);
+  });
 });
 
 function stripModuleSyntax(js: string): string {
