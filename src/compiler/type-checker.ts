@@ -212,6 +212,39 @@ function inferExpression(expr: Expression, env: TypeEnv): NType {
 function getLine(stmt: any): number { return stmt?.loc?.line ? stmt.loc.line - 1 : 0; }
 function getCol(stmt: any): number { return stmt?.loc?.column ? stmt.loc.column - 1 : 0; }
 
+// ── Type Narrowing ───────────────────────────────────────────────
+
+const TYPEOF_MAP: Record<string, NType> = {
+  string: STRING, number: NUMBER, boolean: BOOLEAN,
+  undefined: UNDEFINED, object: { kind: "named", name: "object" },
+  function: { kind: "function", params: [], returnType: ANY },
+};
+
+function extractTypeGuard(cond: Expression): { name: string; narrowedType: NType } | null {
+  if (cond.type !== "BinaryExpression") return null;
+  if (cond.operator !== "===" && cond.operator !== "==") return null;
+
+  // typeof x === "string"
+  if (cond.left.type === "UnaryExpression" && cond.left.operator === "typeof" &&
+      cond.left.argument.type === "Identifier" && cond.right.type === "Literal" &&
+      typeof cond.right.value === "string") {
+    const mapped = TYPEOF_MAP[cond.right.value as string];
+    if (mapped) return { name: cond.left.argument.name, narrowedType: mapped };
+  }
+  // "string" === typeof x (reversed)
+  if (cond.right.type === "UnaryExpression" && cond.right.operator === "typeof" &&
+      cond.right.argument.type === "Identifier" && cond.left.type === "Literal" &&
+      typeof cond.left.value === "string") {
+    const mapped = TYPEOF_MAP[cond.left.value as string];
+    if (mapped) return { name: cond.right.argument.name, narrowedType: mapped };
+  }
+  // x instanceof MyClass
+  if (cond.operator === "instanceof" as any && cond.left.type === "Identifier" && cond.right.type === "Identifier") {
+    return { name: cond.left.name, narrowedType: { kind: "named", name: cond.right.name } };
+  }
+  return null;
+}
+
 function checkStatements(stmts: Statement[], env: TypeEnv, diags: TypeDiagnostic[]): void {
   for (const stmt of stmts) checkStatement(stmt, env, diags);
 }
@@ -256,7 +289,12 @@ function checkStatement(stmt: Statement, env: TypeEnv, diags: TypeDiagnostic[]):
     }
     case "IfStatement": {
       inferExpression(stmt.condition, env);
-      env.push(); checkStatements(stmt.consequent, env, diags); env.pop();
+      env.push();
+      // Type narrowing: if (typeof x === "string") → narrow x to string in consequent
+      const guard = extractTypeGuard(stmt.condition);
+      if (guard) env.define(guard.name, guard.narrowedType);
+      checkStatements(stmt.consequent, env, diags);
+      env.pop();
       if (stmt.alternate) { env.push(); checkStatements(stmt.alternate, env, diags); env.pop(); }
       break;
     }

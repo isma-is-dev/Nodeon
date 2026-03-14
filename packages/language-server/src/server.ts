@@ -23,6 +23,8 @@ import {
   WorkspaceEdit,
   ReferenceParams,
   SemanticTokens,
+  CodeAction,
+  CodeActionKind,
   SemanticTokensParams,
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
@@ -51,6 +53,7 @@ connection.onInitialize((_params: InitializeParams): InitializeResult => {
       },
       definitionProvider: true,
       documentFormattingProvider: true,
+      codeActionProvider: true,
       renameProvider: { prepareProvider: false },
       referencesProvider: true,
       semanticTokensProvider: {
@@ -85,8 +88,30 @@ function validateDocument(doc: TextDocument): void {
 
   try {
     const tokens = new Lexer(source).tokenize();
-    const ast = new Parser(tokens).parseProgram();
+    const parser = new Parser(tokens);
+    const ast = parser.parseProgram();
     astCache.set(doc.uri, ast);
+
+    // Report recovered parse errors (error-tolerant parsing)
+    for (const err of parser.errors) {
+      const msg = err.message || String(err);
+      const match = msg.match(/at (\d+):(\d+)$/);
+      let range: Range;
+      if (match) {
+        const line = parseInt(match[1], 10) - 1;
+        const col = parseInt(match[2], 10) - 1;
+        const lineText = source.split('\n')[line] || '';
+        range = Range.create(Position.create(line, col), Position.create(line, lineText.length));
+      } else {
+        range = Range.create(Position.create(0, 0), Position.create(0, 0));
+      }
+      diagnostics.push({
+        severity: DiagnosticSeverity.Error,
+        range,
+        message: msg.replace(/\s*at \d+:\d+$/, ''),
+        source: 'nodeon'
+      });
+    }
 
     // Semantic analysis on successful parse
     const semanticDiags = analyzeSemantics(ast, source);
@@ -1026,6 +1051,50 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams): SemanticT
   }
 
   return { data };
+});
+
+// ── Code Actions (Quick Fixes) ──────────────────────────────────────
+
+connection.onCodeAction((params): CodeAction[] => {
+  const doc = documents.get(params.textDocument.uri);
+  if (!doc) return [];
+
+  const actions: CodeAction[] = [];
+
+  for (const diag of params.context.diagnostics) {
+    // Quick fix: "Add type annotation" for type mismatches
+    if (diag.message.includes("not assignable to type")) {
+      const match = diag.message.match(/type '(\w+)'/);
+      if (match) {
+        actions.push({
+          title: `Change type to '${match[1]}'`,
+          kind: CodeActionKind.QuickFix,
+          diagnostics: [diag],
+          isPreferred: true,
+        });
+      }
+    }
+
+    // Quick fix: wrap undeclared variable in let
+    if (diag.message.includes("is not defined") || diag.message.includes("undeclared")) {
+      const line = doc.getText(diag.range).trim();
+      actions.push({
+        title: `Declare with 'let'`,
+        kind: CodeActionKind.QuickFix,
+        diagnostics: [diag],
+        edit: {
+          changes: {
+            [params.textDocument.uri]: [{
+              range: Range.create(diag.range.start, diag.range.start),
+              newText: "let "
+            }]
+          }
+        }
+      });
+    }
+  }
+
+  return actions;
 });
 
 // ── Start ───────────────────────────────────────────────────────────

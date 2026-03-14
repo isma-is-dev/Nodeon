@@ -23,6 +23,22 @@ dist/
 .nodeon-cache/
 `;
 
+const LAUNCH_TEMPLATE = JSON.stringify({
+  version: "0.2.0",
+  configurations: [
+    {
+      type: "node",
+      request: "launch",
+      name: "Run Nodeon",
+      runtimeExecutable: "${workspaceFolder}/node_modules/.bin/nodeon",
+      args: ["run", "src/main.no"],
+      cwd: "${workspaceFolder}",
+      sourceMaps: true,
+      outFiles: ["${workspaceFolder}/dist/**/*.js"],
+    }
+  ]
+}, null, 2) + "\n";
+
 export function runInit(args: string[]) {
   const dir = process.cwd();
   const projectName = args[0] || basename(dir);
@@ -31,6 +47,7 @@ export function runInit(args: string[]) {
     ["src/main.no", MAIN_TEMPLATE],
     ["nodeon.json", CONFIG_TEMPLATE(projectName)],
     [".gitignore", GITIGNORE_TEMPLATE],
+    [".vscode/launch.json", LAUNCH_TEMPLATE],
   ];
 
   let created = 0;

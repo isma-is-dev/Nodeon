@@ -74,12 +74,43 @@ export class Parser extends ParserBase {
     super(tokens);
   }
 
+  public errors: SyntaxError[] = [];
+
   parseProgram(): Program {
     const body: Statement[] = [];
     while (!this.isAtEnd()) {
-      body.push(this.parseStatement());
+      try {
+        body.push(this.parseStatement());
+      } catch (err: any) {
+        if (err instanceof SyntaxError) {
+          this.errors.push(err);
+          // Skip to next statement boundary for recovery
+          this.recover();
+        } else {
+          throw err;
+        }
+      }
     }
     return { type: "Program", body };
+  }
+
+  private recover(): void {
+    while (!this.isAtEnd()) {
+      const tok = this.peek();
+      // Skip to a boundary: newline, semicolon, }, or a keyword that starts a statement
+      if (tok.type === TokenType.Delimiter && (tok.value === "}" || tok.value === ";")) {
+        this.advance();
+        return;
+      }
+      if (tok.type === TokenType.Keyword && [
+        "fn", "if", "for", "while", "do", "return", "import", "export",
+        "class", "try", "throw", "const", "let", "var", "switch", "match",
+        "enum", "interface", "break", "continue"
+      ].includes(tok.value)) {
+        return; // Don't consume — let the parser try parsing this as a new statement
+      }
+      this.advance();
+    }
   }
 
   // ── Statement Parsing ──────────────────────────────────────────────

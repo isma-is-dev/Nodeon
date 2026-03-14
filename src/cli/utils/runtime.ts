@@ -1,6 +1,6 @@
 import vm from "vm";
 import { readFileSync, existsSync } from "fs";
-import { resolve, sep } from "path";
+import { resolve, sep, dirname } from "path";
 import { RED, BOLD, RESET, DIM, CYAN } from "./colors";
 
 const sandboxGlobals = {
@@ -16,12 +16,18 @@ const sandboxGlobals = {
   Error,
   TypeError,
   RangeError,
+  SyntaxError,
+  ReferenceError,
+  URIError,
+  EvalError,
   parseInt,
   parseFloat,
   isNaN,
   isFinite,
   encodeURIComponent,
   decodeURIComponent,
+  encodeURI,
+  decodeURI,
   Array,
   Object,
   String,
@@ -29,13 +35,37 @@ const sandboxGlobals = {
   Boolean,
   Map,
   Set,
+  WeakMap,
+  WeakSet,
   Promise,
   Symbol,
+  Proxy,
+  Reflect,
+  // Node.js APIs — critical for self-hosting
+  require,
+  process,
+  Buffer,
+  URL,
+  URLSearchParams,
+  TextEncoder,
+  TextDecoder,
+  queueMicrotask,
+  AbortController,
+  AbortSignal,
+  Intl,
+  globalThis,
 };
 
 export function runInSandbox(jsCode: string, filename: string): void {
+  const absFile = resolve(process.cwd(), filename);
   try {
-    vm.runInNewContext(jsCode, { ...sandboxGlobals }, { filename });
+    vm.runInNewContext(jsCode, {
+      ...sandboxGlobals,
+      __filename: absFile,
+      __dirname: dirname(absFile),
+      module: { exports: {} },
+      exports: {},
+    }, { filename });
   } catch (err: any) {
     const name = err?.name || "RuntimeError";
     const message = err?.message || String(err);
