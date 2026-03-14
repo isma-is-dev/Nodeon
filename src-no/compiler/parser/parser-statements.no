@@ -55,13 +55,13 @@ export class ParserStatements extends ParserExpressions {
     do {
       if this.checkDelimiter(")") { break }
       let rest = false
+      let dv = undefined
       if this.checkOperator("...") {
         this.advance()
         rest = true
       }
       if this.checkDelimiter('{') {
         const pattern = this.parseObjectPattern()
-        let dv = undefined
         if this.checkOperator("=") {
           this.advance()
           dv = this.parseExpression()
@@ -71,7 +71,6 @@ export class ParserStatements extends ParserExpressions {
       }
       if this.checkDelimiter("[") {
         const pattern = this.parseArrayPattern()
-        let dv = undefined
         if this.checkOperator("=") {
           this.advance()
           dv = this.parseExpression()
@@ -87,7 +86,6 @@ export class ParserStatements extends ParserExpressions {
         this.advance()
         typeAnnotation = this.parseTypeAnnotation()
       }
-      let dv = undefined
       if this.checkOperator("=") {
         this.advance()
         dv = this.parseExpression()
@@ -214,9 +212,9 @@ export class ParserStatements extends ParserExpressions {
         exportAllAlias = this.consumeIdentifier("Expected alias name").name
       }
       this.consumeKeyword("from")
-      const source = this.peek().value
+      const allSource = this.peek().value
       this.advance()
-      return { type: "ExportDeclaration", isDefault: false, exportAll: true, source: source, exportAllAlias: exportAllAlias }
+      return { type: "ExportDeclaration", isDefault: false, exportAll: true, source: allSource, exportAllAlias: exportAllAlias }
     }
     if this.checkDelimiter('{') {
       this.advance()

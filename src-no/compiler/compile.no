@@ -1,15 +1,19 @@
 import { Lexer } from "./lexer/lexer.no"
+import { Parser } from "./parser/parser.no"
+import { generateJS } from "./generator/js-generator.no"
+import { typeCheck } from "./type-checker.no"
 
 // Compile Nodeon source to JavaScript
 export fn compile(source, options) {
   const opts = options ?? {}
   const ast = compileToAST(source)
+  const diagnostics = opts.check ? typeCheck(ast) : []
   const js = generateJS(ast, opts.minify ?? false)
-  return { js: js, ast: ast }
+  return { js: js, ast: ast, diagnostics: diagnostics }
 }
 
 // Parse Nodeon source to AST
 export fn compileToAST(source) {
   const tokens = new Lexer(source).tokenize()
-  return { type: "Program", body: tokens }
+  return new Parser(tokens).parseProgram()
 }

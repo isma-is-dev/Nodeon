@@ -114,6 +114,39 @@ describe("bootstrap: .no modules compile", () => {
   });
 });
 
+describe("bootstrap: self-compilation (compiled compiler compiles itself)", () => {
+  // Build and bundle must have been run first: node scripts/build-no.js && node scripts/bundle-no.js
+  const bundlePath = resolve(__dirname, "..", "dist-no", "nodeon-compiler.cjs");
+  const bundleExists = require("fs").existsSync(bundlePath);
+
+  it("compiled compiler bundle exists", () => {
+    expect(bundleExists).toBe(true);
+  });
+
+  if (bundleExists) {
+    const selfCompiler = require(bundlePath);
+
+    const noFiles = [
+      "language/tokens.no", "language/keywords.no", "language/operators.no",
+      "language/symbols.no", "language/precedence.no",
+      "compiler/lexer/lexer.no", "compiler/parser/parser-base.no",
+      "compiler/parser/parser-types.no", "compiler/parser/parser-expressions.no",
+      "compiler/parser/parser-statements.no", "compiler/parser/parser.no",
+      "compiler/compile.no", "compiler/resolver.no",
+      "compiler/generator/js-generator.no", "compiler/type-checker.no",
+    ];
+
+    for (const rel of noFiles) {
+      it(`self-compiles ${rel}`, () => {
+        const src = readFileSync(resolve(SRC_NO, rel), "utf8");
+        const result = selfCompiler.compile(src);
+        expect(result.js).toBeDefined();
+        expect(result.js.length).toBeGreaterThan(0);
+      });
+    }
+  }
+});
+
 function stripModuleSyntax(js: string): string {
   return js
     .replace(/^export /gm, "")

@@ -84,7 +84,7 @@ fn typeToString(t) {
     case "generic" { return t.base + "<" + t.args.map(typeToString).join(", ") + ">" }
     case "object" {
       const entries = Array.from(t.properties).map((entry) => entry[0] + ": " + typeToString(entry[1]))
-      return "{ " + entries.join("; ") + " }"
+      return '{ ' + entries.join('; ') + ' }'
     }
     default { return "unknown" }
   }
@@ -187,9 +187,9 @@ fn getCol(stmt) { return stmt?.loc?.column ? stmt.loc.column - 1 : 0 }
 // ── Type Narrowing ───────────────────────────────────────────────
 
 const TYPEOF_MAP = {
-  string: STRING, number: NUMBER, boolean: BOOLEAN,
-  undefined: UNDEFINED, object: { kind: "named", name: "object" },
-  function: { kind: "function", params: [], returnType: ANY },
+  "string": STRING, "number": NUMBER, "boolean": BOOLEAN,
+  "undefined": UNDEFINED, "object": { kind: "named", name: "object" },
+  "function": { kind: "function", params: [], returnType: ANY },
 }
 
 fn extractTypeGuard(cond) {

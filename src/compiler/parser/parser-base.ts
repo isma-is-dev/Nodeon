@@ -96,6 +96,15 @@ export class ParserBase {
     this.error(tok, message);
   }
 
+  protected consumePropertyName(message: string): Identifier {
+    const tok = this.peek();
+    if (tok.type === TokenType.Identifier || tok.type === TokenType.Keyword) {
+      this.advance();
+      return { type: "Identifier", name: tok.value };
+    }
+    this.error(tok, message);
+  }
+
   protected consumeDelimiter(value: string, message: string): void {
     const tok = this.peek();
     if (tok.type === TokenType.Delimiter && tok.value === value) {

@@ -983,7 +983,7 @@ export class Parser extends ParserBase {
           continue;
         }
 
-        const prop = this.consumeIdentifier("Expected property name");
+        const prop = this.consumePropertyName("Expected property name");
         left = { type: "MemberExpression", object: left, property: prop, computed: false, optional } as MemberExpression;
         // Check for call: obj.method(...)
         if (this.checkDelimiter("(")) {
@@ -1068,7 +1068,7 @@ export class Parser extends ParserBase {
       // support new Foo.Bar()
       while (this.checkOperator(".")) {
         this.advance();
-        const prop = this.consumeIdentifier("Expected property name");
+        const prop = this.consumePropertyName("Expected property name");
         callee = { type: "MemberExpression", object: callee, property: prop, computed: false, optional: false } as MemberExpression;
       }
       const args: Expression[] = [];
@@ -1101,7 +1101,68 @@ export class Parser extends ParserBase {
       return { type: "UnaryExpression", operator: tok.value, argument: this.parseUnary() } as UnaryExpression;
     }
 
-    return this.parsePrimary();
+    return this.parsePostfix();
+  }
+
+  private parsePostfix(): Expression {
+    let left = this.parsePrimary();
+
+    while (true) {
+      const tok = this.peek();
+
+      // Member access . and ?.
+      if (tok.type === TokenType.Operator && (tok.value === "." || tok.value === "?.")) {
+        const optional = tok.value === "?.";
+        this.advance();
+        if (optional && this.checkDelimiter("(")) {
+          left = this.parseCallArguments(left, true);
+          continue;
+        }
+        if (optional && this.checkDelimiter("[")) {
+          this.advance();
+          const prop = this.parseExpression();
+          this.consumeDelimiter("]", "Expected ']'");
+          left = { type: "MemberExpression", object: left, property: prop, computed: true, optional: true } as MemberExpression;
+          continue;
+        }
+        const prop = this.consumePropertyName("Expected property name");
+        left = { type: "MemberExpression", object: left, property: prop, computed: false, optional } as MemberExpression;
+        if (this.checkDelimiter("(")) {
+          left = this.parseCallArguments(left, false);
+        }
+        continue;
+      }
+
+      // Computed member access [
+      if (tok.type === TokenType.Delimiter && tok.value === "[") {
+        this.advance();
+        const prop = this.parseExpression();
+        this.consumeDelimiter("]", "Expected ']'");
+        left = { type: "MemberExpression", object: left, property: prop, computed: true, optional: false } as MemberExpression;
+        continue;
+      }
+
+      // Function call (
+      if (tok.type === TokenType.Delimiter && tok.value === "(") {
+        if (left.type === "Identifier" || left.type === "MemberExpression" || left.type === "CallExpression") {
+          left = this.parseCallArguments(left, false);
+          continue;
+        }
+      }
+
+      // Postfix ++ and --
+      if (tok.type === TokenType.Operator && (tok.value === "++" || tok.value === "--")) {
+        if (left.type === "Identifier" || left.type === "MemberExpression") {
+          this.advance();
+          left = { type: "UpdateExpression", operator: tok.value as "++" | "--", argument: left, prefix: false } as UpdateExpression;
+          continue;
+        }
+      }
+
+      break;
+    }
+
+    return left;
   }
 
   private parsePrimary(): Expression {

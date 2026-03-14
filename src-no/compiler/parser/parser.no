@@ -75,21 +75,21 @@ export class Parser extends ParserStatements {
         case "interface" { stmt = this.parseInterfaceDeclaration() }
         case "break" {
           this.advance()
-          let label = undefined
+          let breakLabel = undefined
           if this.peek().type == "Identifier" {
-            label = this.peek().value
+            breakLabel = this.peek().value
             this.advance()
           }
-          stmt = { type: "BreakStatement", label: label }
+          stmt = { type: "BreakStatement", label: breakLabel }
         }
         case "continue" {
           this.advance()
-          let label = undefined
+          let contLabel = undefined
           if this.peek().type == "Identifier" {
-            label = this.peek().value
+            contLabel = this.peek().value
             this.advance()
           }
-          stmt = { type: "ContinueStatement", label: label }
+          stmt = { type: "ContinueStatement", label: contLabel }
         }
         case "debugger" {
           this.advance()

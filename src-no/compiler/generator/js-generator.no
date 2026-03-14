@@ -186,8 +186,8 @@ fn emitExport(stmt, ctx) {
 
   if stmt.namedExports {
     const names = stmt.namedExports.map((s) => s.alias ? s.name + " as " + s.alias : s.name).join("," + ctx.sp)
-    const from = stmt.source ? " from " + JSON.stringify(rewriteImportSource(stmt.source)) : ""
-    return "export" + ctx.sp + '{' + ctx.sp + names + ctx.sp + '}' + from + ";"
+    const fromClause = stmt.source ? " from " + JSON.stringify(rewriteImportSource(stmt.source)) : ""
+    return "export" + ctx.sp + '{' + ctx.sp + names + ctx.sp + '}' + fromClause + ";"
   }
 
   const kw = stmt.isDefault ? "export default" : "export"
@@ -455,7 +455,7 @@ fn parenthesizeIfNeeded(expr, parentOp, ctx) {
 fn emitTemplate(t, ctx) {
   const body = t.parts.map((p) => {
     if p.kind == "Text" { return p.value.replace(/`/g, '\\`').replace(/\$/g, '\\$') }
-    return "${" + emitExpression(p.expression, ctx) + '}'
+    return '${' + emitExpression(p.expression, ctx) + '}'
   }).join("")
   return '`' + body + '`'
 }
