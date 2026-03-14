@@ -82,8 +82,8 @@ class Lexer {
     return { line: this.line, column: this.column, offset: this.pos }
   }
 
-  fn makeToken(type, value, loc) {
-    return { type: type, value: value, position: loc.offset, loc: loc }
+  fn makeToken(tokType, value, loc) {
+    return { type: tokType, value: value, position: loc.offset, loc: loc }
   }
 
   fn readIdentifier(loc) {
@@ -91,8 +91,8 @@ class Lexer {
     while !this.isAtEnd() && (this.isAlphaNumeric(this.peek()) || this.peek() == "_" || this.peek() == "$") {
       value = value + this.advance()
     }
-    const type = KEYWORDS.has(value) ? "Keyword" : "Identifier"
-    return this.makeToken(type, value, loc)
+    const tokType = KEYWORDS.has(value) ? "Keyword" : "Identifier"
+    return this.makeToken(tokType, value, loc)
   }
 
   fn readNumber(loc) {

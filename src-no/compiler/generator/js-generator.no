@@ -1,4 +1,4 @@
-import { PRECEDENCE as BIN_PRECEDENCE } from "../../language/precedence.no"
+import { BIN_PRECEDENCE } from "../../language/precedence.no"
 import { rewriteImportSource } from "../resolver.no"
 import { SourceMapBuilder } from "./source-map.no"
 

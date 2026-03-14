@@ -16,8 +16,8 @@ class TypeEnv {
   }
   fn push() { this.scopes.push({ bindings: new Map() }) }
   fn pop() { this.scopes.pop() }
-  fn define(name, type) {
-    this.scopes[this.scopes.length - 1].bindings.set(name, type)
+  fn define(name, typ) {
+    this.scopes[this.scopes.length - 1].bindings.set(name, typ)
   }
   fn lookup(name) {
     let i = this.scopes.length - 1
@@ -106,7 +106,8 @@ fn isAssignableTo(source, target) {
     if source.params.length != target.params.length { return false }
     let i = 0
     while i < source.params.length {
-      if !isAssignableTo(target.params[i], source.params[i]) { return false }
+      const ok = isAssignableTo(target.params[i], source.params[i])
+      if !ok { return false }
       i = i + 1
     }
     return isAssignableTo(source.returnType, target.returnType)
@@ -228,7 +229,8 @@ fn checkStatement(stmt, env, diags) {
       const declaredType = annotationToType(stmt.typeAnnotation)
       const initType = inferExpression(stmt.value, env)
       if declaredType.kind != "any" && initType.kind != "any" {
-        if !isAssignableTo(initType, declaredType) {
+        const assignable = isAssignableTo(initType, declaredType)
+        if !assignable {
           diags.push({
             line: getLine(stmt), column: getCol(stmt),
             message: "Type '" + typeToString(initType) + "' is not assignable to type '" + typeToString(declaredType) + "'",
@@ -329,7 +331,8 @@ fn checkReturnTypes(body, expected, env, diags) {
   for stmt in body {
     if stmt.type == "ReturnStatement" && stmt.value {
       const actual = inferExpression(stmt.value, env)
-      if actual.kind != "any" && !isAssignableTo(actual, expected) {
+      const assignOk = isAssignableTo(actual, expected)
+      if actual.kind != "any" && !assignOk {
         diags.push({
           line: getLine(stmt), column: getCol(stmt),
           message: "Type '" + typeToString(actual) + "' is not assignable to return type '" + typeToString(expected) + "'",

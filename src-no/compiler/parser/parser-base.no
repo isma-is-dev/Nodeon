@@ -89,6 +89,15 @@ export class ParserBase {
     this.error(tok, message)
   }
 
+  fn consumePropertyName(message) {
+    const tok = this.peek()
+    if tok.type == "Identifier" || tok.type == "Keyword" {
+      this.advance()
+      return { type: "Identifier", name: tok.value }
+    }
+    this.error(tok, message)
+  }
+
   fn consumeDelimiter(value, message) {
     const tok = this.peek()
     if tok.type == "Delimiter" && tok.value == value {
