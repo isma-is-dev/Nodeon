@@ -130,8 +130,8 @@ export function typeToString(t: NType): string {
 function isAssignableTo(source: NType, target: NType): boolean {
   if (target.kind === "any" || source.kind === "any") return true;
   if (source.kind === "never") return true;
-  if (source.kind === "primitive" && target.kind === "primitive") return source.name === target.name;
   if (source.kind === "primitive" && (source.name === "null" || source.name === "undefined")) return true;
+  if (source.kind === "primitive" && target.kind === "primitive") return source.name === target.name;
   if (source.kind === "named" && target.kind === "named") return source.name === target.name;
   if (source.kind === "array" && target.kind === "array") return isAssignableTo(source.element, target.element);
   if (target.kind === "union") return target.types.some(t => isAssignableTo(source, t));
@@ -224,19 +224,25 @@ function extractTypeGuard(cond: Expression): { name: string; narrowedType: NType
   if (cond.type !== "BinaryExpression") return null;
   if (cond.operator !== "===" && cond.operator !== "==") return null;
 
-  // typeof x === "string"
-  if (cond.left.type === "UnaryExpression" && cond.left.operator === "typeof" &&
-      cond.left.argument.type === "Identifier" && cond.right.type === "Literal" &&
-      typeof cond.right.value === "string") {
-    const mapped = TYPEOF_MAP[cond.right.value as string];
-    if (mapped) return { name: cond.left.argument.name, narrowedType: mapped };
+  // typeof x === "string" (UnaryExpression or TypeofExpression)
+  const leftIsTypeof = (cond.left.type === "TypeofExpression") ||
+    (cond.left.type === "UnaryExpression" && (cond.left as any).operator === "typeof");
+  if (leftIsTypeof && cond.right.type === "Literal" && typeof cond.right.value === "string") {
+    const arg = (cond.left as any).argument;
+    if (arg && arg.type === "Identifier") {
+      const mapped = TYPEOF_MAP[cond.right.value as string];
+      if (mapped) return { name: arg.name, narrowedType: mapped };
+    }
   }
   // "string" === typeof x (reversed)
-  if (cond.right.type === "UnaryExpression" && cond.right.operator === "typeof" &&
-      cond.right.argument.type === "Identifier" && cond.left.type === "Literal" &&
-      typeof cond.left.value === "string") {
-    const mapped = TYPEOF_MAP[cond.left.value as string];
-    if (mapped) return { name: cond.right.argument.name, narrowedType: mapped };
+  const rightIsTypeof = (cond.right.type === "TypeofExpression") ||
+    (cond.right.type === "UnaryExpression" && (cond.right as any).operator === "typeof");
+  if (rightIsTypeof && cond.left.type === "Literal" && typeof cond.left.value === "string") {
+    const arg = (cond.right as any).argument;
+    if (arg && arg.type === "Identifier") {
+      const mapped = TYPEOF_MAP[cond.left.value as string];
+      if (mapped) return { name: arg.name, narrowedType: mapped };
+    }
   }
   // x instanceof MyClass
   if (cond.operator === "instanceof" as any && cond.left.type === "Identifier" && cond.right.type === "Identifier") {
