@@ -81,7 +81,21 @@ fn emitFunction(f, ctx) {
     body = f.body.map((s) => pad(fnScope) + emitStatement(s, fnScope)).join(ctx.nl)
   }
 
-  return asyncPrefix + "function" + star + " " + f.name.name + "(" + params + ")" + ctx.sp + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '}'
+  let result = asyncPrefix + "function" + star + " " + f.name.name + "(" + params + ")" + ctx.sp + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '}'
+
+  // Emit decorators: @log fn foo() {} → function foo() {} ; foo = log(foo);
+  if f.decorators && f.decorators.length > 0 {
+    for dec in f.decorators {
+      const args = dec.arguments ? dec.arguments.map((a) => emitExpression(a, ctx)).join("," + ctx.sp) : ""
+      if dec.arguments {
+        result = result + ctx.nl + pad(ctx) + f.name.name + ctx.sp + "=" + ctx.sp + dec.name + "(" + args + ")(" + f.name.name + ");"
+      } else {
+        result = result + ctx.nl + pad(ctx) + f.name.name + ctx.sp + "=" + ctx.sp + dec.name + "(" + f.name.name + ");"
+      }
+    }
+  }
+
+  return result
 }
 
 fn emitParam(p, ctx) {
@@ -201,7 +215,21 @@ fn emitClass(cls, ctx) {
     if m.type == "ClassField" { return pad(inner) + emitClassField(m, inner) }
     return pad(inner) + emitMethod(m, inner)
   }).join(ctx.nl + ctx.nl)
-  return "class " + cls.name.name + ext + ctx.sp + '{' + ctx.nl + members + ctx.nl + pad(ctx) + '}'
+  let result = "class " + cls.name.name + ext + ctx.sp + '{' + ctx.nl + members + ctx.nl + pad(ctx) + '}'
+
+  // Emit decorators: @decorator class Foo {} → class Foo {} ; Foo = decorator(Foo);
+  if cls.decorators && cls.decorators.length > 0 {
+    for dec in cls.decorators {
+      const args = dec.arguments ? dec.arguments.map((a) => emitExpression(a, ctx)).join("," + ctx.sp) : ""
+      if dec.arguments {
+        result = result + ctx.nl + pad(ctx) + cls.name.name + ctx.sp + "=" + ctx.sp + dec.name + "(" + args + ")(" + cls.name.name + ");"
+      } else {
+        result = result + ctx.nl + pad(ctx) + cls.name.name + ctx.sp + "=" + ctx.sp + dec.name + "(" + cls.name.name + ");"
+      }
+    }
+  }
+
+  return result
 }
 
 fn emitClassField(f, ctx) {
@@ -400,6 +428,24 @@ fn emitExpression(expr, ctx) {
       return expr.flags ? "/" + expr.pattern + "/" + expr.flags : "/" + expr.pattern + "/"
     }
     case "AsExpression" { return emitExpression(expr.expression, ctx) }
+    case "IfExpression" {
+      // Compile to IIFE: (() => { if (cond) { ... return last; } else { ... return last; } })()
+      const cond = emitExpression(expr.condition, ctx)
+      const thenStmts = expr.consequent.map((s) => emitStatement(s, ctx))
+      const elseStmts = expr.alternate.map((s) => emitStatement(s, ctx))
+      const wrapReturn = (stmts) => {
+        if stmts.length == 0 { return ["return undefined;"] }
+        const last = stmts[stmts.length - 1]
+        const trimmed = last.trim()
+        if !trimmed.startsWith("return ") && !trimmed.startsWith("return;") {
+          stmts[stmts.length - 1] = "return " + trimmed
+        }
+        return stmts
+      }
+      const thenBody = wrapReturn([...thenStmts]).join("; ")
+      const elseBody = wrapReturn([...elseStmts]).join("; ")
+      return "(() =>" + ctx.sp + '{' + ctx.sp + "if" + ctx.sp + "(" + cond + ")" + ctx.sp + '{' + ctx.sp + thenBody + ctx.sp + '}' + ctx.sp + "else" + ctx.sp + '{' + ctx.sp + elseBody + ctx.sp + '}' + ctx.sp + '})()'
+    }
     default { throw new Error("Unsupported expression type: " + expr.type) }
   }
 }
@@ -435,6 +481,18 @@ fn emitBinary(bin, ctx) {
     return f + "(" + arg + ")"
   }
 
+  // String multiply: "ha" * 3 → "ha".repeat(3)
+  if bin.operator == "*" {
+    const isLeftString = (bin.left.type == "Literal" && bin.left.literalType == "string") || bin.left.type == "TemplateLiteral"
+    const isRightString = (bin.right.type == "Literal" && bin.right.literalType == "string") || bin.right.type == "TemplateLiteral"
+    if isLeftString {
+      return emitExpression(bin.left, ctx) + ".repeat(" + emitExpression(bin.right, ctx) + ")"
+    }
+    if isRightString {
+      return emitExpression(bin.right, ctx) + ".repeat(" + emitExpression(bin.left, ctx) + ")"
+    }
+  }
+
   let op = bin.operator
   if op == "==" { op = "===" }
   if op == "!=" { op = "!==" }
@@ -463,6 +521,13 @@ fn emitTemplate(t, ctx) {
 fn emitMember(m, ctx) {
   const obj = emitExpression(m.object, ctx)
   if m.computed {
+    // Array slicing: arr[1..3] → arr.slice(1, 3)
+    if m.property.type == "BinaryExpression" && m.property.operator == ".." {
+      const start = emitExpression(m.property.left, ctx)
+      const end = emitExpression(m.property.right, ctx)
+      const dot = m.optional ? "?." : "."
+      return obj + dot + "slice(" + start + "," + ctx.sp + end + ")"
+    }
     const bracket = m.optional ? "?.[" : "["
     return obj + bracket + emitExpression(m.property, ctx) + "]"
   }

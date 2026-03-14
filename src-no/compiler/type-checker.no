@@ -171,6 +171,15 @@ fn inferExpression(expr, env) {
     case "TernaryExpression" { return inferExpression(expr.consequent, env) }
     case "AsExpression" { return annotationToType(expr.typeAnnotation) }
     case "AwaitExpression" { return inferExpression(expr.argument, env) }
+    case "IfExpression" {
+      if expr.consequent.length > 0 {
+        const last = expr.consequent[expr.consequent.length - 1]
+        if last.expression { return inferExpression(last.expression, env) }
+        if last.value { return inferExpression(last.value, env) }
+        return inferExpression(last, env)
+      }
+      return ANY
+    }
     case "NewExpression" {
       if expr.callee.type == "Identifier" { return { kind: "named", name: expr.callee.name } }
       return ANY

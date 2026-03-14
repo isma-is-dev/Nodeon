@@ -241,6 +241,16 @@ export class ParserExpressions extends ParserTypes {
       this.advance()
       return { type: "Identifier", name: "super" }
     }
+    // If-expression: if condition { ... } else { ... }
+    if token.type == "Keyword" && token.value == "if" {
+      this.advance()
+      const condition = this.parseExpression()
+      const consequent = this.parseBlock()
+      this.consumeKeyword("else")
+      const alternate = this.parseBlock()
+      return { type: "IfExpression", condition: condition, consequent: consequent, alternate: alternate }
+    }
+
     if token.type == "Keyword" && token.value == "import" && this.peekNext()?.type == "Delimiter" && this.peekNext()?.value == "(" {
       this.advance()
       return this.parseCallArguments({ type: "Identifier", name: "import" }, false)

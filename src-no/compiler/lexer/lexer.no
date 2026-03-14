@@ -48,6 +48,14 @@ class Lexer {
         continue
       }
 
+      // Decorator: @name
+      if char == "@" && this.pos + 1 < this.src.length && (this.isAlpha(this.src[this.pos + 1]) || this.src[this.pos + 1] == "_") {
+        this.advance()
+        const ident = this.readIdentifier(loc)
+        tokens.push(this.makeToken("Decorator", "@" + ident.value, loc))
+        continue
+      }
+
       // Regex literal
       if char == "/" && this.isRegexStart(tokens) {
         const nextCh = this.pos + 1 < this.src.length ? this.src[this.pos + 1] : ""

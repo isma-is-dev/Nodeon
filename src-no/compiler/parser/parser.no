@@ -44,7 +44,31 @@ export class Parser extends ParserStatements {
     }
   }
 
+  fn parseDecorators() {
+    const decorators = []
+    while this.peek().type == "Decorator" {
+      const tok = this.advance()
+      const name = tok.value.slice(1)
+      let args = undefined
+      if this.checkDelimiter("(") {
+        this.advance()
+        args = []
+        if !this.checkDelimiter(")") {
+          do {
+            args.push(this.parseExpression())
+          } while this.matchDelimiter(",")
+        }
+        this.consumeDelimiter(")", "Expected ')' after decorator arguments")
+      }
+      decorators.push({ type: "Decorator", name: name, arguments: args })
+    }
+    return decorators
+  }
+
   fn parseStatement() {
+    // Collect decorators before the statement
+    const decorators = this.parseDecorators()
+
     const tok = this.peek()
     const loc = tok.loc ? { line: tok.loc.line, column: tok.loc.column } : undefined
     let stmt = null
@@ -123,6 +147,24 @@ export class Parser extends ParserStatements {
         }
       } else {
         stmt = this.parseExpressionStatement()
+      }
+    }
+
+    // Attach decorators to supported declarations
+    if decorators.length > 0 {
+      if stmt.type == "FunctionDeclaration" {
+        stmt.decorators = decorators
+      }
+      if stmt.type == "ClassDeclaration" {
+        stmt.decorators = decorators
+      }
+      if stmt.type == "ExportDeclaration" && stmt.declaration {
+        if stmt.declaration.type == "FunctionDeclaration" {
+          stmt.declaration.decorators = decorators
+        }
+        if stmt.declaration.type == "ClassDeclaration" {
+          stmt.declaration.decorators = decorators
+        }
       }
     }
 
