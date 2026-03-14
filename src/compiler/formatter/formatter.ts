@@ -93,7 +93,14 @@ function fmtFunction(fn: FunctionDeclaration, ctx: FmtContext): string {
   const params = fn.params.map((p) => fmtParam(p)).join(", ");
   const ret = fn.returnType ? `: ${fmtType(fn.returnType)}` : "";
   const body = fn.body.map((s) => fmtStatement(s, inner)).join("\n");
-  return `${pad(ctx)}${prefix}fn${gen} ${fn.name.name}${typeParams}(${params})${ret} {\n${body}\n${pad(ctx)}}`;
+  let decs = "";
+  if (fn.decorators && fn.decorators.length > 0) {
+    decs = fn.decorators.map(d => {
+      const args = d.arguments ? `(${d.arguments.map(a => fmtExpression(a, ctx)).join(", ")})` : "";
+      return `${pad(ctx)}@${d.name}${args}`;
+    }).join("\n") + "\n";
+  }
+  return `${decs}${pad(ctx)}${prefix}fn${gen} ${fn.name.name}${typeParams}(${params})${ret} {\n${body}\n${pad(ctx)}}`;
 }
 
 function fmtParam(p: Param): string {
@@ -207,7 +214,14 @@ function fmtClass(cls: ClassDeclaration, ctx: FmtContext): string {
   const typeParams = cls.typeParams ? `<${cls.typeParams.join(", ")}>` : "";
   const ext = cls.superClass ? ` extends ${cls.superClass.name}` : "";
   const members = cls.body.map((m) => fmtClassMember(m, inner)).join("\n\n");
-  return `${pad(ctx)}class ${cls.name.name}${typeParams}${ext} {\n${members}\n${pad(ctx)}}`;
+  let decs = "";
+  if (cls.decorators && cls.decorators.length > 0) {
+    decs = cls.decorators.map(d => {
+      const args = d.arguments ? `(${d.arguments.map(a => fmtExpression(a, ctx)).join(", ")})` : "";
+      return `${pad(ctx)}@${d.name}${args}`;
+    }).join("\n") + "\n";
+  }
+  return `${decs}${pad(ctx)}class ${cls.name.name}${typeParams}${ext} {\n${members}\n${pad(ctx)}}`;
 }
 
 function fmtClassMember(member: ClassMember, ctx: FmtContext): string {

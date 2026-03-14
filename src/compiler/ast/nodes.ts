@@ -47,6 +47,12 @@ export type Statement = (
   | LabeledStatement
 ) & { loc?: SourceLoc };
 
+export type Decorator = {
+  type: "Decorator";
+  name: string;       // e.g. "log" from @log
+  arguments?: Expression[];  // @log("prefix") → arguments: [Literal("prefix")]
+};
+
 export type FunctionDeclaration = {
   type: "FunctionDeclaration";
   name: Identifier;
@@ -56,6 +62,7 @@ export type FunctionDeclaration = {
   generator: boolean;
   returnType?: TypeAnnotation;
   typeParams?: string[];
+  decorators?: Decorator[];
 };
 
 export type Param = {
@@ -155,6 +162,7 @@ export type ClassDeclaration = {
   superClass: Identifier | null;
   body: ClassMember[];
   typeParams?: string[];
+  decorators?: Decorator[];
 };
 
 export type ClassMember = ClassMethod | ClassField;
@@ -170,6 +178,7 @@ export type ClassMethod = {
   kind: "method" | "get" | "set" | "constructor";
   computed: boolean;
   returnType?: TypeAnnotation;
+  decorators?: Decorator[];
 };
 
 export type ClassField = {

@@ -69,6 +69,7 @@ import {
   LabeledStatement,
   AsExpression,
   IfExpression,
+  Decorator,
 } from "@ast/nodes";
 
 // PRECEDENCE and COMPOUND_ASSIGN imported from @language/precedence
@@ -140,7 +141,29 @@ export class Parser extends ParserBase {
 
   // ── Statement Parsing ──────────────────────────────────────────────
 
+  private parseDecorators(): Decorator[] {
+    const decorators: Decorator[] = [];
+    while (this.peek().type === TokenType.Decorator) {
+      const tok = this.advance();
+      const name = tok.value.slice(1); // remove @
+      let args: Expression[] | undefined;
+      if (this.checkDelimiter("(")) {
+        this.advance();
+        args = [];
+        if (!this.checkDelimiter(")")) {
+          do { args.push(this.parseExpression()); } while (this.matchDelimiter(","));
+        }
+        this.consumeDelimiter(")", "Expected ')' after decorator arguments");
+      }
+      decorators.push({ type: "Decorator", name, arguments: args });
+    }
+    return decorators;
+  }
+
   private parseStatement(): Statement {
+    // Collect decorators before the statement
+    const decorators = this.parseDecorators();
+
     const tok = this.peek();
     const loc = tok.loc ? { line: tok.loc.line, column: tok.loc.column } : undefined;
 
@@ -221,6 +244,21 @@ export class Parser extends ParserBase {
       }
     } else {
       stmt = this.parseExpressionStatement();
+    }
+
+    // Attach decorators to supported declarations
+    if (decorators.length > 0) {
+      if (stmt.type === "FunctionDeclaration") {
+        stmt.decorators = decorators;
+      } else if (stmt.type === "ClassDeclaration") {
+        stmt.decorators = decorators;
+      } else if (stmt.type === "ExportDeclaration" && stmt.declaration) {
+        if (stmt.declaration.type === "FunctionDeclaration") {
+          (stmt.declaration as FunctionDeclaration).decorators = decorators;
+        } else if (stmt.declaration.type === "ClassDeclaration") {
+          (stmt.declaration as ClassDeclaration).decorators = decorators;
+        }
+      }
     }
 
     if (loc) stmt.loc = loc;

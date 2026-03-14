@@ -51,6 +51,14 @@ export class Lexer {
         continue;
       }
 
+      // Decorator: @name
+      if (char === "@" && this.pos + 1 < this.src.length && (this.isAlpha(this.src[this.pos + 1]) || this.src[this.pos + 1] === "_")) {
+        this.advance(); // skip @
+        const ident = this.readIdentifier(loc);
+        tokens.push(this.makeToken(TokenType.Decorator, "@" + ident.value, loc));
+        continue;
+      }
+
       // Regex literal: /pattern/flags
       // Must distinguish from division operator based on context
       // Also check lookahead: regex patterns never start with space/*/=

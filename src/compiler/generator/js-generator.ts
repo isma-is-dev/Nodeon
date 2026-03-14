@@ -268,7 +268,21 @@ function emitFunction(fn: FunctionDeclaration, ctx: GenContext): string {
     body = fn.body.map((s) => pad(fnScope) + emitStatement(s, fnScope)).join(ctx.nl);
   }
 
-  return `${async}function${star} ${fn.name.name}(${params})${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`;
+  let result = `${async}function${star} ${fn.name.name}(${params})${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`;
+
+  // Emit decorators: @log fn foo() {} → function foo() {} ; foo = log(foo);
+  if (fn.decorators && fn.decorators.length > 0) {
+    for (const dec of fn.decorators) {
+      const args = dec.arguments ? dec.arguments.map(a => emitExpression(a, ctx)).join("," + ctx.sp) : "";
+      if (dec.arguments) {
+        result += ctx.nl + pad(ctx) + `${fn.name.name}${ctx.sp}=${ctx.sp}${dec.name}(${args})(${fn.name.name});`;
+      } else {
+        result += ctx.nl + pad(ctx) + `${fn.name.name}${ctx.sp}=${ctx.sp}${dec.name}(${fn.name.name});`;
+      }
+    }
+  }
+
+  return result;
 }
 
 function emitParam(p: Param, ctx: GenContext): string {
@@ -395,7 +409,21 @@ function emitClass(cls: ClassDeclaration, ctx: GenContext): string {
     if (m.type === "ClassField") return pad(inner) + emitClassField(m, inner);
     return pad(inner) + emitMethod(m, inner);
   }).join(ctx.nl + ctx.nl);
-  return `class ${cls.name.name}${ext}${ctx.sp}{${ctx.nl}${members}${ctx.nl}${pad(ctx)}}`;
+  let result = `class ${cls.name.name}${ext}${ctx.sp}{${ctx.nl}${members}${ctx.nl}${pad(ctx)}}`;
+
+  // Emit decorators: @decorator class Foo {} → class Foo {} ; Foo = decorator(Foo);
+  if (cls.decorators && cls.decorators.length > 0) {
+    for (const dec of cls.decorators) {
+      const args = dec.arguments ? dec.arguments.map(a => emitExpression(a, ctx)).join("," + ctx.sp) : "";
+      if (dec.arguments) {
+        result += ctx.nl + pad(ctx) + `${cls.name.name}${ctx.sp}=${ctx.sp}${dec.name}(${args})(${cls.name.name});`;
+      } else {
+        result += ctx.nl + pad(ctx) + `${cls.name.name}${ctx.sp}=${ctx.sp}${dec.name}(${cls.name.name});`;
+      }
+    }
+  }
+
+  return result;
 }
 
 function emitClassField(f: ClassField, ctx: GenContext): string {

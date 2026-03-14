@@ -8,6 +8,7 @@ export enum TokenType {
   Keyword = "Keyword",
   Operator = "Operator",
   Delimiter = "Delimiter",
+  Decorator = "Decorator",
   EOF = "EOF",
 }
 

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { compile, compileWithSourceMap, compileToAST } from "@compiler/compile";
 import { typeCheck } from "@compiler/type-checker";
+import { Lexer } from "@lexer/lexer";
 
 describe("End-to-end compilation", () => {
   function compileToJS(src: string, minify = false): string {
@@ -970,6 +971,68 @@ describe("export aliases", () => {
     const js = compile('export { foo as bar } from "mod"').js;
     expect(js).toContain("foo as bar");
     expect(js).toContain('"mod"');
+  });
+});
+
+describe("Decorators", () => {
+  it("lexes @decorator tokens", () => {
+    const tokens = new Lexer("@log fn foo() {}").tokenize();
+    expect(tokens[0].type).toBe("Decorator");
+    expect(tokens[0].value).toBe("@log");
+  });
+
+  it("parses simple decorator on function", () => {
+    const ast = compileToAST("@log\nfn greet() {\n  print(1)\n}");
+    const fn = ast.body[0] as any;
+    expect(fn.type).toBe("FunctionDeclaration");
+    expect(fn.decorators).toHaveLength(1);
+    expect(fn.decorators[0].name).toBe("log");
+  });
+
+  it("parses decorator with arguments", () => {
+    const ast = compileToAST('@route("/api")\nfn handler() {\n  print(1)\n}');
+    const fn = ast.body[0] as any;
+    expect(fn.decorators[0].name).toBe("route");
+    expect(fn.decorators[0].arguments).toHaveLength(1);
+  });
+
+  it("compiles decorated function to wrapper call", () => {
+    const js = compile("@log\nfn foo() {\n  print(1)\n}").js;
+    expect(js).toContain("function foo()");
+    expect(js).toContain("foo = log(foo)");
+  });
+
+  it("compiles decorator with args to curried call", () => {
+    const js = compile('@route("/api")\nfn handler() {\n  print(1)\n}').js;
+    expect(js).toContain('handler = route("/api")(handler)');
+  });
+
+  it("parses decorator on class", () => {
+    const ast = compileToAST("@injectable\nclass Service {\n  fn run() {\n    print(1)\n  }\n}");
+    const cls = ast.body[0] as any;
+    expect(cls.type).toBe("ClassDeclaration");
+    expect(cls.decorators).toHaveLength(1);
+    expect(cls.decorators[0].name).toBe("injectable");
+  });
+
+  it("compiles decorated class to wrapper call", () => {
+    const js = compile("@injectable\nclass Service {\n  fn run() {\n    print(1)\n  }\n}").js;
+    expect(js).toContain("class Service");
+    expect(js).toContain("Service = injectable(Service)");
+  });
+
+  it("supports multiple decorators", () => {
+    const ast = compileToAST("@log\n@memoize\nfn compute() {\n  print(1)\n}");
+    const fn = ast.body[0] as any;
+    expect(fn.decorators).toHaveLength(2);
+    expect(fn.decorators[0].name).toBe("log");
+    expect(fn.decorators[1].name).toBe("memoize");
+  });
+
+  it("function without decorator has no decorators field set", () => {
+    const ast = compileToAST("fn foo() {\n  print(1)\n}");
+    const fn = ast.body[0] as any;
+    expect(fn.decorators).toBeUndefined();
   });
 });
 
