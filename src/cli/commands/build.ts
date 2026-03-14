@@ -4,31 +4,62 @@ import { GREEN, RED, DIM, YELLOW, RESET } from "../utils/colors";
 import { resolveNodeonFile } from "./run";
 import { resolveImport } from "@compiler/resolver";
 import { compileToAST } from "@compiler/compile";
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { ImportDeclaration, ExportDeclaration } from "@ast/nodes";
 import type { TypeDiagnostic } from "@compiler/compile";
 
+export interface NodeonConfig {
+  name?: string;
+  version?: string;
+  entry: string;
+  outDir?: string;
+  strict?: boolean;
+  minify?: boolean;
+  sourceMap?: boolean;
+}
+
+function loadConfig(): NodeonConfig | null {
+  const configPath = resolve(process.cwd(), "nodeon.json");
+  if (!existsSync(configPath)) return null;
+  try {
+    return JSON.parse(readFileSync(configPath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
 export function runBuild(args: string[]) {
   const flags = args;
-  const minify = flags.includes("-min") || flags.includes("--minify");
-  const sourceMap = flags.includes("--map");
-  const check = flags.includes("--check");
   const positional = flags.filter((f) => !f.startsWith("-"));
 
-  if (positional.length === 0) {
-    console.error("build requires an input .no file");
+  // Load nodeon.json config if available
+  const config = loadConfig();
+
+  const minify = flags.includes("-min") || flags.includes("--minify") || (config?.minify ?? false);
+  const sourceMap = flags.includes("--map") || (config?.sourceMap ?? false);
+  const check = flags.includes("--check") || (config?.strict ?? false);
+
+  // Resolve input: CLI arg > config entry > error
+  let inputArg = positional[0];
+  if (!inputArg && config?.entry) {
+    inputArg = config.entry;
+    console.log(`${DIM}using nodeon.json entry: ${config.entry}${RESET}`);
+  }
+
+  if (!inputArg) {
+    console.error("build requires an input .no file (or a nodeon.json with 'entry')");
     process.exit(1);
   }
 
   let input: string;
   try {
-    input = resolveNodeonFile(positional[0]);
+    input = resolveNodeonFile(inputArg);
   } catch (err: any) {
     console.error(`${RED}error${RESET}: ${err.message}`);
     process.exit(1);
   }
 
-  const output = positional[1];
+  const output = positional[1] || (config?.outDir ? resolve(config.outDir, basename(input).replace(/\.no$/, ".js")) : undefined);
 
   // Collect all files to compile (entry + recursive imports)
   const absInput = resolve(input);
