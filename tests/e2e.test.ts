@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { compile, compileWithSourceMap, compileToAST } from "@compiler/compile";
+import { compileWithIR } from "@compiler/compile-ir";
 import { typeCheck } from "@compiler/type-checker";
 import { Lexer } from "@lexer/lexer";
 
@@ -1303,5 +1304,109 @@ describe("Concurrency: go statement", () => {
     const js = compile('go obj.process(data)').js;
     expect(js).toContain('queueMicrotask(');
     expect(js).toContain('obj.process(data)');
+  });
+});
+
+describe("Compile-time evaluation (comptime)", () => {
+  it("evaluates arithmetic at compile time", () => {
+    const js = compile('const x = comptime 2 ** 10').js;
+    expect(js).toContain('const x = 1024');
+    expect(js).not.toContain('comptime');
+  });
+
+  it("evaluates Math functions at compile time", () => {
+    const js = compile('const tau = comptime Math.PI * 2').js;
+    expect(js).toContain('const tau = 6.283185307179586');
+  });
+
+  it("evaluates block form at compile time", () => {
+    const js = compile('const val = comptime {\n  let x = 10\n  x * x\n}').js;
+    expect(js).toContain('const val = 100');
+  });
+
+  it("evaluates string operations at compile time", () => {
+    const js = compile('const s = comptime "hello".toUpperCase()').js;
+    expect(js).toContain('const s = "HELLO"');
+  });
+
+  it("produces correct AST node", () => {
+    const ast = compileToAST('comptime 42');
+    const stmt = ast.body[0] as any;
+    expect(stmt.expression.type).toBe("ComptimeExpression");
+    expect(stmt.expression.expression.type).toBe("Literal");
+  });
+
+  it("comptime block AST has body", () => {
+    const ast = compileToAST('comptime {\n  1 + 2\n}');
+    const stmt = ast.body[0] as any;
+    expect(stmt.expression.type).toBe("ComptimeExpression");
+    expect(stmt.expression.body).not.toBeNull();
+    expect(stmt.expression.expression).toBeNull();
+  });
+});
+
+describe("IR pipeline", () => {
+  it("lowers variable declaration to IR", () => {
+    const { ir } = compileWithIR('const x = 42');
+    expect(ir.type).toBe("IRModule");
+    expect(ir.globals.length).toBeGreaterThan(0);
+    const decl = ir.globals.find((i: any) => i.op === "declare");
+    expect(decl).toBeDefined();
+    expect((decl as any).name).toBe("x");
+  });
+
+  it("lowers function declaration to IRFunction", () => {
+    const { ir } = compileWithIR('fn add(a, b) {\n  return a + b\n}');
+    expect(ir.functions.length).toBe(1);
+    expect(ir.functions[0].name).toBe("add");
+    expect(ir.functions[0].params).toEqual(["a", "b"]);
+    expect(ir.functions[0].blocks.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("constant folds arithmetic in IR", () => {
+    const { optimizedIR } = compileWithIR('const x = 2 + 3');
+    const decl = optimizedIR.globals.find((i: any) => i.op === "declare") as any;
+    expect(decl).toBeDefined();
+    // The value should reference a temp that was folded to literal 5
+    const litInst = optimizedIR.globals.find(
+      (i: any) => i.op === "literal" && i.value === 5
+    );
+    expect(litInst).toBeDefined();
+  });
+
+  it("emits valid JS from IR pipeline", () => {
+    const { js } = compileWithIR('const x = 10');
+    expect(js).toContain("const x");
+    expect(js).toContain("10");
+  });
+
+  it("emits function through IR pipeline", () => {
+    const { js } = compileWithIR('fn greet() {\n  return "hello"\n}');
+    expect(js).toContain("function greet()");
+    expect(js).toContain("return");
+  });
+
+  it("constant folds multiplication", () => {
+    const { optimizedIR } = compileWithIR('const y = 6 * 7');
+    const litInst = optimizedIR.globals.find(
+      (i: any) => i.op === "literal" && i.value === 42
+    );
+    expect(litInst).toBeDefined();
+  });
+
+  it("IRModule has correct structure", () => {
+    const { ir } = compileWithIR('let a = 1\nfn foo() {\n  return a\n}');
+    expect(ir.type).toBe("IRModule");
+    expect(ir.globals.length).toBeGreaterThan(0);
+    expect(ir.functions.length).toBe(1);
+    expect(ir.functions[0].type).toBe("IRFunction");
+    expect(ir.functions[0].blocks[0].type).toBe("IRBlock");
+  });
+
+  it("dead code elimination removes unused temps", () => {
+    const { ir, optimizedIR } = compileWithIR('const x = 1 + 2');
+    // After optimization, unused intermediate literals should be eliminated
+    // The optimized IR should have fewer or equal instructions
+    expect(optimizedIR.globals.length).toBeLessThanOrEqual(ir.globals.length);
   });
 });

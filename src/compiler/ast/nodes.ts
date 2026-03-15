@@ -337,8 +337,15 @@ export type Expression =
   | YieldExpression
   | AsExpression
   | IfExpression
+  | ComptimeExpression
   | ObjectPattern
   | ArrayPattern;
+
+export type ComptimeExpression = {
+  type: "ComptimeExpression";
+  expression: Expression | null;  // comptime expr
+  body: Statement[] | null;       // comptime { ... }
+};
 
 export type CallExpression = {
   type: "CallExpression";

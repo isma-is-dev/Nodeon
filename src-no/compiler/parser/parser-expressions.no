@@ -268,6 +268,15 @@ export class ParserExpressions extends ParserTypes {
       this.advance()
       return this.parseCallArguments({ type: "Identifier", name: "import" }, false)
     }
+    if token.type == "Identifier" && token.value == "comptime" {
+      this.advance()
+      if this.checkDelimiter("\{") {
+        const body = this.parseBlock()
+        return { type: "ComptimeExpression", expression: null, body: body }
+      }
+      const expression = this.parseExpression()
+      return { type: "ComptimeExpression", expression: expression, body: null }
+    }
     if this.isIdentifierLike(token) {
       this.advance()
       return { type: "Identifier", name: token.value }

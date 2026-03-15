@@ -729,6 +729,35 @@ function emitExpression(expr: Expression, ctx: GenContext): string {
       return expr.flags ? `/${expr.pattern}/${expr.flags}` : `/${expr.pattern}/`;
     case "AsExpression":
       return emitExpression(expr.expression, ctx); // type-only — strip assertion
+    case "ComptimeExpression": {
+      // Evaluate at compile time and replace with result literal
+      let code: string;
+      if (expr.body) {
+        // comptime { stmts... } — wrap in IIFE for multi-statement evaluation
+        const stmts = expr.body.map((s: any) => emitStatement(s, ctx));
+        if (stmts.length > 0) {
+          const init = stmts.slice(0, -1).join("\n");
+          const last = stmts[stmts.length - 1].trim().replace(/;$/, "");
+          code = init + (init ? "\n" : "") + "return " + last + ";";
+        } else {
+          code = "return undefined;";
+        }
+        try {
+          const result = new Function(code)();
+          return comptimeSerialize(result);
+        } catch (e: any) {
+          throw new Error(`comptime evaluation failed: ${e.message}`);
+        }
+      } else {
+        code = emitExpression(expr.expression!, ctx);
+        try {
+          const result = new Function(`return (${code})`)();
+          return comptimeSerialize(result);
+        } catch (e: any) {
+          throw new Error(`comptime evaluation failed: ${e.message}`);
+        }
+      }
+    }
     case "IfExpression": {
       // Compile to IIFE: (() => { if (cond) { ... return last; } else { ... return last; } })()
       const cond = emitExpression(expr.condition, ctx);
@@ -763,6 +792,16 @@ function emitLiteral(lit: Literal): string {
     case "undefined": return "undefined";
     default: return String(lit.value);
   }
+}
+
+function comptimeSerialize(result: any): string {
+  if (result === undefined) return "undefined";
+  if (result === null) return "null";
+  if (typeof result === "string") return JSON.stringify(result);
+  if (typeof result === "number" || typeof result === "boolean") return String(result);
+  if (Array.isArray(result)) return JSON.stringify(result);
+  if (typeof result === "object") return JSON.stringify(result);
+  return String(result);
 }
 
 function emitCall(call: CallExpression, ctx: GenContext): string {

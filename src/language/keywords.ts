@@ -54,4 +54,5 @@ export const CONTEXTUAL_KEYWORDS = new Set([
   "type",
   "as",
   "implements",
+  "comptime",
 ]);

@@ -1339,6 +1339,18 @@ export class Parser extends ParserBase {
       return this.parseCallArguments({ type: "Identifier", name: "import" } as Identifier, false);
     }
 
+    // Comptime expression: comptime { ... } or comptime expr
+    if (token.type === TokenType.Identifier && token.value === "comptime") {
+      this.advance(); // consume 'comptime'
+      if (this.checkDelimiter("{")) {
+        const body = this.parseBlock();
+        return { type: "ComptimeExpression", expression: null, body } as any;
+      }
+      // Parse the full expression so binary ops like 2 ** 10 are captured
+      const expression = this.parseExpression();
+      return { type: "ComptimeExpression", expression, body: null } as any;
+    }
+
     // Identifier or contextual keyword used as identifier (print, type, as, etc.)
     if (this.isIdentifierLike(token)) {
       this.advance();

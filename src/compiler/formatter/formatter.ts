@@ -382,6 +382,14 @@ function fmtExpression(expr: Expression, ctx: FmtContext): string {
     }
     case "AsExpression":
       return `${fmtExpression(expr.expression, ctx)} as ${fmtType(expr.typeAnnotation)}`;
+    case "ComptimeExpression": {
+      if ((expr as any).body) {
+        const inner = indented(ctx);
+        const body = (expr as any).body.map((s: any) => fmtStatement(s, inner)).join("\n");
+        return `comptime {\n${body}\n${pad(ctx)}}`;
+      }
+      return `comptime ${fmtExpression((expr as any).expression, ctx)}`;
+    }
     case "IfExpression": {
       const inner = indented(ctx);
       const cond = fmtExpression(expr.condition, ctx);

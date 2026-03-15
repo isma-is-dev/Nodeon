@@ -337,6 +337,14 @@ fn fmtExpression(expr, ctx) {
       return "yield" + del + " " + fmtExpression(expr.argument, ctx)
     }
     case "AsExpression" { return fmtExpression(expr.expression, ctx) + " as " + fmtType(expr.typeAnnotation) }
+    case "ComptimeExpression" {
+      if expr.body {
+        const inner = indented(ctx)
+        const body = expr.body.map((s) => fmtStatement(s, inner)).join("\n")
+        return "comptime \{\n" + body + "\n" + pad(ctx) + "}"
+      }
+      return "comptime " + fmtExpression(expr.expression, ctx)
+    }
     case "IfExpression" {
       const inner = indented(ctx)
       const cond = fmtExpression(expr.condition, ctx)

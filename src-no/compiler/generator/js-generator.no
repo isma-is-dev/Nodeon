@@ -607,6 +607,27 @@ fn emitExpression(expr, ctx) {
       return expr.flags ? "/" + expr.pattern + "/" + expr.flags : "/" + expr.pattern + "/"
     }
     case "AsExpression" { return emitExpression(expr.expression, ctx) }
+    case "ComptimeExpression" {
+      let code = ""
+      if expr.body {
+        const stmts = expr.body.map((s) => emitStatement(s, ctx))
+        if stmts.length > 0 {
+          const init = stmts.slice(0, -1).join("\n")
+          const last = stmts[stmts.length - 1].trim().replace(/;$/, "")
+          code = init + (init ? "\n" : "") + "return " + last + ";"
+        } else {
+          code = "return undefined;"
+        }
+        const evaluator = new Function(code)
+        const result = evaluator()
+        return comptimeSerialize(result)
+      } else {
+        code = emitExpression(expr.expression, ctx)
+        const evaluator2 = new Function("return (" + code + ")")
+        const result = evaluator2()
+        return comptimeSerialize(result)
+      }
+    }
     case "IfExpression" {
       // Compile to IIFE: (() => { if (cond) { ... return last; } else { ... return last; } })()
       const cond = emitExpression(expr.condition, ctx)
@@ -638,6 +659,16 @@ fn emitLiteral(lit) {
     case "undefined" { return "undefined" }
     default { return String(lit.value) }
   }
+}
+
+fn comptimeSerialize(result) {
+  if result == undefined { return "undefined" }
+  if result == null { return "null" }
+  if typeof result == "string" { return JSON.stringify(result) }
+  if typeof result == "number" || typeof result == "boolean" { return String(result) }
+  if Array.isArray(result) { return JSON.stringify(result) }
+  if typeof result == "object" { return JSON.stringify(result) }
+  return String(result)
 }
 
 fn emitCall(call, ctx) {
