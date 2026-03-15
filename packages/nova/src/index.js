@@ -4,6 +4,7 @@ const { renderPage, wrapHtmlShell, injectStyle, postProcess } = require("./rende
 const { createDevServer } = require("./server");
 const { buildSite } = require("./builder");
 const { island, renderIsland, extractIslandIds, injectIslandScripts } = require("./island");
+const { signal, computed, effect, untracked, batch, isSignal, isComputed, isReactive } = require("./signals");
 
 module.exports = {
   buildRoutes,
@@ -18,4 +19,12 @@ module.exports = {
   renderIsland,
   extractIslandIds,
   injectIslandScripts,
+  signal,
+  computed,
+  effect,
+  untracked,
+  batch,
+  isSignal,
+  isComputed,
+  isReactive,
 };
