@@ -31,13 +31,14 @@
 Nodeon is an impressively complete project for its stage. It has:
 
 - A **full compiler pipeline** (Lexer → Pratt Parser → Type Checker → JS Generator)
-- **Self-hosting with verified fixpoint** — the compiler compiles itself and produces byte-identical output (32 .no source files, bundled to 135.7kb). Self-hosted compiler is now the primary CLI (`nodeon` → `nodeon-self.js`)
-- **488 passing tests** across lexer, parser, e2e, bootstrap (compile + self-compile + fixpoint), type-checker, regression, and snapshot suites
+- **Self-hosting with verified fixpoint** — the compiler compiles itself and produces byte-identical output (32 .no source files, bundled to 136.0kb). Self-hosted compiler is now the primary CLI with CLI bundle (`nodeon-cli.cjs`)
+- **489 passing tests** across lexer, parser, e2e, bootstrap (compile + self-compile + fixpoint), type-checker, regression, and snapshot suites
+- **Nova framework prototype** (`packages/nova/`) — file-based routing, static renderer, dev server, island hydration architecture
 - A **Language Server Protocol** implementation with diagnostics, completions, hover, go-to-definition, semantic tokens, formatting, rename, references, and code actions
 - A **VS Code extension** with TextMate grammar + semantic highlighting
 - **Source map** generation (V3 spec with VLQ encoding)
-- A **CLI** with build, run, repl, init, and watch mode
-- **CI/CD** via GitHub Actions (Node 18/20/22)
+- A **CLI** with build, run, repl, init, and watch mode (both self-hosted and TS fallback)
+- **CI/CD** via GitHub Actions (Node 18/20/22) with build, fixpoint verification, and dual CLI testing
 
 **Maturity Rating: ~85% toward a usable professional language.**
 
@@ -59,8 +60,8 @@ The core is solid and self-hosting is fully achieved with a verified fixpoint. T
 | LSP Server | ⚠️ Good but Unoptimized | 1426 lines, full feature set with AST-based semantic tokens |
 | VS Code Extension | ✅ Good | TextMate + semantic tokens, bracket colorization, language config |
 | Self-hosting | ✅ Fixpoint | 32 .no modules, byte-identical output across TS/self/self² builds (135.7kb bundle). Self-hosted is now primary CLI. |
-| Tests | ✅ Good | 488 tests (lexer 34, parser 84, e2e 175, bootstrap 98, type-checker 66, regression 26, snapshot 5) |
-| CI | ⚠️ Minimal | Only runs tests + CLI verify; no lint, no type check, no coverage |
+| Tests | ✅ Good | 489 tests (lexer 35, parser 84, e2e 175, bootstrap 98, type-checker 66, regression 26, snapshot 5) |
+| CI | ✅ Improved | Tests + build + fixpoint verify + self-hosted CLI verify + TS CLI fallback |
 
 ### What Needs Work
 
@@ -527,14 +528,14 @@ Current watch only watches the entry file's directory. Should:
 
 | Suite | Tests | Coverage Area |
 |-------|-------|---------------|
-| `lexer.test.ts` | 34 | Token types, edge cases, literals |
+| `lexer.test.ts` | 35 | Token types, edge cases, literals, hex escapes |
 | `parser.test.ts` | 84 | All statement/expression types, error cases |
 | `e2e.test.ts` | 175 | Full compile pipeline, output verification |
 | `bootstrap.test.ts` | 98 | Self-hosting: 32 compile + 33 self-compile + 32 fixpoint + 1 lexer functional |
 | `type-checker.test.ts` | 66 | Type inference, assignability, narrowing, diagnostics |
 | `regression.test.ts` | 26 | Tests for fixed bugs |
 | `snapshot.test.ts` | 5 | Output snapshot verification |
-| **Total** | **488** | |
+| **Total** | **489** | |
 
 ### 10.2 Testing Gaps
 
@@ -701,7 +702,7 @@ Nodeon's unique value proposition:
 
 ## 14. Roadmap: Path to Professional Language
 
-> **Status as of March 2026:** Self-hosting achieved with verified fixpoint (488 tests, 32 modules). BUG-001/002/009/010/011 fixed, error messages implemented, self-hosted compiler is now primary CLI, Nova framework architecture documented.
+> **Status as of March 2026:** Self-hosting achieved with verified fixpoint (489 tests, 32 modules). BUG-001/002/009/010/011 fixed, error messages implemented, self-hosted compiler is now primary CLI with CLI bundle, CI updated with build+fixpoint+dual CLI verification, `\x` hex escapes added, Nova framework prototype built (file-based router, static renderer, dev server, island hydration).
 > Items marked ✅ are complete. Items marked 🔧 have workarounds but need proper fixes.
 
 ### Phase 1: Compiler Robustness (Priority: 🔴 Critical)
@@ -763,7 +764,24 @@ Nodeon's unique value proposition:
 - [ ] **Parallel compilation** — `worker_threads` for multi-file builds
 - [ ] **Watch mode improvements** — Watch all dependencies, `.nodeonignore`, hot reload
 - [ ] **Publish VS Code extension** — VS Code Marketplace
-- [ ] **CI hardening** — `tsc --noEmit`, Biome linting, coverage reporting, fixpoint verification
+- [x] ~~**CI hardening**~~ ✅ Build + fixpoint verification + self-hosted CLI verify + TS CLI fallback
+
+### Phase 4b: Nova Framework (Priority: 🟡 High)
+
+**Goal:** Full-stack web framework combining Angular's structure with Astro's island architecture.
+
+- [x] ~~**File-based router**~~ ✅ Scan `pages/`, dynamic `[param]` routes, API routes, sorted matching
+- [x] ~~**Static renderer**~~ ✅ Class-based pages with `template()`, `load()`, `style()` methods
+- [x] ~~**Dev server**~~ ✅ HTTP server with routing, live reload injection, error/404 pages
+- [x] ~~**Static site builder**~~ ✅ `nova build` renders pages to `dist/`
+- [x] ~~**Island architecture**~~ ✅ `island()` decorator, `<nova-island>` hydration markers, 5 strategies (load/visible/idle/media/none)
+- [x] ~~**CLI**~~ ✅ `nova dev`, `nova build`, `nova init`
+- [x] ~~**Compiler bridge**~~ ✅ Compile `.no` pages on-the-fly, ESM→CJS transform
+- [ ] **Template engine** — Parse HTML-like syntax inside `template()` methods
+- [ ] **Signals + reactivity** — `@signal` decorator, fine-grained DOM updates
+- [ ] **Dependency injection** — `@service`, `@inject` decorators, DI container
+- [ ] **CSS extraction** — Scoped styles from `style()` methods
+- [ ] **Island client bundles** — Generate per-island JS bundles with esbuild
 
 ### Phase 5: Language Innovation (Priority: 🟢 Aspirational)
 
@@ -842,9 +860,11 @@ Nodeon has a **remarkably strong foundation** for its stage. The self-hosting ac
 
 **The three highest-impact next steps are:**
 
-1. **Error messages** — This is what users experience first. World-class errors (like Rust/Elm) would immediately set Nodeon apart.
+1. ~~**Error messages**~~ ✅ Done — Structured errors with codes (E0100+), source context, caret, help suggestions.
 2. **Standard library** — Without a stdlib, Nodeon is a syntax skin over JavaScript. With one, it becomes a language.
 3. **Type system depth** — The type annotations are currently cosmetic. Making them enforce correctness is what will convince developers to adopt Nodeon over plain JS.
+
+**Additionally:** The Nova web framework prototype is functional (file-based routing, static rendering, dev server, island hydration). Next framework steps: template engine, signals/reactivity, dependency injection.
 
 The path from "interesting project" to "professional language" is about **reliability, documentation, and ecosystem**. The path from "professional language" to "new standard" is about **community, unique value, and proving it works on real projects**.
 
