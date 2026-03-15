@@ -59,7 +59,7 @@ The core is solid and self-hosting is fully achieved with a verified fixpoint. T
 | CLI | ✅ Good | build, run, check, fmt, repl, init, watch mode, dependency graph walking, caching |
 | LSP Server | ⚠️ Good but Unoptimized | 1426 lines, full feature set with AST-based semantic tokens |
 | VS Code Extension | ✅ Good | TextMate + semantic tokens, bracket colorization, language config |
-| Self-hosting | ✅ Fixpoint | 32 .no modules, byte-identical output across TS/self/self² builds (141.2kb bundle). Self-hosted is now primary CLI. |
+| Self-hosting | ✅ Fixpoint | 32 .no modules, byte-identical output across TS/self/self² builds (141.2kb bundle). Self-hosted is primary CLI. **TS compiler (`src/`) is deprecated** — kept only as bootstrap fallback. |
 | Tests | ✅ Good | 504 tests (lexer 35, parser 84, e2e 175, bootstrap 98, type-checker 81, regression 26, snapshot 5) |
 | CI | ✅ Improved | Tests + build + fixpoint verify + self-hosted CLI verify + TS CLI fallback |
 

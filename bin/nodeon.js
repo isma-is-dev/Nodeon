@@ -1,4 +1,9 @@
 #!/usr/bin/env node
+// ⚠️  DEPRECATED: This is the legacy TypeScript-based compiler.
+// It is no longer actively maintained. Use `nodeon` (self-hosted) instead.
+// This entry point is kept only as a bootstrap fallback.
+console.warn("\x1b[33m⚠  nodeon-ts is deprecated. Use `nodeon` (self-hosted) instead.\x1b[0m");
+
 const path = require("path");
 const fs = require("fs");
 
