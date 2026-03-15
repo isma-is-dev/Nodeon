@@ -4,8 +4,8 @@ import { ParserExpressions } from "./parser-expressions.no"
 // Inheritance chain: ParserBase -> ParserTypes -> ParserExpressions -> ParserStatements
 
 export class ParserStatements extends ParserExpressions {
-  constructor(tokens) {
-    super(tokens)
+  constructor(tokens, source) {
+    super(tokens, source)
   }
 
   fn parseBlock() {

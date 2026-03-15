@@ -75,8 +75,8 @@ import {
 // PRECEDENCE and COMPOUND_ASSIGN imported from @language/precedence
 
 export class Parser extends ParserBase {
-  constructor(tokens: Token[]) {
-    super(tokens);
+  constructor(tokens: Token[], source?: string) {
+    super(tokens, source);
   }
 
   public errors: SyntaxError[] = [];

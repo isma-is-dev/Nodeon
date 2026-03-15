@@ -49,7 +49,7 @@ export function compileWithSourceMap(
 
 export function compileToAST(source: string): Program {
   const tokens = new Lexer(source).tokenize();
-  return new Parser(tokens).parseProgram();
+  return new Parser(tokens, source).parseProgram();
 }
 
 export { Lexer } from "@lexer/lexer";

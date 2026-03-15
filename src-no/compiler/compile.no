@@ -31,7 +31,7 @@ export fn compileWithSourceMap(source, sourceFile, outputFile, options) {
 // Parse Nodeon source to AST
 export fn compileToAST(source) {
   const tokens = new Lexer(source).tokenize()
-  return new Parser(tokens).parseProgram()
+  return new Parser(tokens, source).parseProgram()
 }
 
 // Re-exports

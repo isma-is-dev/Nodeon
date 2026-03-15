@@ -4,8 +4,8 @@ import { ParserBase } from "./parser-base.no"
 // Inheritance chain: ParserBase -> ParserTypes
 
 export class ParserTypes extends ParserBase {
-  constructor(tokens) {
-    super(tokens)
+  constructor(tokens, source) {
+    super(tokens, source)
   }
 
   // ── Generic Type Parameters ─────────────────────────────────────

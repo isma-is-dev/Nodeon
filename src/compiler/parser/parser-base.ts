@@ -12,9 +12,13 @@ const CONTEXTUAL_KW = ["print", "from", "async", "of", "get", "set", "static", "
 export class ParserBase {
   protected tokens: Token[] = [];
   protected current = 0;
+  protected source: string | null = null;
+  protected sourceLines: string[] = [];
 
-  constructor(tokens: Token[]) {
+  constructor(tokens: Token[], source?: string) {
     this.tokens = tokens;
+    this.source = source ?? null;
+    this.sourceLines = source ? source.split("\n") : [];
   }
 
   // ── Token Navigation ──────────────────────────────────────────
@@ -161,8 +165,9 @@ export class ParserBase {
     else if (message.includes("Expected '{'")) code = ErrorCode.E0108;
 
     if (loc) {
-      throw new NodeonError(code, message, loc.line, loc.column);
+      const sourceLine = this.sourceLines[loc.line - 1] ?? undefined;
+      throw new NodeonError(code, message, loc.line, loc.column, sourceLine);
     }
-    throw new SyntaxError(`${message} at position ${token.position}`);
+    throw new NodeonError(code, message, 0, 0);
   }
 }

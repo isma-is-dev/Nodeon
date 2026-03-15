@@ -4,8 +4,8 @@ import { ParserStatements } from "./parser-statements.no"
 // Inheritance chain: ParserBase -> ParserTypes -> ParserExpressions -> ParserStatements -> Parser
 
 export class Parser extends ParserStatements {
-  constructor(tokens) {
-    super(tokens)
+  constructor(tokens, source) {
+    super(tokens, source)
     this.errors = []
   }
 

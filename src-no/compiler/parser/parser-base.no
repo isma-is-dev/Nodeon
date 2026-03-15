@@ -1,12 +1,16 @@
+import { NodeonError, ErrorCode } from "../errors.no"
+
 // Contextual keywords: can be used as identifiers in most positions
 const CONTEXTUAL_KW = ["print", "from", "async", "of", "get", "set", "static", "default", "as", "type", "enum", "interface"]
 
 // Base class for the Parser — handles token navigation and consumption.
 // Subclassed by Parser which adds all statement/expression parsing.
 export class ParserBase {
-  constructor(tokens) {
+  constructor(tokens, source) {
     this.tokens = tokens
     this.current = 0
+    this.source = source ?? null
+    this.sourceLines = source ? source.split("\n") : []
   }
 
   // ── Token Navigation ──────────────────────────────────────────
@@ -137,11 +141,27 @@ export class ParserBase {
     return false
   }
 
-  fn error(token, message) {
+  fn error(token, message, code) {
     const loc = token.loc
-    if loc {
-      throw new SyntaxError("{message} at {loc.line}:{loc.column}")
+    let errCode = code ?? null
+    if !errCode {
+      // Infer error code from message pattern
+      if message.startsWith("Expected '") || message.startsWith('Expected "') {
+        errCode = ErrorCode.E0101
+      } else if message.includes("Expected expression") {
+        errCode = ErrorCode.E0105
+      } else if message.includes("Expected") && message.includes("name") {
+        errCode = ErrorCode.E0107
+      } else if message.includes("Expected '\{'") {
+        errCode = ErrorCode.E0108
+      } else {
+        errCode = ErrorCode.E0100
+      }
     }
-    throw new SyntaxError("{message} at position {token.position}")
+    if loc {
+      const sourceLine = this.sourceLines[loc.line - 1] ?? null
+      throw new NodeonError(errCode, message, loc.line, loc.column, sourceLine)
+    }
+    throw new NodeonError(errCode, message, 0, 0, null)
   }
 }

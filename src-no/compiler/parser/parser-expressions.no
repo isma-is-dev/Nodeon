@@ -6,8 +6,8 @@ import { Lexer } from "../lexer/lexer.no"
 // Inheritance chain: ParserBase -> ParserTypes -> ParserExpressions
 
 export class ParserExpressions extends ParserTypes {
-  constructor(tokens) {
-    super(tokens)
+  constructor(tokens, source) {
+    super(tokens, source)
   }
 
   fn parseExpressionStatement() {
