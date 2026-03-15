@@ -55,12 +55,12 @@ The core is solid and self-hosting is fully achieved with a verified fixpoint. T
 | Lexer | ✅ Solid | Handles hex/bin/oct, regex, template literals, private fields, unicode escapes |
 | Parser (Pratt) | ✅ Solid | Full expression/statement coverage, error recovery, 1699 lines |
 | JS Generator | ✅ Solid | Clean output, minification, source maps, implicit returns |
-| Type Checker | ⚠️ Basic | Inference, narrowing, assignability — but no exhaustiveness, generics, or control flow analysis |
+| Type Checker | ✅ Improved | Inference, narrowing, assignability, generics (type params + substitution), interface conformance (`implements`) — no exhaustiveness or control flow analysis yet |
 | CLI | ✅ Good | build, run, check, fmt, repl, init, watch mode, dependency graph walking, caching |
 | LSP Server | ⚠️ Good but Unoptimized | 1426 lines, full feature set with AST-based semantic tokens |
 | VS Code Extension | ✅ Good | TextMate + semantic tokens, bracket colorization, language config |
-| Self-hosting | ✅ Fixpoint | 32 .no modules, byte-identical output across TS/self/self² builds (135.7kb bundle). Self-hosted is now primary CLI. |
-| Tests | ✅ Good | 489 tests (lexer 35, parser 84, e2e 175, bootstrap 98, type-checker 66, regression 26, snapshot 5) |
+| Self-hosting | ✅ Fixpoint | 32 .no modules, byte-identical output across TS/self/self² builds (141.2kb bundle). Self-hosted is now primary CLI. |
+| Tests | ✅ Good | 504 tests (lexer 35, parser 84, e2e 175, bootstrap 98, type-checker 81, regression 26, snapshot 5) |
 | CI | ✅ Improved | Tests + build + fixpoint verify + self-hosted CLI verify + TS CLI fallback |
 
 ### What Needs Work
@@ -71,7 +71,7 @@ The core is solid and self-hosting is fully achieved with a verified fixpoint. T
 | Standard library | 🔴 High | No stdlib at all — `print` → `console.log` is the only builtin mapping |
 | Package manager / registry | 🔴 High | No way to share/install Nodeon packages |
 | Documentation for users | 🔴 High | `nodeon-design.md` is outdated; no language reference, no tutorial, no playground |
-| Type system depth | 🟡 Medium | No generics checking, no control flow analysis, no exhaustiveness |
+| Type system depth | ⚠️ Improved | ~~No generics checking~~ ✅ Generics + interface conformance implemented. No control flow analysis, no exhaustiveness |
 | Parser robustness | ✅ Fixed | ~~Keywords as variables silently drop functions/classes; `!fn()` in loops breaks parser; `import as` drops imports~~ — All three fixed (BUG-009/010/011) |
 | Error recovery | ⚠️ Improved | Parser errors now surfaced in diagnostics; brace-depth recovery; no partial AST for LSP yet |
 | Multi-file compilation | 🟡 Medium | CLI `build` walks dependencies but doesn't bundle; no module resolution at runtime |
@@ -532,14 +532,14 @@ Current watch only watches the entry file's directory. Should:
 | `parser.test.ts` | 84 | All statement/expression types, error cases |
 | `e2e.test.ts` | 175 | Full compile pipeline, output verification |
 | `bootstrap.test.ts` | 98 | Self-hosting: 32 compile + 33 self-compile + 32 fixpoint + 1 lexer functional |
-| `type-checker.test.ts` | 66 | Type inference, assignability, narrowing, diagnostics |
+| `type-checker.test.ts` | 81 | Type inference, assignability, narrowing, generics, interface conformance |
 | `regression.test.ts` | 26 | Tests for fixed bugs |
 | `snapshot.test.ts` | 5 | Output snapshot verification |
-| **Total** | **489** | |
+| **Total** | **504** | |
 
 ### 10.2 Testing Gaps
 
-1. ~~**No type checker tests**~~ — **✅ 66 tests** in `type-checker.test.ts`
+1. ~~**No type checker tests**~~ — **✅ 81 tests** in `type-checker.test.ts`
 2. **No LSP tests** — Language server has zero automated tests
 3. **No formatter tests** — No tests for code formatting
 4. **No source map tests** — No verification that source maps are correct
@@ -862,7 +862,7 @@ Nodeon has a **remarkably strong foundation** for its stage. The self-hosting ac
 
 1. ~~**Error messages**~~ ✅ Done — Structured errors with codes (E0100+), source context, caret, help suggestions.
 2. **Standard library** — Without a stdlib, Nodeon is a syntax skin over JavaScript. With one, it becomes a language.
-3. **Type system depth** — The type annotations are currently cosmetic. Making them enforce correctness is what will convince developers to adopt Nodeon over plain JS.
+3. **Type system depth** — Type annotations now enforce correctness with generics, interface conformance (`implements`), and type param substitution. Next: control flow analysis, exhaustiveness checking.
 
 **Additionally:** The Nova web framework prototype is functional (file-based routing, static rendering, dev server, island hydration). Next framework steps: template engine, signals/reactivity, dependency injection.
 
