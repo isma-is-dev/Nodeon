@@ -45,6 +45,7 @@ export const KEYWORDS = new Set([
   "match",
   "enum",
   "interface",
+  "go",
 ]);
 
 // Contextual keywords: treated as identifiers by the lexer,

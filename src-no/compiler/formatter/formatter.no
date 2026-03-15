@@ -39,6 +39,8 @@ fn fmtStatement(stmt, ctx) {
     case "EnumDeclaration" { return fmtEnum(stmt, ctx) }
     case "InterfaceDeclaration" { return fmtInterface(stmt, ctx) }
     case "TypeAliasDeclaration" { return fmtTypeAlias(stmt, ctx) }
+    case "ADTDeclaration" { return fmtADT(stmt, ctx) }
+    case "GoStatement" { return fmtGo(stmt, ctx) }
     case "BreakStatement" { return pad(ctx) + "break" + (stmt.label ? " " + stmt.label : "") }
     case "ContinueStatement" { return pad(ctx) + "continue" + (stmt.label ? " " + stmt.label : "") }
     case "DebuggerStatement" { return pad(ctx) + "debugger" }
@@ -275,6 +277,28 @@ fn fmtInterface(stmt, ctx) {
 fn fmtTypeAlias(stmt, ctx) {
   const typeParams = stmt.typeParams ? "<" + stmt.typeParams.join(", ") + ">" : ""
   return pad(ctx) + "type " + stmt.name.name + typeParams + " = " + fmtType(stmt.value)
+}
+
+fn fmtADT(stmt, ctx) {
+  const typeParams = stmt.typeParams ? "<" + stmt.typeParams.join(", ") + ">" : ""
+  const variants = stmt.variants.map((v) => {
+    if v.fields.length == 0 { return v.name.name }
+    const fields = v.fields.map((f) => {
+      if f.name { return f.name.name + ": " + fmtType(f.typeAnnotation) }
+      return fmtType(f.typeAnnotation)
+    }).join(", ")
+    return v.name.name + "(" + fields + ")"
+  }).join(" | ")
+  return pad(ctx) + "type " + stmt.name.name + typeParams + " = " + variants
+}
+
+fn fmtGo(stmt, ctx) {
+  if stmt.body {
+    const inner = indented(ctx)
+    const body = stmt.body.map((s) => fmtStatement(s, inner)).join("\n")
+    return pad(ctx) + "go \{\n" + body + "\n" + pad(ctx) + "}"
+  }
+  return pad(ctx) + "go " + fmtExpression(stmt.expression, ctx)
 }
 
 // ── Expressions ────────────────────────────────────────────────────

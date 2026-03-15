@@ -244,6 +244,10 @@ function emitStatement(stmt: Statement, ctx: GenContext): string {
     case "InterfaceDeclaration":
     case "TypeAliasDeclaration":
       return ""; // Type-only declaration, stripped from JS output
+    case "ADTDeclaration":
+      return emitADT(stmt as any, ctx);
+    case "GoStatement":
+      return emitGo(stmt as any, ctx);
     case "DebuggerStatement":
       return "debugger;";
     case "LabeledStatement":
@@ -507,16 +511,47 @@ function emitMatch(stmt: MatchStatement, ctx: GenContext): string {
   for (let i = 0; i < stmt.cases.length; i++) {
     const c = stmt.cases[i];
     const inner = childScope(indented(ctx));
-    const body = c.body.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl);
 
     if (c.pattern === null) {
       // default case → else block
+      const body = c.body.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl);
       parts.push(`${ctx.sp}else${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`);
+    } else if (c.pattern.type === "CallExpression" && c.pattern.callee.type === "Identifier") {
+      // ADT variant destructuring: case Circle(r) { ... } → if (disc.tag === "Circle") { const r = disc.radius ?? disc._0; ... }
+      const variantName = c.pattern.callee.name;
+      let cond = `${disc}.tag${ctx.sp}===${ctx.sp}"${variantName}"`;
+      if (c.guard) {
+        cond += `${ctx.sp}&&${ctx.sp}${emitExpression(c.guard, ctx)}`;
+      }
+      // Generate field bindings from the call arguments
+      const bindings: string[] = [];
+      for (let j = 0; j < c.pattern.arguments.length; j++) {
+        const arg = c.pattern.arguments[j];
+        if (arg.type === "Identifier") {
+          // Try named field first, fall back to positional _N
+          bindings.push(`${pad(inner)}const ${arg.name}${ctx.sp}=${ctx.sp}${disc}.${arg.name}${ctx.sp}!==${ctx.sp}undefined${ctx.sp}?${ctx.sp}${disc}.${arg.name}${ctx.sp}:${ctx.sp}${disc}._${j};`);
+        }
+      }
+      const bodyStmts = c.body.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl);
+      const allBody = bindings.length > 0 ? bindings.join(ctx.nl) + ctx.nl + bodyStmts : bodyStmts;
+      const keyword = i === 0 ? "if" : `${ctx.sp}else if`;
+      parts.push(`${keyword}${ctx.sp}(${cond})${ctx.sp}{${ctx.nl}${allBody}${ctx.nl}${pad(ctx)}}`);
+    } else if (c.pattern.type === "Identifier" && /^[A-Z]/.test(c.pattern.name)) {
+      // Unit variant match: case Point { ... } → if (disc.tag === "Point") { ... }
+      let cond = `${disc}.tag${ctx.sp}===${ctx.sp}"${c.pattern.name}"`;
+      if (c.guard) {
+        cond += `${ctx.sp}&&${ctx.sp}${emitExpression(c.guard, ctx)}`;
+      }
+      const body = c.body.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl);
+      const keyword = i === 0 ? "if" : `${ctx.sp}else if`;
+      parts.push(`${keyword}${ctx.sp}(${cond})${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`);
     } else {
+      // Plain value match (original behavior)
       let cond = `${disc}${ctx.sp}===${ctx.sp}${emitExpression(c.pattern, ctx)}`;
       if (c.guard) {
         cond += `${ctx.sp}&&${ctx.sp}${emitExpression(c.guard, ctx)}`;
       }
+      const body = c.body.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl);
       const keyword = i === 0 ? "if" : `${ctx.sp}else if`;
       parts.push(`${keyword}${ctx.sp}(${cond})${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`);
     }
@@ -548,6 +583,53 @@ function emitEnum(stmt: EnumDeclaration, ctx: GenContext): string {
 
   const body = entries.join(`,${ctx.nl}`);
   return `const ${stmt.name.name}${ctx.sp}=${ctx.sp}Object.freeze({${ctx.nl}${body}${ctx.nl}${pad(ctx)}});`;
+}
+
+function emitADT(stmt: any, ctx: GenContext): string {
+  const parts: string[] = [];
+  const variantNames: string[] = [];
+
+  for (const variant of stmt.variants) {
+    const vName = variant.name.name;
+    variantNames.push(vName);
+
+    if (variant.fields.length === 0) {
+      // Unit variant: const Point = Object.freeze({ tag: "Point" });
+      parts.push(`class ${vName}${ctx.sp}{${ctx.nl}${pad(indented(ctx))}constructor()${ctx.sp}{${ctx.nl}${pad(indented(indented(ctx)))}this.tag${ctx.sp}=${ctx.sp}"${vName}";${ctx.nl}${pad(indented(ctx))}}${ctx.nl}${pad(ctx)}}`);
+    } else {
+      // Variant with fields
+      const inner = indented(ctx);
+      const inner2 = indented(inner);
+      const fieldNames: string[] = [];
+      for (let i = 0; i < variant.fields.length; i++) {
+        const f = variant.fields[i];
+        fieldNames.push(f.name ? f.name.name : `_${i}`);
+      }
+      const params = fieldNames.join("," + ctx.sp);
+      const assignments = fieldNames.map((fn: string) =>
+        `${pad(inner2)}this.${fn}${ctx.sp}=${ctx.sp}${fn};`
+      ).join(ctx.nl);
+      parts.push(`class ${vName}${ctx.sp}{${ctx.nl}${pad(inner)}constructor(${params})${ctx.sp}{${ctx.nl}${pad(inner2)}this.tag${ctx.sp}=${ctx.sp}"${vName}";${ctx.nl}${assignments}${ctx.nl}${pad(inner)}}${ctx.nl}${pad(ctx)}}`);
+    }
+  }
+
+  // Namespace object: const Shape = { Circle, Rectangle, Point };
+  const nsProps = variantNames.join("," + ctx.sp);
+  parts.push(`const ${stmt.name.name}${ctx.sp}=${ctx.sp}{${nsProps}};`);
+
+  return parts.join(ctx.nl);
+}
+
+function emitGo(stmt: any, ctx: GenContext): string {
+  if (stmt.body) {
+    // go { ... } → queueMicrotask(() => { ... })
+    const inner = indented(ctx);
+    const body = stmt.body.map((s: any) => pad(inner) + emitStatement(s, inner)).join(ctx.nl);
+    return `queueMicrotask(()${ctx.sp}=>${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}});`;
+  }
+  // go expr → queueMicrotask(() => expr)
+  const expr = emitExpression(stmt.expression, ctx);
+  return `queueMicrotask(()${ctx.sp}=>${ctx.sp}${expr});`;
 }
 
 function emitDestructuring(stmt: DestructuringDeclaration, ctx: GenContext): string {

@@ -71,6 +71,9 @@ import {
   IfExpression,
   Decorator,
   NamedArgument,
+  ADTDeclaration,
+  ADTVariant,
+  ADTField,
 } from "@ast/nodes";
 
 // PRECEDENCE and COMPOUND_ASSIGN imported from @language/precedence
@@ -217,12 +220,13 @@ export class Parser extends ParserBase {
           break;
         }
         case "debugger": this.advance(); stmt = { type: "DebuggerStatement" } as DebuggerStatement; break;
+        case "go": stmt = this.parseGoStatement(); break;
         default: stmt = this.parseExpressionStatement(); break;
       }
     } else if (tok.type === TokenType.Identifier) {
       // Contextual keyword: type Foo = ...
       if (tok.value === "type" && this.peekNext()?.type === TokenType.Identifier) {
-        stmt = this.parseTypeAliasDeclaration();
+        stmt = this.parseTypeOrADT();
         if (loc) stmt.loc = loc;
         return stmt;
       }
@@ -943,13 +947,95 @@ export class Parser extends ParserBase {
     return { type: "InterfaceDeclaration", name, properties, extends: extendsIds };
   }
 
-  private parseTypeAliasDeclaration(): TypeAliasDeclaration {
+  private parseTypeOrADT(): TypeAliasDeclaration | ADTDeclaration {
+    // Save position to peek ahead after consuming 'type Name<T> ='
     this.consumeContextualKeyword("type");
     const name = this.consumeIdentifier("Expected type alias name");
     const typeParams = this.parseTypeParams();
     this.consumeOperator("=", "Expected '=' after type alias name");
+
+    // Detect ADT: RHS starts with Uppercase Identifier followed by '(' or '|'
+    // Examples: type Option = Some(number) | None
+    //           type Shape = Circle(number) | Rectangle(number, number) | Point
+    const cur = this.peek();
+    const next = this.peekNext();
+    if (cur.type === TokenType.Identifier && /^[A-Z]/.test(cur.value)) {
+      // Could be ADT if followed by '(' (variant with fields) or '|' (next variant)
+      // or if next is just another identifier (unit variant followed by |)
+      if ((next?.type === TokenType.Delimiter && (next.value === "(" || next.value === "|")) ||
+          (next?.type === TokenType.Operator && next.value === "|")) {
+        return this.parseADTVariants(name, typeParams);
+      }
+      // Also detect: single unit variant (no | after) — but this looks like a named type
+      // So only parse as ADT when there's clear variant syntax (| or parenthesized fields)
+    }
+
+    // Regular type alias
     const value = this.parseTypeAnnotation();
     return { type: "TypeAliasDeclaration", name, typeParams, value };
+  }
+
+  private parseADTVariants(name: Identifier, typeParams?: string[]): ADTDeclaration {
+    const variants: ADTVariant[] = [];
+
+    // Parse first variant
+    variants.push(this.parseOneVariant());
+
+    // Parse remaining variants separated by |
+    while ((this.checkOperator("|") || this.checkDelimiter("|")) && !this.isAtEnd()) {
+      this.advance(); // consume |
+      variants.push(this.parseOneVariant());
+    }
+
+    return { type: "ADTDeclaration", name, typeParams, variants };
+  }
+
+  private parseOneVariant(): ADTVariant {
+    const vName = this.consumeIdentifier("Expected variant name");
+    const fields: ADTField[] = [];
+
+    // Optional fields in parentheses: Variant(field1: Type, field2: Type) or Variant(Type)
+    if (this.checkDelimiter("(")) {
+      this.advance(); // consume (
+      if (!this.checkDelimiter(")")) {
+        do {
+          if (this.checkDelimiter(")")) break; // trailing comma
+          let fieldName: Identifier | null = null;
+          let typeAnnotation: TypeAnnotation | undefined;
+
+          // Check if this is named field: name: Type
+          const cur = this.peek();
+          const next = this.peekNext();
+          if ((cur.type === TokenType.Identifier || this.isIdentifierLike(cur)) &&
+              next && next.type === TokenType.Delimiter && next.value === ":") {
+            fieldName = { type: "Identifier", name: cur.value };
+            this.advance(); // consume name
+            this.advance(); // consume :
+            typeAnnotation = this.parseTypeAnnotation();
+          } else {
+            // Positional field: just a type
+            typeAnnotation = this.parseTypeAnnotation();
+          }
+
+          fields.push({ type: "ADTField", name: fieldName, typeAnnotation });
+        } while (this.matchDelimiter(","));
+      }
+      this.consumeDelimiter(")", "Expected ')'");
+    }
+
+    return { type: "ADTVariant", name: vName, fields };
+  }
+
+  private parseGoStatement(): Statement {
+    this.consumeKeyword("go");
+    // go { ... } — block form
+    if (this.checkDelimiter("{")) {
+      const body = this.parseBlock();
+      return { type: "GoStatement", expression: null, body } as any;
+    }
+    // go expression — typically a call expression
+    const expression = this.parseExpression();
+    return { type: "GoStatement", expression, body: null } as any;
   }
 
   private parseExpressionStatement(): ExpressionStatement {

@@ -44,6 +44,8 @@ export type Statement = (
   | EnumDeclaration
   | InterfaceDeclaration
   | TypeAliasDeclaration
+  | ADTDeclaration
+  | GoStatement
   | LabeledStatement
 ) & { loc?: SourceLoc };
 
@@ -235,6 +237,12 @@ export type DebuggerStatement = {
   type: "DebuggerStatement";
 };
 
+export type GoStatement = {
+  type: "GoStatement";
+  expression: Expression | null;  // go doSomething() — expression call
+  body: Statement[] | null;       // go { ... } — block body
+};
+
 export type MatchStatement = {
   type: "MatchStatement";
   discriminant: Expression;
@@ -281,6 +289,26 @@ export type TypeAliasDeclaration = {
   name: Identifier;
   typeParams?: string[];
   value: TypeAnnotation;
+};
+
+// ── Algebraic Data Types ─────────────────────────────────────────────
+export type ADTDeclaration = {
+  type: "ADTDeclaration";
+  name: Identifier;
+  typeParams?: string[];
+  variants: ADTVariant[];
+};
+
+export type ADTVariant = {
+  type: "ADTVariant";
+  name: Identifier;
+  fields: ADTField[];  // empty for unit variants like None/Point
+};
+
+export type ADTField = {
+  type: "ADTField";
+  name: Identifier | null;  // null for positional: Some(number)
+  typeAnnotation?: TypeAnnotation;
 };
 
 // ── Expressions ──────────────────────────────────────────────────────

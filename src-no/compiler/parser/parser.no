@@ -141,13 +141,14 @@ export class Parser extends ParserStatements {
           this.advance()
           stmt = { type: "DebuggerStatement" }
         }
+        case "go" { stmt = this.parseGoStatement() }
         default { stmt = this.parseExpressionStatement() }
       }
     } else {
       if tok.type == "Identifier" {
         // Contextual keyword: type Foo = ...
         if tok.value == "type" && this.peekNext()?.type == "Identifier" {
-          stmt = this.parseTypeAliasDeclaration()
+          stmt = this.parseTypeOrADT()
           if loc { stmt.loc = loc }
           return stmt
         }

@@ -534,12 +534,75 @@ export class ParserStatements extends ParserExpressions {
     return { type: "InterfaceDeclaration", name: name, properties: properties, extends: extendsIds }
   }
 
-  fn parseTypeAliasDeclaration() {
+  fn parseTypeOrADT() {
     this.consumeContextualKeyword("type")
     const name = this.consumeIdentifier("Expected type alias name")
     const typeParams = this.parseTypeParams()
     this.consumeOperator("=", "Expected '=' after type alias name")
+
+    const cur = this.peek()
+    const next = this.peekNext()
+    if cur.type == "Identifier" && /^[A-Z]/.test(cur.value) {
+      if (next?.type == "Delimiter" && (next.value == "(" || next.value == "|")) || (next?.type == "Operator" && next.value == "|") {
+        return this.parseADTVariants(name, typeParams)
+      }
+    }
+
     const value = this.parseTypeAnnotation()
     return { type: "TypeAliasDeclaration", name: name, typeParams: typeParams, value: value }
+  }
+
+  fn parseADTVariants(name, typeParams) {
+    const variants = []
+    variants.push(this.parseOneVariant())
+
+    while (this.checkOperator("|") || this.checkDelimiter("|")) && !this.isAtEnd() {
+      this.advance()
+      variants.push(this.parseOneVariant())
+    }
+
+    return { type: "ADTDeclaration", name: name, typeParams: typeParams, variants: variants }
+  }
+
+  fn parseOneVariant() {
+    const vName = this.consumeIdentifier("Expected variant name")
+    const fields = []
+
+    if this.checkDelimiter("(") {
+      this.advance()
+      if !this.checkDelimiter(")") {
+        do {
+          if this.checkDelimiter(")") { break }
+          let fieldName = null
+          let typeAnnotation = undefined
+
+          const cur = this.peek()
+          const next = this.peekNext()
+          if (cur.type == "Identifier" || this.isIdentifierLike(cur)) && next && next.type == "Delimiter" && next.value == ":" {
+            fieldName = { type: "Identifier", name: cur.value }
+            this.advance()
+            this.advance()
+            typeAnnotation = this.parseTypeAnnotation()
+          } else {
+            typeAnnotation = this.parseTypeAnnotation()
+          }
+
+          fields.push({ type: "ADTField", name: fieldName, typeAnnotation: typeAnnotation })
+        } while this.matchDelimiter(",")
+      }
+      this.consumeDelimiter(")", "Expected ')'")
+    }
+
+    return { type: "ADTVariant", name: vName, fields: fields }
+  }
+
+  fn parseGoStatement() {
+    this.consumeKeyword("go")
+    if this.checkDelimiter("\{") {
+      const body = this.parseBlock()
+      return { type: "GoStatement", expression: null, body: body }
+    }
+    const expression = this.parseExpression()
+    return { type: "GoStatement", expression: expression, body: null }
   }
 }

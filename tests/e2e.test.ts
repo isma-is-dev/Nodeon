@@ -1179,3 +1179,129 @@ describe("Named arguments", () => {
     expect(js).toContain('obj.method({key: "value"})');
   });
 });
+
+describe("Algebraic data types", () => {
+  it("compiles ADT with named fields to classes", () => {
+    const js = compile('type Shape = Circle(radius: number) | Rectangle(width: number, height: number) | Point').js;
+    expect(js).toContain('class Circle');
+    expect(js).toContain('this.tag = "Circle"');
+    expect(js).toContain('this.radius = radius');
+    expect(js).toContain('class Rectangle');
+    expect(js).toContain('this.width = width');
+    expect(js).toContain('this.height = height');
+    expect(js).toContain('class Point');
+    expect(js).toContain('this.tag = "Point"');
+    expect(js).toContain('const Shape = {Circle, Rectangle, Point}');
+  });
+
+  it("produces correct AST for ADT", () => {
+    const ast = compileToAST('type Option = Some(number) | None');
+    const decl = ast.body[0] as any;
+    expect(decl.type).toBe("ADTDeclaration");
+    expect(decl.name.name).toBe("Option");
+    expect(decl.variants.length).toBe(2);
+    expect(decl.variants[0].name.name).toBe("Some");
+    expect(decl.variants[0].fields.length).toBe(1);
+    expect(decl.variants[1].name.name).toBe("None");
+    expect(decl.variants[1].fields.length).toBe(0);
+  });
+
+  it("compiles unit-only ADT", () => {
+    const js = compile('type Color = Red | Green | Blue').js;
+    expect(js).toContain('class Red');
+    expect(js).toContain('class Green');
+    expect(js).toContain('class Blue');
+    expect(js).toContain('const Color = {Red, Green, Blue}');
+  });
+
+  it("compiles single variant with fields", () => {
+    const js = compile('type Wrapper = Box(value: number)').js;
+    expect(js).toContain('class Box');
+    expect(js).toContain('this.value = value');
+    expect(js).toContain('const Wrapper = {Box}');
+  });
+
+  it("regular type alias still works", () => {
+    const js = compile('type ID = string').js;
+    expect(js.trim()).toBe(""); // type alias is erased
+  });
+});
+
+describe("Pattern matching v2 (ADT destructuring)", () => {
+  it("matches variant with field destructuring", () => {
+    const js = compile('match shape {\n  case Circle(r) { print(r) }\n  default { print("other") }\n}').js;
+    expect(js).toContain('shape.tag === "Circle"');
+    expect(js).toContain('const r');
+    expect(js).toContain('console.log(r)');
+  });
+
+  it("matches multiple variant patterns", () => {
+    const js = compile('match x {\n  case Some(value) { print(value) }\n  case None { print("nothing") }\n}').js;
+    expect(js).toContain('x.tag === "Some"');
+    expect(js).toContain('const value');
+    expect(js).toContain('x.tag === "None"');
+  });
+
+  it("matches unit variant by uppercase identifier", () => {
+    const js = compile('match color {\n  case Red { print("red") }\n  case Blue { print("blue") }\n}').js;
+    expect(js).toContain('color.tag === "Red"');
+    expect(js).toContain('color.tag === "Blue"');
+  });
+
+  it("matches variant with multiple bindings", () => {
+    const js = compile('match shape {\n  case Rectangle(w, h) { print(w + h) }\n}').js;
+    expect(js).toContain('shape.tag === "Rectangle"');
+    expect(js).toContain('const w');
+    expect(js).toContain('const h');
+  });
+
+  it("plain value match still works", () => {
+    const js = compile('match x {\n  case 1 { print("one") }\n  case 2 { print("two") }\n}').js;
+    expect(js).toContain('x === 1');
+    expect(js).toContain('x === 2');
+    expect(js).not.toContain('.tag');
+  });
+
+  it("variant match with guard", () => {
+    const js = compile('match val {\n  case Some(x) if x > 0 { print(x) }\n  default { print("nope") }\n}').js;
+    expect(js).toContain('val.tag === "Some"');
+    expect(js).toContain('x > 0');
+  });
+});
+
+describe("Concurrency: go statement", () => {
+  it("go expression compiles to queueMicrotask", () => {
+    const js = compile('go doSomething()').js;
+    expect(js).toContain('queueMicrotask(');
+    expect(js).toContain('doSomething()');
+  });
+
+  it("go block compiles to queueMicrotask with arrow", () => {
+    const js = compile('go {\n  let x = 1\n  print(x)\n}').js;
+    expect(js).toContain('queueMicrotask(');
+    expect(js).toContain('let x = 1');
+    expect(js).toContain('console.log(x)');
+  });
+
+  it("go produces correct AST node", () => {
+    const ast = compileToAST('go doWork()');
+    const stmt = ast.body[0] as any;
+    expect(stmt.type).toBe("GoStatement");
+    expect(stmt.expression.type).toBe("CallExpression");
+    expect(stmt.body).toBeNull();
+  });
+
+  it("go block produces correct AST node", () => {
+    const ast = compileToAST('go {\n  print(1)\n}');
+    const stmt = ast.body[0] as any;
+    expect(stmt.type).toBe("GoStatement");
+    expect(stmt.expression).toBeNull();
+    expect(stmt.body.length).toBe(1);
+  });
+
+  it("go with method call", () => {
+    const js = compile('go obj.process(data)').js;
+    expect(js).toContain('queueMicrotask(');
+    expect(js).toContain('obj.process(data)');
+  });
+});

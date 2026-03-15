@@ -46,6 +46,7 @@ export const KEYWORDS = new Set([
   "match",
   "enum",
   "interface",
+  "go",
   "type",
   "as",
   "implements",

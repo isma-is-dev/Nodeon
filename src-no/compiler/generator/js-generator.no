@@ -160,6 +160,8 @@ fn emitStatement(stmt, ctx) {
     case "EnumDeclaration" { return emitEnum(stmt, ctx) }
     case "InterfaceDeclaration" { return "" }
     case "TypeAliasDeclaration" { return "" }
+    case "ADTDeclaration" { return emitADT(stmt, ctx) }
+    case "GoStatement" { return emitGo(stmt, ctx) }
     case "DebuggerStatement" { return "debugger;" }
     case "LabeledStatement" { return stmt.label + ": " + emitStatement(stmt.body, ctx) }
     default { throw new Error("Unsupported statement type: " + stmt.type) }
@@ -409,15 +411,43 @@ fn emitMatch(stmt, ctx) {
   let i = 0
   while i < stmt.cases.length {
     const c = stmt.cases[i]
-    const body = c.body.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl)
 
     if c.pattern == null {
+      const body = c.body.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl)
       parts.push(ctx.sp + "else" + ctx.sp + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '}')
+    } else if c.pattern.type == "CallExpression" && c.pattern.callee.type == "Identifier" {
+      const variantName = c.pattern.callee.name
+      let cond = disc + ".tag" + ctx.sp + "===" + ctx.sp + '"' + variantName + '"'
+      if c.guard {
+        cond = cond + ctx.sp + "&&" + ctx.sp + emitExpression(c.guard, ctx)
+      }
+      const bindings = []
+      let j = 0
+      while j < c.pattern.arguments.length {
+        const arg = c.pattern.arguments[j]
+        if arg.type == "Identifier" {
+          bindings.push(pad(inner) + "const " + arg.name + ctx.sp + "=" + ctx.sp + disc + "." + arg.name + ctx.sp + "!==" + ctx.sp + "undefined" + ctx.sp + "?" + ctx.sp + disc + "." + arg.name + ctx.sp + ":" + ctx.sp + disc + "._" + j + ";")
+        }
+        j = j + 1
+      }
+      const bodyStmts = c.body.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl)
+      const allBody = bindings.length > 0 ? bindings.join(ctx.nl) + ctx.nl + bodyStmts : bodyStmts
+      const keyword = i == 0 ? "if" : ctx.sp + "else if"
+      parts.push(keyword + ctx.sp + "(" + cond + ")" + ctx.sp + '{' + ctx.nl + allBody + ctx.nl + pad(ctx) + '}')
+    } else if c.pattern.type == "Identifier" && /^[A-Z]/.test(c.pattern.name) {
+      let cond = disc + ".tag" + ctx.sp + "===" + ctx.sp + '"' + c.pattern.name + '"'
+      if c.guard {
+        cond = cond + ctx.sp + "&&" + ctx.sp + emitExpression(c.guard, ctx)
+      }
+      const body = c.body.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl)
+      const keyword = i == 0 ? "if" : ctx.sp + "else if"
+      parts.push(keyword + ctx.sp + "(" + cond + ")" + ctx.sp + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '}')
     } else {
       let cond = disc + ctx.sp + "===" + ctx.sp + emitExpression(c.pattern, ctx)
       if c.guard {
         cond = cond + ctx.sp + "&&" + ctx.sp + emitExpression(c.guard, ctx)
       }
+      const body = c.body.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl)
       const keyword = i == 0 ? "if" : ctx.sp + "else if"
       parts.push(keyword + ctx.sp + "(" + cond + ")" + ctx.sp + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '}')
     }
@@ -449,6 +479,54 @@ fn emitEnum(stmt, ctx) {
 
   const body = entries.join("," + ctx.nl)
   return "const " + stmt.name.name + ctx.sp + "=" + ctx.sp + "Object.freeze(" + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '})' + ";"
+}
+
+fn emitADT(stmt, ctx) {
+  const parts = []
+  const variantNames = []
+
+  for variant in stmt.variants {
+    const vName = variant.name.name
+    variantNames.push(vName)
+
+    if variant.fields.length == 0 {
+      const inner = indented(ctx)
+      const inner2 = indented(inner)
+      parts.push("class " + vName + ctx.sp + "\{" + ctx.nl + pad(inner) + "constructor()" + ctx.sp + "\{" + ctx.nl + pad(inner2) + "this.tag" + ctx.sp + "=" + ctx.sp + '"' + vName + '"' + ";" + ctx.nl + pad(inner) + "}" + ctx.nl + pad(ctx) + "}")
+    } else {
+      const inner = indented(ctx)
+      const inner2 = indented(inner)
+      const fieldNames = []
+      let fi = 0
+      while fi < variant.fields.length {
+        const f = variant.fields[fi]
+        if f.name {
+          fieldNames.push(f.name.name)
+        } else {
+          fieldNames.push("_" + fi)
+        }
+        fi = fi + 1
+      }
+      const params = fieldNames.join("," + ctx.sp)
+      const assignments = fieldNames.map((fn2) => pad(inner2) + "this." + fn2 + ctx.sp + "=" + ctx.sp + fn2 + ";").join(ctx.nl)
+      parts.push("class " + vName + ctx.sp + "\{" + ctx.nl + pad(inner) + "constructor(" + params + ")" + ctx.sp + "\{" + ctx.nl + pad(inner2) + "this.tag" + ctx.sp + "=" + ctx.sp + '"' + vName + '"' + ";" + ctx.nl + assignments + ctx.nl + pad(inner) + "}" + ctx.nl + pad(ctx) + "}")
+    }
+  }
+
+  const nsProps = variantNames.join("," + ctx.sp)
+  parts.push("const " + stmt.name.name + ctx.sp + "=" + ctx.sp + "\{" + nsProps + "};")
+
+  return parts.join(ctx.nl)
+}
+
+fn emitGo(stmt, ctx) {
+  if stmt.body {
+    const inner = indented(ctx)
+    const body = stmt.body.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl)
+    return "queueMicrotask(()" + ctx.sp + "=>" + ctx.sp + "\{" + ctx.nl + body + ctx.nl + pad(ctx) + "});"
+  }
+  const expr = emitExpression(stmt.expression, ctx)
+  return "queueMicrotask(()" + ctx.sp + "=>" + ctx.sp + expr + ");"
 }
 
 fn emitDestructuring(stmt, ctx) {
