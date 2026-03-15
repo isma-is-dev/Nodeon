@@ -71,6 +71,10 @@ function createDevServer(projectDir, opts) {
           let html = await renderPage(pageMod, matched.params, {});
           html = wrapHtmlShell(html, "Nova");
 
+          // Inject island hydration scripts if any islands are present
+          const { injectIslandScripts } = require("./island");
+          html = injectIslandScripts(html, {});
+
           // Inject live reload script in dev mode
           if (opts.liveReload !== false) {
             html = injectLiveReload(html, port);

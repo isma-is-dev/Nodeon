@@ -54,6 +54,10 @@ async function buildSite(projectDir, opts) {
       let html = await renderPage(pageMod, {}, {});
       html = wrapHtmlShell(html, "Nova");
 
+      // Inject island hydration scripts if any islands are present
+      const { injectIslandScripts } = require("./island");
+      html = injectIslandScripts(html, {});
+
       // Write to dist/
       const outPath = route.pattern === "/"
         ? path.join(outDir, "index.html")

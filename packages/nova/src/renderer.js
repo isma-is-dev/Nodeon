@@ -88,4 +88,12 @@ function wrapHtmlShell(html, title) {
   return "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<title>" + (title || "Nova") + "</title>\n</head>\n<body>\n" + html + "\n</body>\n</html>";
 }
 
-module.exports = { renderPage, renderLayout, injectStyle, wrapHtmlShell };
+/**
+ * Post-process rendered HTML to inject island hydration scripts if needed.
+ */
+function postProcess(html, opts) {
+  const { injectIslandScripts } = require("./island");
+  return injectIslandScripts(html, opts);
+}
+
+module.exports = { renderPage, renderLayout, injectStyle, wrapHtmlShell, postProcess };
