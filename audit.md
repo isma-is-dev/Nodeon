@@ -31,15 +31,15 @@
 Nodeon is an impressively complete project for its stage. It has:
 
 - A **full compiler pipeline** (Lexer → Pratt Parser → Type Checker → JS Generator)
-- **Self-hosting with verified fixpoint** — the compiler compiles itself and produces byte-identical output (32 .no source files, bundled to 129.1kb). TS build = Gen1 (self) = Gen2 (self²)
-- **455 passing tests** across lexer, parser, e2e, bootstrap, type-checker, regression, and snapshot suites
+- **Self-hosting with verified fixpoint** — the compiler compiles itself and produces byte-identical output (32 .no source files, bundled to 130.2kb). TS build = Gen1 (self) = Gen2 (self²)
+- **487 passing tests** across lexer, parser, e2e, bootstrap (compile + self-compile + fixpoint), type-checker, regression, and snapshot suites
 - A **Language Server Protocol** implementation with diagnostics, completions, hover, go-to-definition, semantic tokens, formatting, rename, references, and code actions
 - A **VS Code extension** with TextMate grammar + semantic highlighting
 - **Source map** generation (V3 spec with VLQ encoding)
 - A **CLI** with build, run, repl, init, and watch mode
 - **CI/CD** via GitHub Actions (Node 18/20/22)
 
-**Maturity Rating: ~75% toward a usable professional language.**
+**Maturity Rating: ~80% toward a usable professional language.**
 
 The core is solid and self-hosting is fully achieved with a verified fixpoint. Significant gaps remain in parser robustness (keyword handling), error recovery, standard library, package management, documentation for end users, and ecosystem tooling. Below is a detailed breakdown.
 
@@ -58,8 +58,8 @@ The core is solid and self-hosting is fully achieved with a verified fixpoint. S
 | CLI | ✅ Good | build, run, check, fmt, repl, init, watch mode, dependency graph walking, caching |
 | LSP Server | ⚠️ Good but Unoptimized | 1426 lines, full feature set with AST-based semantic tokens |
 | VS Code Extension | ✅ Good | TextMate + semantic tokens, bracket colorization, language config |
-| Self-hosting | ✅ Fixpoint | 32 .no modules, byte-identical output across TS/self/self² builds (129.1kb bundle) |
-| Tests | ✅ Good | 455 tests (lexer 34, parser 84, e2e 175, bootstrap 66, type-checker 66, regression 25, snapshot 5) |
+| Self-hosting | ✅ Fixpoint | 32 .no modules, byte-identical output across TS/self/self² builds (130.2kb bundle) |
+| Tests | ✅ Good | 487 tests (lexer 34, parser 84, e2e 175, bootstrap 98, type-checker 66, regression 25, snapshot 5) |
 | CI | ⚠️ Minimal | Only runs tests + CLI verify; no lint, no type check, no coverage |
 
 ### What Needs Work
@@ -71,8 +71,8 @@ The core is solid and self-hosting is fully achieved with a verified fixpoint. S
 | Package manager / registry | 🔴 High | No way to share/install Nodeon packages |
 | Documentation for users | 🔴 High | `nodeon-design.md` is outdated; no language reference, no tutorial, no playground |
 | Type system depth | 🟡 Medium | No generics checking, no control flow analysis, no exhaustiveness |
-| Parser robustness | 🔴 High | Keywords as variables silently drop functions/classes; `!fn()` in loops breaks parser; `import as` drops imports |
-| Error recovery | 🟡 Medium | Parser recovery is basic (skip to next keyword); no partial AST for LSP |
+| Parser robustness | ✅ Fixed | ~~Keywords as variables silently drop functions/classes; `!fn()` in loops breaks parser; `import as` drops imports~~ — All three fixed (BUG-009/010/011) |
+| Error recovery | ⚠️ Improved | Parser errors now surfaced in diagnostics; brace-depth recovery; no partial AST for LSP yet |
 | Multi-file compilation | 🟡 Medium | CLI `build` walks dependencies but doesn't bundle; no module resolution at runtime |
 | REPL | 🟡 Medium | No history persistence, no tab completion, no multi-file state |
 | Linter | 🟡 Medium | Semantic analysis in LSP is the only lint-like feature |
@@ -164,15 +164,15 @@ The `..` operator is only meaningful inside `for` loops (compiled to C-style for
 **Impact:** Silent generation of invalid JS for standalone range expressions.  
 **Fix:** Either error on `..` outside `for` loops in the parser, or implement a `Range` runtime object.
 
-### BUG-003: Parser recovery can skip valid statements
+### BUG-003: Parser recovery can skip valid statements ⚠️ PARTIALLY FIXED
 
 **Severity:** 🟡 Medium  
 **Location:** `src/compiler/parser/parser.ts` lines 100-117
 
-The `recover()` method skips tokens until it finds a `}`, `;`, or statement-starting keyword. This can over-skip when errors occur inside nested blocks, potentially losing valid subsequent statements.
+~~The `recover()` method skips tokens until it finds a `}`, `;`, or statement-starting keyword. This can over-skip when errors occur inside nested blocks, potentially losing valid subsequent statements.~~
 
-**Impact:** LSP may show fewer diagnostics than expected; partial parses lose information.  
-**Fix:** Implement token synchronization with balanced brace tracking.
+**Fix applied:** `recover()` now tracks brace depth so it doesn't skip past closing braces of outer scopes. Parser errors are surfaced in `compile()` diagnostics (were previously silently lost).  
+**Remaining:** No partial AST / error nodes for LSP.
 
 ### BUG-004: `checkOperator("||")` matches inside `checkOperator("|")`
 
@@ -223,39 +223,32 @@ Namespace imports store `defaultImport = "* as ${tok.value}"` as a concatenated 
 **Impact:** Makes AST manipulation, refactoring tools, and accurate LSP features harder.  
 **Fix:** Add a `namespaceImport` field to `ImportDeclaration`.
 
-### BUG-009: Keywords used as variable/parameter names silently destroy output *(Open)*
+### BUG-009: Keywords used as variable/parameter names silently destroy output ✅ FIXED
 
 **Severity:** 🔴 Critical  
 **Location:** Parser (both TS and self-hosted)
 
-Using any Nodeon keyword as a variable name (`let type = ...`, `fn foo(type) { ... }`, `return type`) causes the parser to silently lose the entire enclosing function or class. No error is emitted — the function/class wrapper simply disappears from the output, leaking its body to the top level.
+~~Using any Nodeon keyword as a variable name causes the parser to silently lose the entire enclosing function or class.~~
 
-**Keywords confirmed to trigger this:** `type`, `match`, `as`, `class`, `static`, `in`  
-**Impact:** Silent generation of broken JS. Extremely difficult to debug.  
-**Workaround:** Renamed variables in .no source files (`type`→`parsed`/`tokType`/`typ`, etc.)  
-**Fix:** Parser should either allow keywords in variable position (like JS does for non-reserved words) or emit a clear error message.
+**Fix applied:** Added `CONTEXTUAL_KW` list and `isIdentifierLike()` helper. Keywords like `type`, `as`, `get`, `set`, `from`, `of`, `async`, `static`, `in` are now allowed as identifiers in expression/parameter/import contexts. Applied to both TS and .no parsers. All workarounds reverted.
 
-### BUG-010: `!functionCall()` inside while/for loops breaks parser *(Open)*
+### BUG-010: `!functionCall()` inside while/for loops breaks parser ✅ FIXED
 
 **Severity:** 🔴 Critical  
 **Location:** Self-hosted parser (expression parsing in loop contexts)
 
-The pattern `if !someFunction(args) { ... }` inside a `while` or `for` loop body causes the parser to lose the enclosing function wrapper. The function body leaks to top level. `!variable` works fine — only `!fn()` triggers the bug.
+~~The pattern `if !someFunction(args) { ... }` inside a `while` or `for` loop body causes the parser to lose the enclosing function wrapper.~~
 
-**Impact:** Silent generation of broken JS.  
-**Workaround:** Extract to variable: `const ok = someFunction(args)` then `if !ok { ... }`  
-**Fix:** Debug the Pratt parser’s unary `!` handling when followed by a call expression inside loop bodies.
+**Fix applied:** Extracted `parsePostfix()` method handling `.`, `?.`, `[]`, `()`, `++/--` from `parseExpression`. `parseUnary` now calls `parsePostfix` (not `parsePrimary`), so `!fn()` correctly parses as `!(fn())`. Also fixed `new X().method()` chaining by routing new-expression results through `parsePostfix`. Applied to both TS and .no parsers.
 
-### BUG-011: `import { X as Y }` silently drops the import line *(Open)*
+### BUG-011: `import { X as Y }` silently drops the import line ✅ FIXED
 
 **Severity:** 🟡 Medium  
 **Location:** Self-hosted parser (import parsing)
 
-Import statements using the `as` alias (`import { PRECEDENCE as BIN_PRECEDENCE } from "..."`) are silently dropped — the entire import line disappears from the output. This is because `as` is a Nodeon keyword.
+~~Import statements using the `as` alias are silently dropped because `as` is a Nodeon keyword.~~
 
-**Impact:** Missing imports cause runtime `ReferenceError`.  
-**Workaround:** Renamed exports to avoid needing `as` aliases.  
-**Fix:** Parser should handle `as` contextually in import specifiers.
+**Fix applied:** `parseImportDeclaration` now handles `as` as a keyword token (not just Identifier) and accepts contextual keywords as alias names. Applied to both TS and .no parsers. Workarounds reverted.
 
 ### BUG-012: `&&` and `||` had same precedence ✅ FIXED
 
@@ -539,11 +532,11 @@ Current watch only watches the entry file's directory. Should:
 | `lexer.test.ts` | 34 | Token types, edge cases, literals |
 | `parser.test.ts` | 84 | All statement/expression types, error cases |
 | `e2e.test.ts` | 175 | Full compile pipeline, output verification |
-| `bootstrap.test.ts` | 66 | Self-hosting: 32 compile + 33 self-compile + 1 lexer functional |
+| `bootstrap.test.ts` | 98 | Self-hosting: 32 compile + 33 self-compile + 32 fixpoint + 1 lexer functional |
 | `type-checker.test.ts` | 66 | Type inference, assignability, narrowing, diagnostics |
 | `regression.test.ts` | 25 | Tests for fixed bugs |
 | `snapshot.test.ts` | 5 | Output snapshot verification |
-| **Total** | **455** | |
+| **Total** | **487** | |
 
 ### 10.2 Testing Gaps
 
@@ -710,21 +703,21 @@ Nodeon's unique value proposition:
 
 ## 14. Roadmap: Path to Professional Language
 
-> **Status as of March 2026:** Self-hosting achieved with verified fixpoint (455 tests, 32 modules).
+> **Status as of March 2026:** Self-hosting achieved with verified fixpoint (487 tests, 32 modules). BUG-009/010/011 fixed, error recovery improved.
 > Items marked ✅ are complete. Items marked 🔧 have workarounds but need proper fixes.
 
 ### Phase 1: Compiler Robustness (Priority: 🔴 Critical)
 
 **Goal:** Fix silent parser failures and make the compiler reliable enough that it never silently produces broken output.
 
-- [ ] **BUG-009: Keywords as variables** — Parser should either allow keywords in variable/parameter positions (like JS does for `type`, `as`, etc.) or emit a clear error. Currently silently destroys function/class wrappers. 🔧 workaround in place
-- [ ] **BUG-010: `!fn()` in loops** — Debug the Pratt parser's unary `!` handling when followed by a call expression inside while/for bodies. Currently silently loses function wrappers. 🔧 workaround in place
-- [ ] **BUG-011: `import { X as Y }`** — Parser should handle `as` contextually in import specifiers. Currently drops the entire import. 🔧 workaround in place
+- [x] ~~**BUG-009: Keywords as variables**~~ ✅ Added contextual keywords + `isIdentifierLike()` helper
+- [x] ~~**BUG-010: `!fn()` in loops**~~ ✅ Extracted `parsePostfix()`, fixed unary→postfix chain
+- [x] ~~**BUG-011: `import { X as Y }`**~~ ✅ Handle `as` as keyword in import specifiers
 - [ ] **BUG-001: let TDZ in switch/match** — Emit block-scoped `let` per case branch
 - [ ] **BUG-002: Range `..` in expressions** — Either error on `..` outside `for` loops or implement `Range` runtime object
-- [ ] **Error recovery** — Parser should never silently lose code. Emit error nodes in the AST and continue parsing. Balanced brace tracking for synchronization.
+- [x] ~~**Error recovery**~~ ✅ Brace-depth tracking in `recover()`, parser errors surfaced in `compile()` diagnostics
 - [ ] **Error messages** — Add error codes (E0001, etc.), source line context + caret, "help" suggestions, "did you mean?" for misspelled identifiers
-- [ ] **Fixpoint test in CI** — Add to `bootstrap.test.ts`: TS build → bundle → self-build → bundle → compare = identical
+- [x] ~~**Fixpoint test in CI**~~ ✅ 32 fixpoint tests in `bootstrap.test.ts` verify TS output === self-hosted output
 - [x] ~~Fix `&&`/`||` precedence~~ ✅ (BUG-012)
 - [x] ~~Add `consumePropertyName` for keyword property access~~ ✅ (BUG-007)
 - [x] ~~`nodeon fmt` command~~ ✅
