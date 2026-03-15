@@ -52,4 +52,5 @@ export const KEYWORDS = new Set([
 export const CONTEXTUAL_KEYWORDS = new Set([
   "type",
   "as",
+  "implements",
 ]);

@@ -486,3 +486,107 @@ describe("Type Checker: Generic functions", () => {
     `);
   });
 });
+
+describe("Type Checker: Interface conformance", () => {
+  it("accepts class that implements all interface methods", () => {
+    expectNoErrors(`
+      interface Greeter {
+        greet(): string
+      }
+      class EnglishGreeter implements Greeter {
+        fn greet(): string {
+          return "hello"
+        }
+      }
+    `);
+  });
+
+  it("rejects class missing required method from interface", () => {
+    expectError(`
+      interface Greeter {
+        greet(): string
+      }
+      class SilentGreeter implements Greeter {
+      }
+    `, "missing required method 'greet' from interface 'Greeter'");
+  });
+
+  it("accepts class with optional interface members missing", () => {
+    expectNoErrors(`
+      interface Config {
+        required(): void
+        optional?(): void
+      }
+      class MyConfig implements Config {
+        fn required() {
+        }
+      }
+    `);
+  });
+
+  it("rejects class missing required property from interface", () => {
+    expectError(`
+      interface HasName {
+        name: string
+      }
+      class Anon implements HasName {
+      }
+    `, "missing required property 'name' from interface 'HasName'");
+  });
+
+  it("accepts class implementing multiple interfaces", () => {
+    expectNoErrors(`
+      interface Readable {
+        read(): string
+      }
+      interface Writable {
+        write(): void
+      }
+      class File implements Readable, Writable {
+        fn read(): string {
+          return "data"
+        }
+        fn write() {
+        }
+      }
+    `);
+  });
+
+  it("rejects missing member from one of multiple interfaces", () => {
+    expectError(`
+      interface Readable {
+        read(): string
+      }
+      interface Writable {
+        write(): void
+      }
+      class ReadOnly implements Readable, Writable {
+        fn read(): string {
+          return "data"
+        }
+      }
+    `, "missing required method 'write' from interface 'Writable'");
+  });
+
+  it("reports error for undefined interface", () => {
+    expectError(`
+      class Foo implements NonExistent {
+      }
+    `, "Interface 'NonExistent' is not defined");
+  });
+
+  it("checks inherited interface members", () => {
+    expectError(`
+      interface Base {
+        baseMethod(): void
+      }
+      interface Extended extends Base {
+        extMethod(): void
+      }
+      class Impl implements Extended {
+        fn extMethod() {
+        }
+      }
+    `, "missing required method 'baseMethod' from interface 'Extended'");
+  });
+});

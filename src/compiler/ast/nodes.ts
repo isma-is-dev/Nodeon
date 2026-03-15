@@ -160,6 +160,7 @@ export type ClassDeclaration = {
   type: "ClassDeclaration";
   name: Identifier;
   superClass: Identifier | null;
+  implements?: Identifier[];
   body: ClassMember[];
   typeParams?: string[];
   decorators?: Decorator[];

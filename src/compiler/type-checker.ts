@@ -6,6 +6,7 @@ import {
   Program, Statement, Expression, TypeAnnotation,
   FunctionDeclaration, VariableDeclaration, ClassDeclaration,
   ImportDeclaration, ExportDeclaration, Param,
+  InterfaceDeclaration, InterfaceProperty,
 } from "@ast/nodes";
 
 // ── Internal Type Representation ─────────────────────────────────
@@ -43,6 +44,12 @@ export interface TypeDiagnostic {
 
 // ── Type Environment / Scope ─────────────────────────────────────
 
+interface InterfaceDef {
+  name: string;
+  members: Map<string, { type: NType; optional: boolean; method: boolean }>;
+  extends: string[];
+}
+
 interface TypeScope {
   bindings: Map<string, NType>;
   typeParams: Map<string, NType>;
@@ -50,6 +57,8 @@ interface TypeScope {
 
 class TypeEnv {
   private scopes: TypeScope[] = [{ bindings: new Map(), typeParams: new Map() }];
+  // Interface registry (global — interfaces are hoisted)
+  interfaces: Map<string, InterfaceDef> = new Map();
   push(): void { this.scopes.push({ bindings: new Map(), typeParams: new Map() }); }
   pop(): void { this.scopes.pop(); }
   define(name: string, type: NType): void {
@@ -395,7 +404,12 @@ function checkStatement(stmt: Statement, env: TypeEnv, diags: TypeDiagnostic[]):
       break;
     }
     case "ClassDeclaration": {
-      env.define((stmt as ClassDeclaration).name.name, { kind: "named", name: (stmt as ClassDeclaration).name.name });
+      const cls = stmt as ClassDeclaration;
+      env.define(cls.name.name, { kind: "named", name: cls.name.name });
+      // Check implements conformance
+      if (cls.implements && cls.implements.length > 0) {
+        checkImplements(cls, env, diags);
+      }
       break;
     }
     case "ExpressionStatement": {
@@ -457,9 +471,95 @@ function checkStatement(stmt: Statement, env: TypeEnv, diags: TypeDiagnostic[]):
     case "EnumDeclaration":
       env.define(stmt.name.name, { kind: "named", name: stmt.name.name });
       break;
-    case "InterfaceDeclaration":
-      env.define(stmt.name.name, { kind: "named", name: stmt.name.name });
+    case "InterfaceDeclaration": {
+      const iface = stmt as InterfaceDeclaration;
+      env.define(iface.name.name, { kind: "named", name: iface.name.name });
+      // Register interface members for conformance checking
+      const members = new Map<string, { type: NType; optional: boolean; method: boolean }>();
+      for (const prop of iface.properties) {
+        const propType = prop.method
+          ? { kind: "function" as const, params: (prop.params || []).map(annotationToType), returnType: annotationToType(prop.valueType) }
+          : annotationToType(prop.valueType);
+        members.set(prop.name.name, { type: propType, optional: prop.optional, method: prop.method });
+      }
+      const extendNames = (iface.extends || []).map(id => id.name);
+      env.interfaces.set(iface.name.name, { name: iface.name.name, members, extends: extendNames });
       break;
+    }
+  }
+}
+
+// ── Interface Conformance ────────────────────────────────────────
+
+/**
+ * Collect all required members from an interface, including inherited ones.
+ */
+function collectInterfaceMembers(ifaceName: string, env: TypeEnv): Map<string, { type: NType; optional: boolean; method: boolean }> {
+  const iface = env.interfaces.get(ifaceName);
+  if (!iface) return new Map();
+
+  const all = new Map<string, { type: NType; optional: boolean; method: boolean }>();
+
+  // First collect from parent interfaces
+  for (const parent of iface.extends) {
+    const parentMembers = collectInterfaceMembers(parent, env);
+    for (const [k, v] of parentMembers) all.set(k, v);
+  }
+
+  // Then overlay own members (own members take precedence)
+  for (const [k, v] of iface.members) all.set(k, v);
+
+  return all;
+}
+
+/**
+ * Check that a class implements all required members of its declared interfaces.
+ */
+function checkImplements(cls: ClassDeclaration, env: TypeEnv, diags: TypeDiagnostic[]): void {
+  if (!cls.implements) return;
+
+  for (const ifaceId of cls.implements) {
+    const ifaceDef = env.interfaces.get(ifaceId.name);
+    if (!ifaceDef) {
+      diags.push({
+        line: getLine(cls), column: getCol(cls),
+        message: `Interface '${ifaceId.name}' is not defined`,
+        severity: "error",
+      });
+      continue;
+    }
+
+    const required = collectInterfaceMembers(ifaceId.name, env);
+
+    // Collect class members
+    const classMembers = new Map<string, { isMethod: boolean }>();
+    for (const member of cls.body) {
+      if (member.type === "ClassMethod") {
+        const name = (member.name as any).name || (member.name as any).value;
+        if (name && member.kind !== "constructor") {
+          classMembers.set(name, { isMethod: true });
+        }
+      } else if (member.type === "ClassField") {
+        const name = (member.name as any).name || (member.name as any).value;
+        if (name) {
+          classMembers.set(name, { isMethod: false });
+        }
+      }
+    }
+
+    // Check each required member
+    for (const [memberName, memberDef] of required) {
+      if (memberDef.optional) continue; // Optional members don't need implementation
+
+      const classMember = classMembers.get(memberName);
+      if (!classMember) {
+        diags.push({
+          line: getLine(cls), column: getCol(cls),
+          message: `Class '${cls.name.name}' is missing required ${memberDef.method ? "method" : "property"} '${memberName}' from interface '${ifaceId.name}'`,
+          severity: "error",
+        });
+      }
+    }
   }
 }
 

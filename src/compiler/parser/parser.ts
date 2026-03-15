@@ -567,6 +567,16 @@ export class Parser extends ParserBase {
       superClass = this.consumeIdentifier("Expected superclass name");
     }
 
+    // Optional implements clause: class Foo implements Bar, Baz
+    let implementsList: Identifier[] | undefined;
+    if (this.checkContextualKeyword("implements")) {
+      this.advance();
+      implementsList = [];
+      do {
+        implementsList.push(this.consumeIdentifier("Expected interface name after 'implements'"));
+      } while (this.checkDelimiter(",") && this.advance());
+    }
+
     this.consumeDelimiter("{", "Expected '{'");
     const body: (ClassMethod | ClassField)[] = [];
 
@@ -668,7 +678,7 @@ export class Parser extends ParserBase {
     }
 
     this.consumeDelimiter("}", "Expected '}'");
-    return { type: "ClassDeclaration", name, superClass, body, typeParams };
+    return { type: "ClassDeclaration", name, superClass, implements: implementsList, body, typeParams };
   }
 
   private parseTryCatch(): TryCatchStatement {
