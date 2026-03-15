@@ -594,6 +594,11 @@ fn emitBinary(bin, ctx) {
     }
   }
 
+  // Range operator (..) is only valid inside for loops (handled at ForStatement level)
+  if bin.operator == ".." {
+    throw new Error("Range operator '..' can only be used inside 'for' loops (e.g., for i in 0..10)")
+  }
+
   let op = bin.operator
   if op == "==" { op = "===" }
   if op == "!=" { op = "!==" }
