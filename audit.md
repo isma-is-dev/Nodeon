@@ -60,7 +60,7 @@ The core is solid and self-hosting is fully achieved with a verified fixpoint. T
 | LSP Server | ⚠️ Good but Unoptimized | 1426 lines, full feature set with AST-based semantic tokens |
 | VS Code Extension | ✅ Good | TextMate + semantic tokens, bracket colorization, language config |
 | Self-hosting | ✅ Fixpoint | 32 .no modules, byte-identical output across TS/self/self² builds (141.2kb bundle). Self-hosted is primary CLI. **TS compiler (`src/`) is deprecated** — kept only as bootstrap fallback. |
-| Tests | ✅ Good | 504 tests (lexer 35, parser 84, e2e 175, bootstrap 98, type-checker 81, regression 26, snapshot 5) |
+| Tests | ✅ Good | 591 tests (lexer 35, parser 84, e2e 175, bootstrap 98, type-checker 81, nova-signals 21, nova-template 32, nova-di 21, nova-island-bundler 13, regression 26, snapshot 5) |
 | CI | ✅ Improved | Tests + build + fixpoint verify + self-hosted CLI verify + TS CLI fallback |
 
 ### What Needs Work
@@ -534,9 +534,12 @@ Current watch only watches the entry file's directory. Should:
 | `bootstrap.test.ts` | 98 | Self-hosting: 32 compile + 33 self-compile + 32 fixpoint + 1 lexer functional |
 | `type-checker.test.ts` | 81 | Type inference, assignability, narrowing, generics, interface conformance |
 | `nova-signals.test.ts` | 21 | signal, computed, effect, untracked, batch, tracking, destroy |
+| `nova-template.test.ts` | 32 | tokenizer, parser, rendering, interpolation, @if/@for/@slot, escaping |
+| `nova-di.test.ts` | 21 | container, singleton/transient, constructor injection, hierarchy, circular detection |
+| `nova-island-bundler.test.ts` | 13 | scanner, entry generation, manifest, bundling, esbuild integration |
 | `regression.test.ts` | 26 | Tests for fixed bugs |
 | `snapshot.test.ts` | 5 | Output snapshot verification |
-| **Total** | **525** | |
+| **Total** | **591** | |
 
 ### 10.2 Testing Gaps
 
@@ -703,7 +706,7 @@ Nodeon's unique value proposition:
 
 ## 14. Roadmap: Path to Professional Language
 
-> **Status as of March 2026:** Self-hosting achieved with verified fixpoint (525 tests, 32 modules). TS compiler deprecated (bootstrap fallback only). Type system extended with generics + interface conformance. Nova framework has signals (Angular-style reactivity), island hydration, file-based routing, static rendering, dev server.
+> **Status as of March 2026:** Self-hosting achieved with verified fixpoint (591 tests, 32 modules). TS compiler deprecated (bootstrap fallback only). Type system: generics + interface conformance. Nova framework: signals, template engine, DI container, island bundler, island hydration, file-based routing, static rendering, dev server.
 > Items marked ✅ are complete. Items marked 🔧 have workarounds but need proper fixes.
 
 ### Phase 1: Compiler Robustness (Priority: 🔴 Critical)
@@ -778,11 +781,11 @@ Nodeon's unique value proposition:
 - [x] ~~**Island architecture**~~ ✅ `island()` decorator, `<nova-island>` hydration markers, 5 strategies (load/visible/idle/media/none)
 - [x] ~~**CLI**~~ ✅ `nova dev`, `nova build`, `nova init`
 - [x] ~~**Compiler bridge**~~ ✅ Compile `.no` pages on-the-fly, ESM→CJS transform
-- [ ] **Template engine** — Parse HTML-like syntax inside `template()` methods
+- [x] ~~**Template engine**~~ ✅ Tokenizer + parser for `{{ expr }}`, `@if`/`@else if`/`@else`, `@for(item of items)`, `@slot`. Compiled render functions with HTML escaping, signal auto-read.
 - [x] ~~**Signals + reactivity**~~ ✅ Angular-style `signal()`, `computed()`, `effect()`, `untracked()`, `batch()` — auto-tracked deps, lazy caching, batched updates
-- [ ] **Dependency injection** — `@service`, `@inject` decorators, DI container
+- [x] ~~**Dependency injection**~~ ✅ `Container` with `registerClass`/`registerValue`/`registerFactory`, `Injectable()` decorator, `Inject()` markers, hierarchical scopes, circular dependency detection
 - [ ] **CSS extraction** — Scoped styles from `style()` methods
-- [ ] **Island client bundles** — Generate per-island JS bundles with esbuild
+- [x] ~~**Island client bundles**~~ ✅ `scanForIslands()`, `generateIslandEntry()`, `bundleIslands()` with esbuild (ESM, minified, sourcemaps), manifest generation, fallback for no-esbuild
 
 ### Phase 5: Language Innovation (Priority: 🟢 Aspirational)
 
