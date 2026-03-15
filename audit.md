@@ -533,9 +533,10 @@ Current watch only watches the entry file's directory. Should:
 | `e2e.test.ts` | 175 | Full compile pipeline, output verification |
 | `bootstrap.test.ts` | 98 | Self-hosting: 32 compile + 33 self-compile + 32 fixpoint + 1 lexer functional |
 | `type-checker.test.ts` | 81 | Type inference, assignability, narrowing, generics, interface conformance |
+| `nova-signals.test.ts` | 21 | signal, computed, effect, untracked, batch, tracking, destroy |
 | `regression.test.ts` | 26 | Tests for fixed bugs |
 | `snapshot.test.ts` | 5 | Output snapshot verification |
-| **Total** | **504** | |
+| **Total** | **525** | |
 
 ### 10.2 Testing Gaps
 
@@ -702,7 +703,7 @@ Nodeon's unique value proposition:
 
 ## 14. Roadmap: Path to Professional Language
 
-> **Status as of March 2026:** Self-hosting achieved with verified fixpoint (489 tests, 32 modules). BUG-001/002/009/010/011 fixed, error messages implemented, self-hosted compiler is now primary CLI with CLI bundle, CI updated with build+fixpoint+dual CLI verification, `\x` hex escapes added, Nova framework prototype built (file-based router, static renderer, dev server, island hydration).
+> **Status as of March 2026:** Self-hosting achieved with verified fixpoint (525 tests, 32 modules). TS compiler deprecated (bootstrap fallback only). Type system extended with generics + interface conformance. Nova framework has signals (Angular-style reactivity), island hydration, file-based routing, static rendering, dev server.
 > Items marked ✅ are complete. Items marked 🔧 have workarounds but need proper fixes.
 
 ### Phase 1: Compiler Robustness (Priority: 🔴 Critical)
@@ -726,8 +727,8 @@ Nodeon's unique value proposition:
 
 **Goal:** Make the type system useful enough that developers *want* to use types.
 
-- [ ] **Generic type checking** — Verify type parameters (`fn identity<T>(x: T): T` checks return matches)
-- [ ] **Interface conformance** — Check class implementations match interface declarations
+- [x] ~~**Generic type checking**~~ ✅ Type params, substitution, isAssignableTo for typeParam/generic, FunctionDeclaration with typeParams
+- [x] ~~**Interface conformance**~~ ✅ `implements` clause, InterfaceDef registry, member checking, inherited members, optional members
 - [ ] **Control flow narrowing** — After `if typeof x == "string"`, narrow `x` to `string` in both branches
 - [ ] **Exhaustiveness checking** — `match`/`switch` must cover all cases of a union type
 - [ ] **Cross-file type resolution** — Import types from other `.no` files (currently all imports are `any`)
@@ -778,7 +779,7 @@ Nodeon's unique value proposition:
 - [x] ~~**CLI**~~ ✅ `nova dev`, `nova build`, `nova init`
 - [x] ~~**Compiler bridge**~~ ✅ Compile `.no` pages on-the-fly, ESM→CJS transform
 - [ ] **Template engine** — Parse HTML-like syntax inside `template()` methods
-- [ ] **Signals + reactivity** — `@signal` decorator, fine-grained DOM updates
+- [x] ~~**Signals + reactivity**~~ ✅ Angular-style `signal()`, `computed()`, `effect()`, `untracked()`, `batch()` — auto-tracked deps, lazy caching, batched updates
 - [ ] **Dependency injection** — `@service`, `@inject` decorators, DI container
 - [ ] **CSS extraction** — Scoped styles from `style()` methods
 - [ ] **Island client bundles** — Generate per-island JS bundles with esbuild
