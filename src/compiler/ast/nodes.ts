@@ -317,6 +317,13 @@ export type CallExpression = {
   callee: Expression;
   arguments: Expression[];
   optional: boolean;
+  namedArgs?: NamedArgument[];
+};
+
+export type NamedArgument = {
+  type: "NamedArgument";
+  name: Identifier;
+  value: Expression;
 };
 
 export type BinaryExpression = {

@@ -387,8 +387,13 @@ function fmtLiteral(lit: Literal): string {
 function fmtCall(call: CallExpression, ctx: FmtContext): string {
   const callee = fmtExpression(call.callee, ctx);
   const chain = call.optional ? "?." : "";
-  const args = call.arguments.map((a) => fmtExpression(a, ctx)).join(", ");
-  return `${callee}${chain}(${args})`;
+  const parts: string[] = call.arguments.map((a) => fmtExpression(a, ctx));
+  if (call.namedArgs && call.namedArgs.length > 0) {
+    for (const na of call.namedArgs) {
+      parts.push(`${(na as any).name.name}: ${fmtExpression((na as any).value, ctx)}`);
+    }
+  }
+  return `${callee}${chain}(${parts.join(", ")})`;
 }
 
 function fmtBinary(bin: BinaryExpression, ctx: FmtContext): string {

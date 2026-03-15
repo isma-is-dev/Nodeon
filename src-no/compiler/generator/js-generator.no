@@ -569,9 +569,14 @@ fn emitCall(call, ctx) {
   } else {
     callee = emitExpression(call.callee, ctx)
   }
-  const args = call.arguments.map((a) => emitExpression(a, ctx)).join("," + ctx.sp)
-  if call.optional { return callee + "?.(" + args + ")" }
-  return callee + "(" + args + ")"
+  const allArgs = call.arguments.map((a) => emitExpression(a, ctx))
+  if call.namedArgs && call.namedArgs.length > 0 {
+    const props = call.namedArgs.map((na) => na.name.name + ":" + ctx.sp + emitExpression(na.value, ctx)).join("," + ctx.sp)
+    allArgs.push("\{" + props + "}")
+  }
+  const argsStr = allArgs.join("," + ctx.sp)
+  if call.optional { return callee + "?.(" + argsStr + ")" }
+  return callee + "(" + argsStr + ")"
 }
 
 fn emitBinary(bin, ctx) {

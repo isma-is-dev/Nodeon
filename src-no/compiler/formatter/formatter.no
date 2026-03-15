@@ -346,8 +346,13 @@ fn fmtLiteral(lit) {
 fn fmtCall(call, ctx) {
   const callee = fmtExpression(call.callee, ctx)
   const chain = call.optional ? "?." : ""
-  const args = call.arguments.map((a) => fmtExpression(a, ctx)).join(", ")
-  return callee + chain + "(" + args + ")"
+  const parts = call.arguments.map((a) => fmtExpression(a, ctx))
+  if call.namedArgs && call.namedArgs.length > 0 {
+    for na in call.namedArgs {
+      parts.push(na.name.name + ": " + fmtExpression(na.value, ctx))
+    }
+  }
+  return callee + chain + "(" + parts.join(", ") + ")"
 }
 
 fn fmtBinary(bin, ctx) {

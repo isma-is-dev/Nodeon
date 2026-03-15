@@ -690,9 +690,19 @@ function emitCall(call: CallExpression, ctx: GenContext): string {
   } else {
     callee = emitExpression(call.callee, ctx);
   }
-  const args = call.arguments.map((a) => emitExpression(a, ctx)).join("," + ctx.sp);
-  if (call.optional) return `${callee}?.(${args})`;
-  return `${callee}(${args})`;
+  const allArgs: string[] = call.arguments.map((a) => emitExpression(a, ctx));
+  // Named arguments → trailing object literal
+  if (call.namedArgs && call.namedArgs.length > 0) {
+    const props = call.namedArgs.map((na: any) => {
+      const key = na.name.name;
+      const val = emitExpression(na.value, ctx);
+      return `${key}:${ctx.sp}${val}`;
+    }).join("," + ctx.sp);
+    allArgs.push(`{${props}}`);
+  }
+  const argsStr = allArgs.join("," + ctx.sp);
+  if (call.optional) return `${callee}?.(${argsStr})`;
+  return `${callee}(${argsStr})`;
 }
 
 function emitBinary(bin: BinaryExpression, ctx: GenContext): string {

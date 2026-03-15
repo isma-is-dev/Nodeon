@@ -1133,3 +1133,49 @@ describe("If-expressions", () => {
     expect(js).not.toContain("(() =>");
   });
 });
+
+describe("Named arguments", () => {
+  function compileToJS(src: string): string {
+    return compile(src).js;
+  }
+
+  it("compiles named args to trailing object literal", () => {
+    const js = compileToJS('greet(name: "World", loud: true)');
+    expect(js).toContain("{name: \"World\", loud: true}");
+  });
+
+  it("compiles mixed positional and named args", () => {
+    const js = compileToJS('render("hello", color: "red", size: 12)');
+    expect(js).toContain('"hello"');
+    expect(js).toContain("{color: \"red\", size: 12}");
+  });
+
+  it("produces correct AST with namedArgs", () => {
+    const ast = compileToAST('greet(name: "World")');
+    const stmt = ast.body[0] as any;
+    expect(stmt.type).toBe("ExpressionStatement");
+    const call = stmt.expression;
+    expect(call.type).toBe("CallExpression");
+    expect(call.arguments.length).toBe(0);
+    expect(call.namedArgs.length).toBe(1);
+    expect(call.namedArgs[0].type).toBe("NamedArgument");
+    expect(call.namedArgs[0].name.name).toBe("name");
+  });
+
+  it("compiles all-positional call unchanged", () => {
+    const js = compileToJS('foo(1, 2, 3)');
+    expect(js).toContain("foo(1, 2, 3)");
+    expect(js).not.toContain("{");
+  });
+
+  it("named args with expression values", () => {
+    const js = compileToJS('config(debug: x > 0, port: 3000 + offset)');
+    expect(js).toContain("debug: x > 0");
+    expect(js).toContain("port: 3000 + offset");
+  });
+
+  it("named args on method call", () => {
+    const js = compileToJS('obj.method(key: "value")');
+    expect(js).toContain('obj.method({key: "value"})');
+  });
+});

@@ -304,14 +304,35 @@ export class ParserExpressions extends ParserTypes {
     const opt = optional ?? false
     this.consumeDelimiter("(", "Expected '('")
     const args = []
+    const namedArgs = []
     if !this.checkDelimiter(")") {
       do {
         if this.checkDelimiter(")") { break }
-        args.push(this.parseExpression())
+        if this.isNamedArgument() {
+          const name = this.consumeIdentifier("Expected argument name")
+          this.consumeDelimiter(":", "Expected ':'")
+          const value = this.parseExpression()
+          namedArgs.push({ type: "NamedArgument", name: name, value: value })
+        } else {
+          args.push(this.parseExpression())
+        }
       } while this.matchDelimiter(",")
     }
     this.consumeDelimiter(")", "Expected ')'")
-    return { type: "CallExpression", callee: callee, arguments: args, optional: opt }
+    const call = { type: "CallExpression", callee: callee, arguments: args, optional: opt }
+    if namedArgs.length > 0 {
+      call.namedArgs = namedArgs
+    }
+    return call
+  }
+
+  fn isNamedArgument() {
+    const cur = this.peek()
+    const next = this.peekNext()
+    if (cur.type == "Identifier" || this.isIdentifierLike(cur)) && next && next.type == "Delimiter" && next.value == ":" {
+      return true
+    }
+    return false
   }
 
   fn parseArrayExpression() {

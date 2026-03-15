@@ -70,6 +70,7 @@ import {
   AsExpression,
   IfExpression,
   Decorator,
+  NamedArgument,
 } from "@ast/nodes";
 
 // PRECEDENCE and COMPOUND_ASSIGN imported from @language/precedence
@@ -1299,14 +1300,39 @@ export class Parser extends ParserBase {
   private parseCallArguments(callee: Expression, optional = false): CallExpression {
     this.consumeDelimiter("(", "Expected '('");
     const args: Expression[] = [];
+    const namedArgs: NamedArgument[] = [];
     if (!this.checkDelimiter(")")) {
       do {
         if (this.checkDelimiter(")")) break; // trailing comma
-        args.push(this.parseExpression());
+        // Check for named argument: identifier followed by ':'
+        if (this.isNamedArgument()) {
+          const name = this.consumeIdentifier("Expected argument name");
+          this.consumeDelimiter(":", "Expected ':'");
+          const value = this.parseExpression();
+          namedArgs.push({ type: "NamedArgument", name, value });
+        } else {
+          args.push(this.parseExpression());
+        }
       } while (this.matchDelimiter(","));
     }
     this.consumeDelimiter(")", "Expected ')'");
-    return { type: "CallExpression", callee, arguments: args, optional };
+    const call: CallExpression = { type: "CallExpression", callee, arguments: args, optional };
+    if (namedArgs.length > 0) call.namedArgs = namedArgs;
+    return call;
+  }
+
+  private isNamedArgument(): boolean {
+    const cur = this.peek();
+    const next = this.peekNext();
+    // Named arg: Identifier (or contextual keyword used as identifier) followed by ':'
+    // But NOT followed by ':' then another ':' (which would be :: or similar)
+    if ((cur.type === TokenType.Identifier || this.isIdentifierLike(cur)) &&
+        next && next.type === TokenType.Delimiter && next.value === ":") {
+      // Make sure it's not a ternary's ':' — look ahead past the ':' to see if this makes sense
+      // In practice, 'name: value' in a call arg list is always a named argument
+      return true;
+    }
+    return false;
   }
 
   private parseArrayExpression(): ArrayExpression {
