@@ -181,6 +181,7 @@ export class Lexer {
           case "'": value += "'"; break;
           case '"': value += '"'; break;
           case "0": value += "\0"; break;
+          case "x": value += this.readHexEscape(); break;
           case "u": value += this.readUnicodeEscape(); break;
           default: value += "\\" + esc; break;
         }
@@ -248,6 +249,14 @@ export class Lexer {
 
     this.advance(); // closing `
     return this.makeToken(TokenType.TemplateLiteral, value, loc);
+  }
+
+  private readHexEscape(): string {
+    let code = "";
+    for (let i = 0; i < 2 && !this.isAtEnd() && this.isHexDigit(this.peek()); i++) {
+      code += this.advance();
+    }
+    return String.fromCharCode(parseInt(code, 16));
   }
 
   private readUnicodeEscape(): string {

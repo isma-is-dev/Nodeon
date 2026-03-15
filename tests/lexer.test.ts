@@ -93,6 +93,11 @@ describe("Lexer", () => {
       expect(tokens[0].value).toBe("line\nbreak");
     });
 
+    it("handles hex escapes (\\x)", () => {
+      const tokens = tokenize('"\\x1b[31m"');
+      expect(tokens[0].value).toBe("\x1b[31m");
+    });
+
     it("handles unicode escapes", () => {
       const tokens = tokenize('"\\u0041"');
       expect(tokens[0].value).toBe("A");

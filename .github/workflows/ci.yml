@@ -28,8 +28,19 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Verify CLI
+      - name: Build (self-hosted)
+        run: npm run build
+
+      - name: Verify fixpoint
+        run: npm run build:verify
+
+      - name: Verify self-hosted CLI
         run: |
-          node cli/bin.js --version
-          node cli/bin.js build examples/hello.no
-          node cli/bin.js run examples/hello.no
+          node bin/nodeon-self.js --version
+          node bin/nodeon-self.js build examples/hello.no
+          node bin/nodeon-self.js run examples/hello.no
+
+      - name: Verify TS CLI (fallback)
+        run: |
+          node bin/nodeon.js --version
+          node bin/nodeon.js build examples/hello.no

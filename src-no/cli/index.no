@@ -71,5 +71,8 @@ export async fn main(argv) {
   process.exit(1)
 }
 
-// Auto-run when executed directly
-main()
+// When loaded as a module (e.g. by nodeon-self.js), main() is called by the loader.
+// When run directly via node dist-no/cli/index.js, auto-run:
+if typeof require != "undefined" && require.main == module {
+  main()
+}

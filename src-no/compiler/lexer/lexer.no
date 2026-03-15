@@ -175,6 +175,7 @@ class Lexer {
           case "'" { value = value + "'" }
           case '"' { value = value + '"' }
           case "0" { value = value + "\0" }
+          case "x" { value = value + this.readHexEscape() }
           case "u" { value = value + this.readUnicodeEscape() }
           default { value = value + '\\' + esc }
         }
@@ -241,6 +242,16 @@ class Lexer {
 
     this.advance()
     return this.makeToken("TemplateLiteral", value, loc)
+  }
+
+  fn readHexEscape() {
+    let code = ""
+    let i = 0
+    while i < 2 && !this.isAtEnd() && this.isHexDigit(this.peek()) {
+      code = code + this.advance()
+      i = i + 1
+    }
+    return String.fromCharCode(parseInt(code, 16))
   }
 
   fn readUnicodeEscape() {

@@ -18,7 +18,9 @@ const crypto = require("crypto");
 const SRC_DIR = path.resolve(__dirname, "../src-no");
 const OUT_DIR = path.resolve(__dirname, "../dist-no");
 const BUNDLE_PATH = path.resolve(OUT_DIR, "nodeon-compiler.cjs");
+const CLI_BUNDLE_PATH = path.resolve(OUT_DIR, "nodeon-cli.cjs");
 const ENTRY_JS = path.resolve(OUT_DIR, "compiler/compile.js");
+const CLI_ENTRY_JS = path.resolve(OUT_DIR, "cli/index.js");
 
 const args = process.argv.slice(2);
 const forceBootstrap = args.includes("--bootstrap");
@@ -82,9 +84,10 @@ function buildAll(compiler, label) {
   if (fail > 0) process.exit(1);
 }
 
-function bundle() {
-  const { buildSync } = require("esbuild");
-  const result = buildSync({
+async function bundle() {
+  const esbuild = require("esbuild");
+  // Bundle compiler API
+  esbuild.buildSync({
     entryPoints: [ENTRY_JS],
     outfile: BUNDLE_PATH,
     bundle: true,
@@ -95,7 +98,33 @@ function bundle() {
     logLevel: "silent",
   });
   const size = (fs.statSync(BUNDLE_PATH).size / 1024).toFixed(1);
-  console.log(`  Bundled: ${path.relative(process.cwd(), BUNDLE_PATH)}  (${size}kb)\n`);
+  console.log(`  Bundled: ${path.relative(process.cwd(), BUNDLE_PATH)}  (${size}kb)`);
+
+  // Bundle CLI entry point (async build for plugin support)
+  // CLI files use dynamic require('...compile.no') — resolve .no → .js
+  const noResolvePlugin = {
+    name: "no-resolve",
+    setup(b) {
+      b.onResolve({ filter: /\.no$/ }, (args) => {
+        const jsPath = args.path.replace(/\.no$/, ".js");
+        const absPath = path.resolve(args.resolveDir, jsPath);
+        return { path: absPath };
+      });
+    },
+  };
+  await esbuild.build({
+    entryPoints: [CLI_ENTRY_JS],
+    outfile: CLI_BUNDLE_PATH,
+    bundle: true,
+    platform: "node",
+    format: "cjs",
+    target: "node18",
+    minify: false,
+    logLevel: "silent",
+    plugins: [noResolvePlugin],
+  });
+  const cliSize = (fs.statSync(CLI_BUNDLE_PATH).size / 1024).toFixed(1);
+  console.log(`  Bundled: ${path.relative(process.cwd(), CLI_BUNDLE_PATH)}  (${cliSize}kb)\n`);
 }
 
 function hashFile(filePath) {
@@ -104,49 +133,54 @@ function hashFile(filePath) {
 
 // ── Main ─────────────────────────────────────────────────────────
 
-const hasSelfHosted = fs.existsSync(BUNDLE_PATH);
+(async () => {
+  const hasSelfHosted = fs.existsSync(BUNDLE_PATH);
 
-let mode;
-if (forceBootstrap) {
-  mode = "bootstrap";
-} else if (forceSelf) {
-  if (!hasSelfHosted) {
-    console.error("Error: --self requires dist-no/nodeon-compiler.cjs to exist.");
-    console.error("Run 'node scripts/build.js --bootstrap' first to create it.");
-    process.exit(1);
-  }
-  mode = "self";
-} else {
-  // Auto-detect: prefer self-hosted if available
-  mode = hasSelfHosted ? "self" : "bootstrap";
-}
-
-console.log(`\n  Nodeon build (${mode === "self" ? "self-hosted" : "TS bootstrap"})\n`);
-
-const compiler = loadCompiler(mode);
-buildAll(compiler, mode === "self" ? "self-hosted" : "TS bootstrap");
-bundle();
-
-if (verify) {
-  console.log("  Verifying fixpoint...\n");
-  // Save Gen1 hash
-  const gen1Hash = hashFile(BUNDLE_PATH);
-
-  // Gen2: recompile using Gen1 bundle
-  // Need to clear require cache to pick up new bundle
-  delete require.cache[require.resolve(BUNDLE_PATH)];
-  const gen2Compiler = require(BUNDLE_PATH);
-  buildAll(gen2Compiler, "self\u00b2 verify");
-  bundle();
-
-  const gen2Hash = hashFile(BUNDLE_PATH);
-
-  if (gen1Hash === gen2Hash) {
-    console.log(`  \u2713 Fixpoint verified: ${gen1Hash.slice(0, 16)}\n`);
+  let mode;
+  if (forceBootstrap) {
+    mode = "bootstrap";
+  } else if (forceSelf) {
+    if (!hasSelfHosted) {
+      console.error("Error: --self requires dist-no/nodeon-compiler.cjs to exist.");
+      console.error("Run 'node scripts/build.js --bootstrap' first to create it.");
+      process.exit(1);
+    }
+    mode = "self";
   } else {
-    console.error(`  \u2717 Fixpoint FAILED!`);
-    console.error(`    Gen1: ${gen1Hash.slice(0, 16)}`);
-    console.error(`    Gen2: ${gen2Hash.slice(0, 16)}`);
-    process.exit(1);
+    // Auto-detect: prefer self-hosted if available
+    mode = hasSelfHosted ? "self" : "bootstrap";
   }
-}
+
+  console.log(`\n  Nodeon build (${mode === "self" ? "self-hosted" : "TS bootstrap"})\n`);
+
+  const compiler = loadCompiler(mode);
+  buildAll(compiler, mode === "self" ? "self-hosted" : "TS bootstrap");
+  await bundle();
+
+  if (verify) {
+    console.log("  Verifying fixpoint...\n");
+    // Save Gen1 hash
+    const gen1Hash = hashFile(BUNDLE_PATH);
+
+    // Gen2: recompile using Gen1 bundle
+    // Need to clear require cache to pick up new bundle
+    delete require.cache[require.resolve(BUNDLE_PATH)];
+    const gen2Compiler = require(BUNDLE_PATH);
+    buildAll(gen2Compiler, "self\u00b2 verify");
+    await bundle();
+
+    const gen2Hash = hashFile(BUNDLE_PATH);
+
+    if (gen1Hash === gen2Hash) {
+      console.log(`  \u2713 Fixpoint verified: ${gen1Hash.slice(0, 16)}\n`);
+    } else {
+      console.error(`  \u2717 Fixpoint FAILED!`);
+      console.error(`    Gen1: ${gen1Hash.slice(0, 16)}`);
+      console.error(`    Gen2: ${gen2Hash.slice(0, 16)}`);
+      process.exit(1);
+    }
+  }
+})().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
