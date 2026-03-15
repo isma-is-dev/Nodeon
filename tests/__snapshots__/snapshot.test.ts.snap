@@ -33,15 +33,18 @@ while (count > 0) {
   let count = count - 1;
 }
 switch (color) {
-  case "red":
+  case "red": {
     console.log("stop");
     break;
-  case "green":
+  }
+  case "green": {
     console.log("go");
     break;
-  default:
+  }
+  default: {
     console.log("unknown");
     break;
+  }
 }"
 `;
 

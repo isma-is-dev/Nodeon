@@ -494,7 +494,8 @@ function emitSwitch(stmt: SwitchStatement, ctx: GenContext): string {
     const last = c.consequent.length > 0 ? c.consequent[c.consequent.length - 1] : null;
     const exits = last && (last.type === "BreakStatement" || last.type === "ReturnStatement" || last.type === "ThrowStatement" || last.type === "ContinueStatement");
     const brk = exits ? "" : `${ctx.nl}${pad(caseInner)}break;`;
-    return `${header}${ctx.nl}${body}${brk}`;
+    // Wrap in { } block to give each case its own scope (prevents let TDZ errors)
+    return `${header}${ctx.sp}{${ctx.nl}${body}${brk}${ctx.nl}${pad(inner)}}`;
   }).join(ctx.nl);
   return `switch${ctx.sp}(${disc})${ctx.sp}{${ctx.nl}${cases}${ctx.nl}${pad(ctx)}}`;
 }

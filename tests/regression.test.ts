@@ -42,6 +42,21 @@ describe("Regression: BUG-001 — let TDZ in switch/match cases", () => {
     expect(matches!.length).toBe(2);
   });
 
+  it("switch cases are wrapped in { } blocks for scope isolation", () => {
+    const src = `switch x {
+  case 1 {
+    let val = "a"
+  }
+  case 2 {
+    let val = "b"
+  }
+}`;
+    const { js } = compile(src);
+    // Each case should have its own { } block
+    expect(js).toMatch(/case 1: \{/);
+    expect(js).toMatch(/case 2: \{/);
+  });
+
   it("switch with let re-use in same case still deduplicates (intended behavior)", () => {
     const src = `fn test() {
   x = 1
