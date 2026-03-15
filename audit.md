@@ -31,17 +31,17 @@
 Nodeon is an impressively complete project for its stage. It has:
 
 - A **full compiler pipeline** (Lexer → Pratt Parser → Type Checker → JS Generator)
-- **Self-hosting with verified fixpoint** — the compiler compiles itself and produces byte-identical output (32 .no source files, bundled to 130.2kb). TS build = Gen1 (self) = Gen2 (self²)
-- **487 passing tests** across lexer, parser, e2e, bootstrap (compile + self-compile + fixpoint), type-checker, regression, and snapshot suites
+- **Self-hosting with verified fixpoint** — the compiler compiles itself and produces byte-identical output (32 .no source files, bundled to 135.7kb). Self-hosted compiler is now the primary CLI (`nodeon` → `nodeon-self.js`)
+- **488 passing tests** across lexer, parser, e2e, bootstrap (compile + self-compile + fixpoint), type-checker, regression, and snapshot suites
 - A **Language Server Protocol** implementation with diagnostics, completions, hover, go-to-definition, semantic tokens, formatting, rename, references, and code actions
 - A **VS Code extension** with TextMate grammar + semantic highlighting
 - **Source map** generation (V3 spec with VLQ encoding)
 - A **CLI** with build, run, repl, init, and watch mode
 - **CI/CD** via GitHub Actions (Node 18/20/22)
 
-**Maturity Rating: ~80% toward a usable professional language.**
+**Maturity Rating: ~85% toward a usable professional language.**
 
-The core is solid and self-hosting is fully achieved with a verified fixpoint. Significant gaps remain in parser robustness (keyword handling), error recovery, standard library, package management, documentation for end users, and ecosystem tooling. Below is a detailed breakdown.
+The core is solid and self-hosting is fully achieved with a verified fixpoint. The self-hosted compiler is now the primary CLI. Structured error messages with codes, source context, and help suggestions are implemented. Significant gaps remain in standard library, package management, documentation for end users, and ecosystem tooling. Below is a detailed breakdown.
 
 ---
 
@@ -58,15 +58,15 @@ The core is solid and self-hosting is fully achieved with a verified fixpoint. S
 | CLI | ✅ Good | build, run, check, fmt, repl, init, watch mode, dependency graph walking, caching |
 | LSP Server | ⚠️ Good but Unoptimized | 1426 lines, full feature set with AST-based semantic tokens |
 | VS Code Extension | ✅ Good | TextMate + semantic tokens, bracket colorization, language config |
-| Self-hosting | ✅ Fixpoint | 32 .no modules, byte-identical output across TS/self/self² builds (130.2kb bundle) |
-| Tests | ✅ Good | 487 tests (lexer 34, parser 84, e2e 175, bootstrap 98, type-checker 66, regression 25, snapshot 5) |
+| Self-hosting | ✅ Fixpoint | 32 .no modules, byte-identical output across TS/self/self² builds (135.7kb bundle). Self-hosted is now primary CLI. |
+| Tests | ✅ Good | 488 tests (lexer 34, parser 84, e2e 175, bootstrap 98, type-checker 66, regression 26, snapshot 5) |
 | CI | ⚠️ Minimal | Only runs tests + CLI verify; no lint, no type check, no coverage |
 
 ### What Needs Work
 
 | Area | Priority | Gap |
 |------|----------|-----|
-| Error messages | 🔴 High | Compiler errors are bare `SyntaxError` with line:col — no context, no suggestions |
+| Error messages | ✅ Implemented | Compiler errors use `NodeonError` with error codes (E0100+), source line context, caret, and help suggestions |
 | Standard library | 🔴 High | No stdlib at all — `print` → `console.log` is the only builtin mapping |
 | Package manager / registry | 🔴 High | No way to share/install Nodeon packages |
 | Documentation for users | 🔴 High | `nodeon-design.md` is outdated; no language reference, no tutorial, no playground |
@@ -144,25 +144,23 @@ Nodeon/
 
 ## 4. Identified Bugs
 
-### BUG-001: `let` re-declaration in same scope causes TDZ errors in generated JS *(Known)*
+### BUG-001: `let` re-declaration in same scope causes TDZ errors in generated JS ✅ FIXED
 
 **Severity:** 🔴 High  
-**Location:** `src/compiler/generator/js-generator.ts` lines 226-235
+**Location:** `src/compiler/generator/js-generator.ts`
 
-The generator deduplicates `let` declarations — if a variable is declared twice with `let` in the same scope, the second one becomes a bare assignment. However, in switch/match cases sharing a scope, this causes Temporal Dead Zone (TDZ) errors because the `let` from one case isn't emitted but the variable is referenced.
+~~The generator deduplicates `let` declarations — if a variable is declared twice with `let` in the same scope, the second one becomes a bare assignment. However, in switch/match cases sharing a scope, this causes Temporal Dead Zone (TDZ) errors because the `let` from one case isn't emitted but the variable is referenced.~~
 
-**Impact:** Silent runtime crashes in switch/match with same-named variables across cases.  
-**Fix:** Emit block-scoped `let` per case branch, or use unique variable names.
+**Fix applied:** Each switch case is now wrapped in `{ }` braces to give it its own block scope. This prevents TDZ errors when multiple cases declare variables with the same name. Applied to both TS and .no generators.
 
-### BUG-002: Range loop `..` operator leaks into expression context
+### BUG-002: Range loop `..` operator leaks into expression context ✅ FIXED
 
 **Severity:** 🟡 Medium  
-**Location:** `src/compiler/generator/js-generator.ts` line 602-603
+**Location:** `src/compiler/generator/js-generator.ts`
 
-The `..` operator is only meaningful inside `for` loops (compiled to C-style for). If used in an expression context (e.g., `x = 1..5`), the generator emits `1 .. 5` which is invalid JavaScript.
+~~The `..` operator is only meaningful inside `for` loops (compiled to C-style for). If used in an expression context (e.g., `x = 1..5`), the generator emits `1 .. 5` which is invalid JavaScript.~~
 
-**Impact:** Silent generation of invalid JS for standalone range expressions.  
-**Fix:** Either error on `..` outside `for` loops in the parser, or implement a `Range` runtime object.
+**Fix applied:** Both TS and .no generators now throw an error when `..` is used outside `for` loops: "Range operator '..' can only be used inside 'for' loops".
 
 ### BUG-003: Parser recovery can skip valid statements ⚠️ PARTIALLY FIXED
 
@@ -534,9 +532,9 @@ Current watch only watches the entry file's directory. Should:
 | `e2e.test.ts` | 175 | Full compile pipeline, output verification |
 | `bootstrap.test.ts` | 98 | Self-hosting: 32 compile + 33 self-compile + 32 fixpoint + 1 lexer functional |
 | `type-checker.test.ts` | 66 | Type inference, assignability, narrowing, diagnostics |
-| `regression.test.ts` | 25 | Tests for fixed bugs |
+| `regression.test.ts` | 26 | Tests for fixed bugs |
 | `snapshot.test.ts` | 5 | Output snapshot verification |
-| **Total** | **487** | |
+| **Total** | **488** | |
 
 ### 10.2 Testing Gaps
 
@@ -703,7 +701,7 @@ Nodeon's unique value proposition:
 
 ## 14. Roadmap: Path to Professional Language
 
-> **Status as of March 2026:** Self-hosting achieved with verified fixpoint (487 tests, 32 modules). BUG-009/010/011 fixed, error recovery improved.
+> **Status as of March 2026:** Self-hosting achieved with verified fixpoint (488 tests, 32 modules). BUG-001/002/009/010/011 fixed, error messages implemented, self-hosted compiler is now primary CLI, Nova framework architecture documented.
 > Items marked ✅ are complete. Items marked 🔧 have workarounds but need proper fixes.
 
 ### Phase 1: Compiler Robustness (Priority: 🔴 Critical)
@@ -713,10 +711,10 @@ Nodeon's unique value proposition:
 - [x] ~~**BUG-009: Keywords as variables**~~ ✅ Added contextual keywords + `isIdentifierLike()` helper
 - [x] ~~**BUG-010: `!fn()` in loops**~~ ✅ Extracted `parsePostfix()`, fixed unary→postfix chain
 - [x] ~~**BUG-011: `import { X as Y }`**~~ ✅ Handle `as` as keyword in import specifiers
-- [ ] **BUG-001: let TDZ in switch/match** — Emit block-scoped `let` per case branch
-- [ ] **BUG-002: Range `..` in expressions** — Either error on `..` outside `for` loops or implement `Range` runtime object
+- [x] ~~**BUG-001: let TDZ in switch/match**~~ ✅ Each switch case wrapped in `{ }` block for scope isolation
+- [x] ~~**BUG-002: Range `..` in expressions**~~ ✅ Generator errors on `..` outside `for` loops (both TS and .no)
 - [x] ~~**Error recovery**~~ ✅ Brace-depth tracking in `recover()`, parser errors surfaced in `compile()` diagnostics
-- [ ] **Error messages** — Add error codes (E0001, etc.), source line context + caret, "help" suggestions, "did you mean?" for misspelled identifiers
+- [x] ~~**Error messages**~~ ✅ `NodeonError` with codes (E0100+), source line context + caret, help suggestions. Parser wired to use structured errors.
 - [x] ~~**Fixpoint test in CI**~~ ✅ 32 fixpoint tests in `bootstrap.test.ts` verify TS output === self-hosted output
 - [x] ~~Fix `&&`/`||` precedence~~ ✅ (BUG-012)
 - [x] ~~Add `consumePropertyName` for keyword property access~~ ✅ (BUG-007)
