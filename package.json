@@ -2,17 +2,20 @@
   "name": "nodeon",
   "version": "0.1.0",
   "description": "Nodeon programming language — compiles to JavaScript with optional typing and clean syntax",
-  "main": "src/compiler/compile.ts",
+  "main": "dist-no/nodeon-compiler.cjs",
   "workspaces": [
     "packages/*"
   ],
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "build": "node scripts/build.js",
+    "build:verify": "node scripts/build.js --verify",
+    "build:bootstrap": "node scripts/build.js --bootstrap",
     "build:cli": "node scripts/build-cli.js",
     "build:lsp": "npm run build -w nodeon-vscode-extension",
     "build:ext": "npm run build -w nodeon-vscode-extension",
-    "build:all": "npm run build:ext",
+    "build:all": "npm run build && npm run build:ext",
     "typecheck:lsp": "tsc --noEmit -p packages/language-server/tsconfig.json",
     "package:ext": "npm run package -w nodeon-vscode-extension"
   },
@@ -23,7 +26,8 @@
   "author": "isma-is-dev",
   "license": "MIT",
   "bin": {
-    "nodeon": "./bin/nodeon.js"
+    "nodeon": "./bin/nodeon-self.js",
+    "nodeon-ts": "./bin/nodeon.js"
   },
   "dependencies": {
     "ts-node": "10.9.2",
