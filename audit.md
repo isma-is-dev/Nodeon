@@ -60,7 +60,7 @@ The core is solid and self-hosting is fully achieved with a verified fixpoint. T
 | LSP Server | ⚠️ Good but Unoptimized | 1426 lines, full feature set with AST-based semantic tokens |
 | VS Code Extension | ✅ Good | TextMate + semantic tokens, bracket colorization, language config |
 | Self-hosting | ✅ Fixpoint | 32 .no modules, byte-identical output across TS/self/self² builds (141.2kb bundle). Self-hosted is primary CLI. **TS compiler (`src/`) is deprecated** — kept only as bootstrap fallback. |
-| Tests | ✅ Good | 597 tests (lexer 35, parser 84, e2e 181, bootstrap 98, type-checker 81, nova-signals 21, nova-template 32, nova-di 21, nova-island-bundler 13, regression 26, snapshot 5) |
+| Tests | ✅ Good | 613 tests (lexer 35, parser 84, e2e 197, bootstrap 98, type-checker 81, nova-signals 21, nova-template 32, nova-di 21, nova-island-bundler 13, regression 26, snapshot 5) |
 | CI | ✅ Improved | Tests + build + fixpoint verify + self-hosted CLI verify + TS CLI fallback |
 
 ### What Needs Work
@@ -530,7 +530,7 @@ Current watch only watches the entry file's directory. Should:
 |-------|-------|---------------|
 | `lexer.test.ts` | 35 | Token types, edge cases, literals, hex escapes |
 | `parser.test.ts` | 84 | All statement/expression types, error cases |
-| `e2e.test.ts` | 181 | Full compile pipeline, output verification, named arguments |
+| `e2e.test.ts` | 197 | Full compile pipeline, output verification, named arguments, ADTs, pattern matching v2, go concurrency |
 | `bootstrap.test.ts` | 98 | Self-hosting: 32 compile + 33 self-compile + 32 fixpoint + 1 lexer functional |
 | `type-checker.test.ts` | 81 | Type inference, assignability, narrowing, generics, interface conformance |
 | `nova-signals.test.ts` | 21 | signal, computed, effect, untracked, batch, tracking, destroy |
@@ -539,7 +539,7 @@ Current watch only watches the entry file's directory. Should:
 | `nova-island-bundler.test.ts` | 13 | scanner, entry generation, manifest, bundling, esbuild integration |
 | `regression.test.ts` | 26 | Tests for fixed bugs |
 | `snapshot.test.ts` | 5 | Output snapshot verification |
-| **Total** | **597** | |
+| **Total** | **613** | |
 
 ### 10.2 Testing Gaps
 
@@ -706,7 +706,7 @@ Nodeon's unique value proposition:
 
 ## 14. Roadmap: Path to Professional Language
 
-> **Status as of March 2026:** Self-hosting achieved with verified fixpoint (597 tests, 32 modules). TS compiler deprecated (bootstrap fallback only). Type system: generics + interface conformance. Nova framework: signals, template engine, DI container, island bundler. Language innovations: if-expressions, array slicing, named arguments.
+> **Status as of March 2026:** Self-hosting achieved with verified fixpoint (613 tests, 32 modules). TS compiler deprecated (bootstrap fallback only). Type system: generics + interface conformance. Nova framework: signals, template engine, DI container, island bundler. Language innovations: if-expressions, array slicing, named arguments, algebraic data types, pattern matching v2, go concurrency.
 > Items marked ✅ are complete. Items marked 🔧 have workarounds but need proper fixes.
 
 ### Phase 1: Compiler Robustness (Priority: 🔴 Critical)
@@ -794,9 +794,9 @@ Nodeon's unique value proposition:
 - [x] ~~**If-expressions**~~ ✅ `result = if x > 0 { "positive" } else { "negative" }` — compiles to IIFE with conditional return
 - [x] ~~**Array slicing**~~ ✅ `arr[1..3]` → `arr.slice(1, 3)` — works with optional chaining too
 - [x] ~~**Named arguments**~~ ✅ `greet(name: "World", loud: true)` → `greet({name: "World", loud: true})` — mixed positional+named supported
-- [ ] **Algebraic data types** — Sum types + discriminated unions with exhaustive `match`
-- [ ] **Concurrency primitives** — Goroutine-style or actor model (compiles to workers/async)
-- [ ] **Pattern matching v2** — Destructuring patterns, nested matching, guards with bindings
+- [x] ~~**Algebraic data types**~~ ✅ `type Shape = Circle(radius: number) | Rectangle(width: number, height: number) | Point` — compiles to tagged classes + namespace object
+- [x] ~~**Concurrency primitives**~~ ✅ `go doSomething()` → `queueMicrotask(() => doSomething())`, block form `go { ... }` supported
+- [x] ~~**Pattern matching v2**~~ ✅ `case Circle(r) { ... }` destructures ADT variant fields, unit variant matching `case Point { ... }`, guards preserved
 - [ ] **Compile-time evaluation / macros** — Code generation at compile time
 - [ ] **WebAssembly backend** — Compile `.no` to WASM
 - [ ] **Standalone binaries** — Bundle to single executable (via Node SEA or similar)
