@@ -429,4 +429,60 @@ describe("Type Checker: typeToString", () => {
       elements: [{ kind: "primitive", name: "string" }, { kind: "primitive", name: "number" }],
     })).toBe("[string, number]");
   });
+
+  it("displays type parameter", () => {
+    expect(typeToString({ kind: "typeParam", name: "T" })).toBe("T");
+  });
+
+  it("displays constrained type parameter", () => {
+    expect(typeToString({
+      kind: "typeParam",
+      name: "T",
+      constraint: { kind: "primitive", name: "string" },
+    })).toBe("T extends string");
+  });
+});
+
+describe("Type Checker: Generic functions", () => {
+  it("accepts generic identity function with matching types", () => {
+    expectNoErrors(`
+      fn identity<T>(x: T): T {
+        return x
+      }
+    `);
+  });
+
+  it("generic function is defined in scope with typeParams", () => {
+    expectNoErrors(`
+      fn identity<T>(x: T): T {
+        return x
+      }
+      const result = identity("hello")
+    `);
+  });
+
+  it("accepts generic function with multiple type params", () => {
+    expectNoErrors(`
+      fn pair<A, B>(a: A, b: B): A {
+        return a
+      }
+    `);
+  });
+
+  it("generic param types are available in function body", () => {
+    expectNoErrors(`
+      fn wrap<T>(value: T): T {
+        const inner: T = value
+        return inner
+      }
+    `);
+  });
+
+  it("type param used as return type does not trigger return type error", () => {
+    expectNoErrors(`
+      fn first<T>(arr: T[]): T {
+        return arr[0]
+      }
+    `);
+  });
 });

@@ -17,11 +17,12 @@ export type NType =
   | { kind: "array"; element: NType }
   | { kind: "tuple"; elements: NType[] }
   | { kind: "object"; properties: Map<string, NType> }
-  | { kind: "function"; params: NType[]; returnType: NType }
+  | { kind: "function"; params: NType[]; returnType: NType; typeParams?: string[] }
   | { kind: "union"; types: NType[] }
   | { kind: "intersection"; types: NType[] }
   | { kind: "named"; name: string }
-  | { kind: "generic"; base: string; args: NType[] };
+  | { kind: "generic"; base: string; args: NType[] }
+  | { kind: "typeParam"; name: string; constraint?: NType };
 
 export const ANY: NType = { kind: "any" };
 export const VOID: NType = { kind: "primitive", name: "void" };
@@ -42,14 +43,30 @@ export interface TypeDiagnostic {
 
 // ── Type Environment / Scope ─────────────────────────────────────
 
-interface TypeScope { bindings: Map<string, NType>; }
+interface TypeScope {
+  bindings: Map<string, NType>;
+  typeParams: Map<string, NType>;
+}
 
 class TypeEnv {
-  private scopes: TypeScope[] = [{ bindings: new Map() }];
-  push(): void { this.scopes.push({ bindings: new Map() }); }
+  private scopes: TypeScope[] = [{ bindings: new Map(), typeParams: new Map() }];
+  push(): void { this.scopes.push({ bindings: new Map(), typeParams: new Map() }); }
   pop(): void { this.scopes.pop(); }
   define(name: string, type: NType): void {
     this.scopes[this.scopes.length - 1].bindings.set(name, type);
+  }
+  defineTypeParam(name: string, constraint?: NType): void {
+    const tp: NType = { kind: "typeParam", name, constraint };
+    this.scopes[this.scopes.length - 1].typeParams.set(name, tp);
+    // Also define as a binding so it can be used in type annotations
+    this.scopes[this.scopes.length - 1].bindings.set(name, tp);
+  }
+  lookupTypeParam(name: string): NType | null {
+    for (let i = this.scopes.length - 1; i >= 0; i--) {
+      const t = this.scopes[i].typeParams.get(name);
+      if (t) return t;
+    }
+    return null;
   }
   lookup(name: string): NType | null {
     for (let i = this.scopes.length - 1; i >= 0; i--) {
@@ -118,6 +135,7 @@ export function typeToString(t: NType): string {
     case "function": return `(${t.params.map(typeToString).join(", ")}) => ${typeToString(t.returnType)}`;
     case "named": return t.name;
     case "generic": return `${t.base}<${t.args.map(typeToString).join(", ")}>`;
+    case "typeParam": return t.constraint ? `${t.name} extends ${typeToString(t.constraint)}` : t.name;
     case "object": {
       const entries = Array.from(t.properties).map(([k, v]) => `${k}: ${typeToString(v)}`);
       return `{ ${entries.join("; ")} }`;
@@ -144,7 +162,78 @@ function isAssignableTo(source: NType, target: NType): boolean {
     }
     return isAssignableTo(source.returnType, target.returnType);
   }
+  // Type parameters: a type param is assignable to its constraint or any
+  if (source.kind === "typeParam") {
+    if (target.kind === "typeParam" && source.name === target.name) return true;
+    if (source.constraint) return isAssignableTo(source.constraint, target);
+    return true; // unconstrained type param is compatible with anything
+  }
+  if (target.kind === "typeParam") {
+    if (target.constraint) return isAssignableTo(source, target.constraint);
+    return true; // unconstrained type param accepts anything
+  }
+  // Generic types: Map<string, number> vs Map<K, V>
+  if (source.kind === "generic" && target.kind === "generic") {
+    if (source.base !== target.base) return false;
+    if (source.args.length !== target.args.length) return false;
+    return source.args.every((arg, i) => isAssignableTo(arg, target.args[i]));
+  }
   return false;
+}
+
+// ── Generic Type Instantiation ───────────────────────────────────
+
+/**
+ * Substitute type parameters with concrete types throughout a type.
+ * e.g., given T→string, replaces all occurrences of typeParam "T" with string.
+ */
+function substituteTypeParams(type: NType, subs: Map<string, NType>): NType {
+  switch (type.kind) {
+    case "typeParam": {
+      const sub = subs.get(type.name);
+      return sub ?? type;
+    }
+    case "array":
+      return { kind: "array", element: substituteTypeParams(type.element, subs) };
+    case "tuple":
+      return { kind: "tuple", elements: type.elements.map(e => substituteTypeParams(e, subs)) };
+    case "union":
+      return { kind: "union", types: type.types.map(t => substituteTypeParams(t, subs)) };
+    case "intersection":
+      return { kind: "intersection", types: type.types.map(t => substituteTypeParams(t, subs)) };
+    case "function":
+      return {
+        kind: "function",
+        params: type.params.map(p => substituteTypeParams(p, subs)),
+        returnType: substituteTypeParams(type.returnType, subs),
+      };
+    case "generic":
+      return { kind: "generic", base: type.base, args: type.args.map(a => substituteTypeParams(a, subs)) };
+    case "object": {
+      const props = new Map<string, NType>();
+      for (const [k, v] of type.properties) props.set(k, substituteTypeParams(v, subs));
+      return { kind: "object", properties: props };
+    }
+    default:
+      return type;
+  }
+}
+
+/**
+ * Resolve a named type annotation, checking if it's a type parameter in scope.
+ */
+function resolveNamedType(name: string, env: TypeEnv): NType {
+  const tp = env.lookupTypeParam(name);
+  if (tp) return tp;
+  if (name === "string") return STRING;
+  if (name === "number") return NUMBER;
+  if (name === "boolean") return BOOLEAN;
+  if (name === "void") return VOID;
+  if (name === "null") return NULL_TYPE;
+  if (name === "undefined") return UNDEFINED;
+  if (name === "any") return ANY;
+  if (name === "never") return { kind: "never" };
+  return { kind: "named", name };
 }
 
 // ── Expression Type Inference ────────────────────────────────────
@@ -276,13 +365,32 @@ function checkStatement(stmt: Statement, env: TypeEnv, diags: TypeDiagnostic[]):
     }
     case "FunctionDeclaration": {
       const fn = stmt as FunctionDeclaration;
-      const paramTypes = fn.params.map((p: Param) => annotationToType(p.typeAnnotation));
-      const retType = annotationToType(fn.returnType);
-      env.define(fn.name.name, { kind: "function", params: paramTypes, returnType: retType });
+      // Register function type first (for recursion)
       env.push();
+      // Register type parameters in the function's scope
+      const tpNames = fn.typeParams || [];
+      for (const tp of tpNames) env.defineTypeParam(tp);
+      const paramTypes = fn.params.map((p: Param) => {
+        const ann = annotationToType(p.typeAnnotation);
+        // Resolve named type annotations that match type params
+        if (ann.kind === "named" && tpNames.includes(ann.name)) {
+          return env.lookupTypeParam(ann.name) ?? ann;
+        }
+        return ann;
+      });
+      const retAnn = annotationToType(fn.returnType);
+      const retType = (retAnn.kind === "named" && tpNames.includes(retAnn.name))
+        ? (env.lookupTypeParam(retAnn.name) ?? retAnn) : retAnn;
+      const fnType: NType = { kind: "function", params: paramTypes, returnType: retType, typeParams: tpNames.length > 0 ? tpNames : undefined };
+      // Define the function in the outer scope (pop then define then push back)
+      env.pop();
+      env.define(fn.name.name, fnType);
+      env.push();
+      // Re-register type params and params in the body scope
+      for (const tp of tpNames) env.defineTypeParam(tp);
       for (let i = 0; i < fn.params.length; i++) env.define(fn.params[i].name, paramTypes[i]);
       checkStatements(fn.body, env, diags);
-      if (retType.kind !== "any") checkReturnTypes(fn.body, retType, env, diags);
+      if (retType.kind !== "any" && retType.kind !== "typeParam") checkReturnTypes(fn.body, retType, env, diags);
       env.pop();
       break;
     }
