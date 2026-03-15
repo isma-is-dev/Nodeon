@@ -30,3 +30,7 @@ coverage/
 
 # Cache
 .nodeon-cache
+
+# Test artifacts
+test-nova-app/
+tmp-*.js

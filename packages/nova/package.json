@@ -1,0 +1,14 @@
+{
+  "name": "@nodeon/nova",
+  "version": "0.1.0",
+  "description": "Nova — Zero-JS by default web framework for Nodeon",
+  "main": "src/index.js",
+  "bin": {
+    "nova": "./bin/nova.js"
+  },
+  "scripts": {
+    "test": "echo \"No tests yet\""
+  },
+  "keywords": ["nodeon", "framework", "nova", "ssg", "ssr", "islands"],
+  "license": "MIT"
+}
