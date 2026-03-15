@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-const { signal, computed, effect, untracked, batch, isSignal, isComputed, isReactive } = require("../packages/nova/src/signals");
+import { signal, computed, effect, untracked, batch, isSignal, isComputed, isReactive } from "../packages/nova/src/signals.js";
 
 describe("Nova Signals: signal()", () => {
   it("creates a signal with initial value", () => {

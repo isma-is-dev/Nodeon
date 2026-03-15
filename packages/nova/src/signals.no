@@ -1,0 +1,233 @@
+/**
+ * Nova Signals — Angular-style fine-grained reactivity.
+ *
+ * API:
+ *   signal(initialValue)        → WritableSignal  (.set, .update, .mutate)
+ *   computed(() => expr)        → ReadonlySignal   (auto-tracked, lazy, cached)
+ *   effect(() => { ... })       → EffectRef        (auto-tracked, returns { destroy })
+ *   untracked(() => expr)       → T                (read without tracking)
+ *   batch(() => { ... })        → void             (defer notifications)
+ */
+
+// ── Dependency Tracking Context ─────────────────────────────────
+
+let activeConsumer = null
+let batchDepth = 0
+let pendingEffects = new Set()
+
+// ── Signal (writable) ───────────────────────────────────────────
+
+let nextId = 0
+
+fn signal(initialValue) {
+  let value = initialValue
+  const id = nextId++
+  const subscribers = new Set()
+  let version = 0
+
+  fn read() {
+    // Track dependency if there's an active consumer
+    if activeConsumer {
+      activeConsumer.deps.add(sig)
+      subscribers.add(activeConsumer)
+    }
+    return value
+  }
+
+  // Make the signal callable: sig() returns value
+  const sig = read
+  sig._id = id
+  sig._type = 'signal'
+
+  sig.set = (newValue) => {
+    if Object.is(value, newValue) { return }
+    value = newValue
+    version++
+    notify(subscribers)
+  }
+
+  sig.update = (updater) => {
+    sig.set(updater(value))
+  }
+
+  sig.mutate = (mutator) => {
+    mutator(value)
+    version++
+    notify(subscribers)
+  }
+
+  sig.subscribe = (consumer) => {
+    subscribers.add(consumer)
+    return () => { subscribers.delete(consumer) }
+  }
+
+  sig._version = () => { return version }
+  sig._subscribers = subscribers
+
+  return sig
+}
+
+// ── Computed (read-only, lazy, cached) ──────────────────────────
+
+fn computed(computeFn) {
+  let cachedValue = undefined
+  let dirty = true
+  let version = 0
+  const subscribers = new Set()
+
+  // Internal consumer to track which signals this computed reads
+  const consumer = {
+    deps: new Set(),
+    notify: () => {
+      if !dirty {
+        dirty = true
+        version++
+        notify(subscribers)
+      }
+    }
+  }
+
+  fn read() {
+    // Track this computed as a dependency of the active consumer
+    if activeConsumer {
+      activeConsumer.deps.add(comp)
+      subscribers.add(activeConsumer)
+    }
+
+    if dirty {
+      // Clean up old deps
+      for dep in consumer.deps {
+        if dep._subscribers { dep._subscribers.delete(consumer) }
+      }
+      consumer.deps.clear()
+
+      // Run computation with tracking
+      const prev = activeConsumer
+      activeConsumer = consumer
+      try {
+        cachedValue = computeFn()
+      } finally {
+        activeConsumer = prev
+      }
+      dirty = false
+    }
+    return cachedValue
+  }
+
+  const comp = read
+  comp._id = nextId++
+  comp._type = 'computed'
+  comp._version = () => { return version }
+  comp._subscribers = subscribers
+
+  return comp
+}
+
+// ── Effect (auto-tracked side effect) ───────────────────────────
+
+fn effect(effectFn) {
+  let destroyed = false
+
+  const consumer = {
+    deps: new Set(),
+    notify: () => {
+      if destroyed { return }
+      if batchDepth > 0 {
+        pendingEffects.add(run)
+      } else {
+        run()
+      }
+    }
+  }
+
+  fn run() {
+    if destroyed { return }
+
+    // Clean up old deps
+    for dep in consumer.deps {
+      if dep._subscribers { dep._subscribers.delete(consumer) }
+    }
+    consumer.deps.clear()
+
+    // Run effect with tracking
+    const prev = activeConsumer
+    activeConsumer = consumer
+    try {
+      effectFn()
+    } finally {
+      activeConsumer = prev
+    }
+  }
+
+  // Run immediately
+  run()
+
+  return {
+    destroy: () => {
+      destroyed = true
+      for dep in consumer.deps {
+        if dep._subscribers { dep._subscribers.delete(consumer) }
+      }
+      consumer.deps.clear()
+    }
+  }
+}
+
+// ── Utilities ───────────────────────────────────────────────────
+
+fn untracked(callback) {
+  const prev = activeConsumer
+  activeConsumer = null
+  try {
+    return callback()
+  } finally {
+    activeConsumer = prev
+  }
+}
+
+fn batch(callback) {
+  batchDepth++
+  try {
+    callback()
+  } finally {
+    batchDepth--
+    if batchDepth == 0 {
+      const effects = Array.from(pendingEffects)
+      pendingEffects.clear()
+      for run in effects { run() }
+    }
+  }
+}
+
+// ── Internal Notification ───────────────────────────────────────
+
+fn notify(subscribers) {
+  if batchDepth > 0 {
+    // In batch mode, just mark consumers for later
+    for sub in subscribers {
+      if sub.notify { pendingEffects.add(sub.notify.bind(sub)) }
+    }
+    return
+  }
+  // Notify all subscribers
+  const subs = Array.from(subscribers)
+  for sub in subs {
+    if sub.notify { sub.notify() }
+  }
+}
+
+// ── isSignal / isComputed helpers ───────────────────────────────
+
+fn isSignal(val) {
+  return typeof val == 'function' && val._type == 'signal'
+}
+
+fn isComputed(val) {
+  return typeof val == 'function' && val._type == 'computed'
+}
+
+fn isReactive(val) {
+  return isSignal(val) || isComputed(val)
+}
+
+export { signal, computed, effect, untracked, batch, isSignal, isComputed, isReactive }

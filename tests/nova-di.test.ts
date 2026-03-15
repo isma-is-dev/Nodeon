@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-const { Injectable, Inject, InjectionToken, Container, rootContainer } = require("../packages/nova/src/di");
+import { Injectable, Inject, InjectionToken, Container, rootContainer } from "../packages/nova/src/di.js";
 
 describe("Nova DI: Container basics", () => {
   it("registers and resolves a class", () => {

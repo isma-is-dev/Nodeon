@@ -1,0 +1,130 @@
+// Bridge between Nova and the Nodeon compiler.
+// Compiles .no page files to JS modules on-the-fly for the dev server.
+
+import fs from 'fs'
+import path from 'path'
+import vm from 'vm'
+
+// Try to load the Nodeon compiler
+let compiler = null
+fn getCompiler() {
+  if compiler { return compiler }
+
+  // Try self-hosted bundle first — search upward from cwd
+  const candidates = [
+    path.resolve(process.cwd(), 'dist-no/nodeon-compiler.cjs'),
+    path.resolve(process.cwd(), '../dist-no/nodeon-compiler.cjs'),
+    path.resolve(process.cwd(), '../../dist-no/nodeon-compiler.cjs')
+  ]
+
+  for candidate in candidates {
+    if fs.existsSync(candidate) {
+      // Use dynamic import workaround for CJS modules
+      const code = fs.readFileSync(candidate, 'utf8')
+      const mod = { exports: {} }
+      const wrapper = new vm.Script('(function(module, exports, require) \{' + code + '\n\})', { filename: candidate })
+      const ctx = vm.createContext({ require: globalThis.require || (() => { return {} }), process: process, console: console, Buffer: Buffer, __dirname: path.dirname(candidate), __filename: candidate, URL: URL, setTimeout: setTimeout })
+      const wrapperFn = wrapper.runInContext(ctx)
+      wrapperFn(mod, mod.exports, globalThis.require || (() => { return {} }))
+      compiler = mod.exports
+      return compiler
+    }
+  }
+
+  throw new Error("Nodeon compiler not found. Run 'npm run build' first.")
+}
+
+/**
+ * Compile a .no file and return its exports as a module.
+ */
+fn compileNoFile(filePath) {
+  const source = fs.readFileSync(filePath, 'utf8')
+  const compileResult = getCompiler().compile(source)
+  const js = compileResult.js
+
+  // Execute the compiled JS in a sandbox and collect exports
+  const mod = { exports: {} }
+  const sandbox = {
+    module: mod,
+    exports: mod.exports,
+    require: globalThis.require || (() => { return {} }),
+    __filename: filePath,
+    __dirname: path.dirname(filePath),
+    console: console,
+    process: process,
+    Buffer: Buffer,
+    setTimeout: setTimeout,
+    setInterval: setInterval,
+    clearTimeout: clearTimeout,
+    clearInterval: clearInterval
+  }
+
+  // Transform ESM imports/exports to CJS for vm execution
+  let cjsCode = esmToCjs(js)
+
+  try {
+    const script = new vm.Script(cjsCode, { filename: filePath })
+    script.runInNewContext(sandbox)
+    return mod.exports
+  } catch (err) {
+    throw new Error("Failed to execute compiled page " + filePath + ": " + err.message)
+  }
+}
+
+/**
+ * Quick ESM → CJS transform for page modules.
+ */
+fn esmToCjs(code) {
+  let result = code
+
+  // import X from 'y' → const X = require('y').default || require('y')
+  result = result.replace(
+    /import\s+(\w+)\s+from\s+["']([^"']+)["'];?/g,
+    'const $1 = (function() \{ const _m = require("$2"); return _m && _m.default || _m; \})();'
+  )
+
+  // import { a, b } from 'y' → const { a, b } = require('y')
+  result = result.replace(
+    /import\s+\{([^}]+)\}\s+from\s+["']([^"']+)["'];?/g,
+    'const \{$1\} = require("$2");'
+  )
+
+  // export default X → class/function X
+  result = result.replace(
+    /export\s+default\s+(class|function)\s+(\w+)/g,
+    '$1 $2'
+  )
+  // Find default export name
+  const defaultMatch = code.match(/export\s+default\s+(?:class|function)\s+(\w+)/)
+
+  // export class/function X → class/function X
+  result = result.replace(/export\s+(class|function|const|let|var)\s+/g, '$1 ')
+
+  // Collect named exports
+  const namedExports = []
+  const exportMatches = code.matchAll(/export\s+(?:class|function)\s+(\w+)/g)
+  for m in exportMatches {
+    if !code.includes("export default " + m[0].replace("export ", "")) {
+      namedExports.push(m[1])
+    }
+  }
+  const constExports = code.matchAll(/export\s+(?:const|let|var)\s+(\w+)/g)
+  for m in constExports {
+    namedExports.push(m[1])
+  }
+
+  // Append exports
+  if namedExports.length > 0 {
+    result += "\n" + namedExports.map((n) => {
+      return "module.exports." + n + " = typeof " + n + " !== 'undefined' ? " + n + " : undefined;"
+    }).join("\n")
+  }
+  if defaultMatch {
+    result += "\nmodule.exports.default = " + defaultMatch[1] + ";"
+    result += "\nmodule.exports = Object.assign(module.exports, \{ default: " + defaultMatch[1] + " \});"
+  }
+
+  return result
+}
+
+export { compileNoFile, esmToCjs }

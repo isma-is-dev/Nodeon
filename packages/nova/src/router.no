@@ -1,0 +1,90 @@
+// Nova file-based router
+// Scans pages/ directory and maps files to URL routes.
+//
+// Convention:
+//   pages/index.no      → /
+//   pages/about.no      → /about
+//   pages/blog/index.no → /blog
+//   pages/blog/[slug].no → /blog/:slug  (dynamic)
+//   pages/api/posts.no  → /api/posts   (API route)
+
+import fs from 'fs'
+import path from 'path'
+
+/**
+ * Scan a pages directory and return an array of route definitions.
+ * Each route: { pattern, paramNames, filePath, isDynamic, isApi }
+ */
+fn buildRoutes(pagesDir) {
+  const routes = []
+  if !fs.existsSync(pagesDir) { return routes }
+
+  fn scan(dir, prefix) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true })
+    for entry in entries {
+      const full = path.join(dir, entry.name)
+      if entry.isDirectory() {
+        scan(full, prefix + "/" + entry.name)
+      } else if entry.name.endsWith('.no') || entry.name.endsWith('.js') {
+        const ext = path.extname(entry.name)
+        const base = entry.name.slice(0, -ext.length)
+        const segment = if base == 'index' { "" } else { "/" + base }
+        const urlPath = (prefix + segment) || "/"
+        const paramNames = []
+
+        // Convert [param] segments to :param
+        const pattern = urlPath.replace(/\[([^\]]+)\]/g, (_, name) => {
+          paramNames.push(name)
+          return ":(" + name + ")"
+        })
+
+        // Build regex for matching
+        const regexStr = "^" + pattern
+          .replace(/:\(([^)]+)\)/g, "([^/]+)")
+          .replace(/\//g, "\\/") + "$"
+
+        routes.push({
+          pattern: urlPath,
+          regex: new RegExp(regexStr),
+          paramNames: paramNames,
+          filePath: full,
+          isDynamic: paramNames.length > 0,
+          isApi: urlPath.startsWith("/api/") || urlPath.startsWith("/api")
+        })
+      }
+    }
+  }
+
+  scan(pagesDir, "")
+
+  // Sort: static routes first, then dynamic
+  routes.sort((a, b) => {
+    if a.isDynamic != b.isDynamic { return if a.isDynamic { 1 } else { -1 } }
+    return a.pattern.localeCompare(b.pattern)
+  })
+
+  return routes
+}
+
+/**
+ * Match a URL path against the route table.
+ * Returns { route, params } or null.
+ */
+fn matchRoute(routes, urlPath) {
+  // Normalize: strip trailing slash (except root)
+  const normalized = if urlPath == "/" { "/" } else { urlPath.replace(/\/$/, "") }
+
+  for route in routes {
+    const matched = normalized.match(route.regex)
+    if matched {
+      const params = {}
+      route.paramNames.forEach((name, i) => {
+        params[name] = matched[i + 1]
+      })
+      return { route: route, params: params }
+    }
+  }
+  return null
+}
+
+export { buildRoutes, matchRoute }

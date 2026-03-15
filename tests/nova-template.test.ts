@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-const { parseTemplate, compileTemplate, renderTemplate, tokenize, escapeHtml, evalExpr } = require("../packages/nova/src/template");
+import { parseTemplate, compileTemplate, renderTemplate, tokenize, escapeHtml, evalExpr } from "../packages/nova/src/template.js";
 
 describe("Nova Template: tokenizer", () => {
   it("tokenizes plain text", () => {

@@ -3,7 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
-const { scanForIslands, generateIslandEntry, generateManifest, bundleIslands } = require("../packages/nova/src/island-bundler");
+import { scanForIslands, generateIslandEntry, generateManifest, bundleIslands } from "../packages/nova/src/island-bundler.js";
 
 // Helper: create a temp directory for test fixtures
 function createTmpDir() {

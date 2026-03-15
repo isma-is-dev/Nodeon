@@ -32,8 +32,8 @@ Nodeon is an impressively complete project for its stage. It has:
 
 - A **full compiler pipeline** (Lexer → Pratt Parser → Type Checker → JS Generator)
 - **Self-hosting with verified fixpoint** — the compiler compiles itself and produces byte-identical output (32 .no source files, bundled to 136.0kb). Self-hosted compiler is now the primary CLI with CLI bundle (`nodeon-cli.cjs`)
-- **489 passing tests** across lexer, parser, e2e, bootstrap (compile + self-compile + fixpoint), type-checker, regression, and snapshot suites
-- **Nova framework prototype** (`packages/nova/`) — file-based routing, static renderer, dev server, island hydration architecture
+- **636 passing tests** across lexer, parser, e2e, bootstrap (compile + self-compile + fixpoint), type-checker, nova (signals, template, DI, island-bundler), regression, and snapshot suites
+- **Nova framework** (`packages/nova/`) — file-based routing, static renderer, dev server, island hydration architecture. **All 12 modules migrated from JS to Nodeon (`.no`)** — compiled to JS via the self-hosted compiler
 - A **Language Server Protocol** implementation with diagnostics, completions, hover, go-to-definition, semantic tokens, formatting, rename, references, and code actions
 - A **VS Code extension** with TextMate grammar + semantic highlighting
 - **Source map** generation (V3 spec with VLQ encoding)
@@ -706,7 +706,7 @@ Nodeon's unique value proposition:
 
 ## 14. Roadmap: Path to Professional Language
 
-> **Status as of March 2026:** Self-hosting achieved with verified fixpoint (636 tests, 32 modules). TS compiler deprecated (bootstrap fallback only). Type system: generics + interface conformance. Nova framework: signals, template engine, DI container, island bundler. Language innovations: if-expressions, array slicing, named arguments, algebraic data types, pattern matching v2, go concurrency, compile-time evaluation, IR layer, WebAssembly backend.
+> **Status as of March 2026:** Self-hosting achieved with verified fixpoint (636 tests, 32 modules). TS compiler deprecated (bootstrap fallback only). Type system: generics + interface conformance. Nova framework: signals, template engine, DI container, island bundler — **all 12 Nova modules migrated to `.no`** (87 Nova tests pass). Language innovations: if-expressions, array slicing, named arguments, algebraic data types, pattern matching v2, go concurrency, compile-time evaluation, IR layer, WebAssembly backend.
 > Items marked ✅ are complete. Items marked 🔧 have workarounds but need proper fixes.
 
 ### Phase 1: Compiler Robustness (Priority: 🔴 Critical)
@@ -786,6 +786,7 @@ Nodeon's unique value proposition:
 - [x] ~~**Dependency injection**~~ ✅ `Container` with `registerClass`/`registerValue`/`registerFactory`, `Injectable()` decorator, `Inject()` markers, hierarchical scopes, circular dependency detection
 - [ ] **CSS extraction** — Scoped styles from `style()` methods
 - [x] ~~**Island client bundles**~~ ✅ `scanForIslands()`, `generateIslandEntry()`, `bundleIslands()` with esbuild (ESM, minified, sourcemaps), manifest generation, fallback for no-esbuild
+- [x] ~~**Nova `.no` migration**~~ ✅ All 12 Nova modules (`signals`, `di`, `template`, `router`, `renderer`, `server`, `builder`, `island`, `island-bundler`, `compiler-bridge`, `cli`, `index`) rewritten in Nodeon and compiled to JS. 87 Nova tests pass (21 signals + 21 DI + 32 template + 13 island-bundler).
 
 ### Phase 5: Language Innovation (Priority: 🟢 Aspirational)
 
