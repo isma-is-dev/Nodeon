@@ -127,18 +127,24 @@ export function eliminateDeadCode(mod: IRModule): IRModule {
 }
 
 function elimDeadInFunction(fn: IRFunction): IRFunction {
+  // Collect refs from ALL terminators first so temps used in return/branch survive
+  const terminatorRefs = new Set<string>();
+  for (const b of fn.blocks) {
+    if (b.terminator) collectTerminatorRefs(b.terminator, terminatorRefs);
+  }
   return {
     ...fn,
     blocks: fn.blocks.map((b) => ({
       ...b,
-      instructions: elimDeadInstructions(b.instructions),
+      instructions: elimDeadInstructions(b.instructions, terminatorRefs),
     })),
   };
 }
 
-function elimDeadInstructions(instructions: IRInstruction[]): IRInstruction[] {
+function elimDeadInstructions(instructions: IRInstruction[], extraRefs?: Set<string>): IRInstruction[] {
   // Collect all referenced names/temps
   const referenced = new Set<string>();
+  if (extraRefs) for (const r of extraRefs) referenced.add(r);
   for (const inst of instructions) {
     collectRefs(inst, referenced);
   }
@@ -156,6 +162,21 @@ function elimDeadInstructions(instructions: IRInstruction[]): IRInstruction[] {
     }
     return true;
   });
+}
+
+function collectTerminatorRefs(term: IRTerminator, refs: Set<string>): void {
+  const collectValue = (v: IRValue) => {
+    if (v.kind === "ref") refs.add(v.name);
+    if (v.kind === "temp") refs.add(v.id);
+  };
+  switch (term.op) {
+    case "return":
+      if (term.value) collectValue(term.value);
+      break;
+    case "branch":
+      collectValue(term.condition);
+      break;
+  }
 }
 
 function collectRefs(inst: IRInstruction, refs: Set<string>): void {

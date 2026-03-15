@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { compile, compileWithSourceMap, compileToAST } from "@compiler/compile";
 import { compileWithIR } from "@compiler/compile-ir";
+import { compileToWasm, compileToWat } from "@compiler/compile-wasm";
 import { typeCheck } from "@compiler/type-checker";
 import { Lexer } from "@lexer/lexer";
 
@@ -1408,5 +1409,78 @@ describe("IR pipeline", () => {
     // After optimization, unused intermediate literals should be eliminated
     // The optimized IR should have fewer or equal instructions
     expect(optimizedIR.globals.length).toBeLessThanOrEqual(ir.globals.length);
+  });
+});
+
+describe("WebAssembly backend", () => {
+  it("generates WAT for simple function", () => {
+    const wat = compileToWat('fn add(a, b) {\n  return a + b\n}');
+    expect(wat).toContain("(module");
+    expect(wat).toContain("(func $add");
+    expect(wat).toContain("f64.add");
+    expect(wat).toContain('(export "add"');
+  });
+
+  it("generates WAT for integer arithmetic", () => {
+    const wat = compileToWat('fn square(x) {\n  return x * x\n}');
+    expect(wat).toContain("(func $square");
+    expect(wat).toContain("f64.mul");
+  });
+
+  it("generates valid WASM binary header", () => {
+    const { wasm } = compileToWasm('fn identity(x) {\n  return x\n}');
+    expect(wasm).toBeInstanceOf(Uint8Array);
+    // WASM magic: \0asm
+    expect(wasm[0]).toBe(0x00);
+    expect(wasm[1]).toBe(0x61);
+    expect(wasm[2]).toBe(0x73);
+    expect(wasm[3]).toBe(0x6d);
+    // Version 1
+    expect(wasm[4]).toBe(0x01);
+    expect(wasm[5]).toBe(0x00);
+    expect(wasm[6]).toBe(0x00);
+    expect(wasm[7]).toBe(0x00);
+  });
+
+  it("WASM binary can be instantiated", async () => {
+    const { wasm } = compileToWasm('fn add(a, b) {\n  return a + b\n}');
+    const mod = await WebAssembly.compile(wasm);
+    const instance = await WebAssembly.instantiate(mod);
+    const addFn = instance.exports.add as Function;
+    expect(addFn(3, 4)).toBe(7);
+  });
+
+  it("WASM subtraction works", async () => {
+    const { wasm } = compileToWasm('fn sub(a, b) {\n  return a - b\n}');
+    const instance = await WebAssembly.instantiate(await WebAssembly.compile(wasm));
+    const subFn = instance.exports.sub as Function;
+    expect(subFn(10, 3)).toBe(7);
+  });
+
+  it("WASM multiplication works", async () => {
+    const { wasm } = compileToWasm('fn mul(a, b) {\n  return a * b\n}');
+    const instance = await WebAssembly.instantiate(await WebAssembly.compile(wasm));
+    const mulFn = instance.exports.mul as Function;
+    expect(mulFn(6, 7)).toBe(42);
+  });
+
+  it("WASM division works", async () => {
+    const { wasm } = compileToWasm('fn div(a, b) {\n  return a / b\n}');
+    const instance = await WebAssembly.instantiate(await WebAssembly.compile(wasm));
+    const divFn = instance.exports.div as Function;
+    expect(divFn(20, 4)).toBe(5);
+  });
+
+  it("exports list contains function names", () => {
+    const { exports } = compileToWasm('fn foo(x) {\n  return x\n}');
+    expect(exports).toContain("foo");
+  });
+
+  it("multiple functions are all exported", () => {
+    const { exports, wat } = compileToWasm('fn add(a, b) {\n  return a + b\n}\nfn mul(a, b) {\n  return a * b\n}');
+    expect(exports).toContain("add");
+    expect(exports).toContain("mul");
+    expect(wat).toContain("(func $add");
+    expect(wat).toContain("(func $mul");
   });
 });
