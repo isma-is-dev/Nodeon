@@ -1,7 +1,7 @@
 import { NodeonError, ErrorCode } from "../errors.no"
 
 // Contextual keywords: can be used as identifiers in most positions
-const CONTEXTUAL_KW = ["print", "from", "async", "of", "get", "set", "static", "default", "as", "type", "enum", "interface"]
+const CONTEXTUAL_KW = ["print", "from", "async", "of", "get", "set", "static", "default", "as", "type", "enum", "interface", "implements"]
 
 // Base class for the Parser — handles token navigation and consumption.
 // Subclassed by Parser which adds all statement/expression parsing.

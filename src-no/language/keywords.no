@@ -48,4 +48,5 @@ export const KEYWORDS = new Set([
   "interface",
   "type",
   "as",
+  "implements",
 ])

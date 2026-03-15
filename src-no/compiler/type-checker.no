@@ -12,12 +12,28 @@ const UNDEFINED = { kind: "primitive", name: "undefined" }
 
 class TypeEnv {
   constructor() {
-    this.scopes = [{ bindings: new Map() }]
+    this.scopes = [{ bindings: new Map(), typeParams: new Map() }]
+    // Interface registry (global — interfaces are hoisted)
+    this.interfaces = new Map()
   }
-  fn push() { this.scopes.push({ bindings: new Map() }) }
+  fn push() { this.scopes.push({ bindings: new Map(), typeParams: new Map() }) }
   fn pop() { this.scopes.pop() }
   fn define(name, type) {
     this.scopes[this.scopes.length - 1].bindings.set(name, type)
+  }
+  fn defineTypeParam(name, constraint) {
+    const tp = { kind: "typeParam", name: name, constraint: constraint }
+    this.scopes[this.scopes.length - 1].typeParams.set(name, tp)
+    this.scopes[this.scopes.length - 1].bindings.set(name, tp)
+  }
+  fn lookupTypeParam(name) {
+    let i = this.scopes.length - 1
+    while i >= 0 {
+      const t = this.scopes[i].typeParams.get(name)
+      if t { return t }
+      i = i - 1
+    }
+    return null
   }
   fn lookup(name) {
     let i = this.scopes.length - 1
@@ -82,6 +98,10 @@ fn typeToString(t) {
     case "function" { return "(" + t.params.map(typeToString).join(", ") + ") => " + typeToString(t.returnType) }
     case "named" { return t.name }
     case "generic" { return t.base + "<" + t.args.map(typeToString).join(", ") + ">" }
+    case "typeParam" {
+      if t.constraint { return t.name + " extends " + typeToString(t.constraint) }
+      return t.name
+    }
     case "object" {
       const entries = Array.from(t.properties).map((entry) => entry[0] + ": " + typeToString(entry[1]))
       return '{ ' + entries.join('; ') + ' }'
@@ -112,7 +132,52 @@ fn isAssignableTo(source, target) {
     }
     return isAssignableTo(source.returnType, target.returnType)
   }
+  // Type parameters
+  if source.kind == "typeParam" {
+    if target.kind == "typeParam" && source.name == target.name { return true }
+    if source.constraint { return isAssignableTo(source.constraint, target) }
+    return true
+  }
+  if target.kind == "typeParam" {
+    if target.constraint { return isAssignableTo(source, target.constraint) }
+    return true
+  }
+  // Generic types
+  if source.kind == "generic" && target.kind == "generic" {
+    if source.base != target.base { return false }
+    if source.args.length != target.args.length { return false }
+    return source.args.every((arg, i) => isAssignableTo(arg, target.args[i]))
+  }
   return false
+}
+
+// ── Generic Type Instantiation ───────────────────────────────────
+
+fn substituteTypeParams(type, subs) {
+  switch type.kind {
+    case "typeParam" {
+      const sub = subs.get(type.name)
+      return sub ?? type
+    }
+    case "array" { return { kind: "array", element: substituteTypeParams(type.element, subs) } }
+    case "tuple" { return { kind: "tuple", elements: type.elements.map((e) => substituteTypeParams(e, subs)) } }
+    case "union" { return { kind: "union", types: type.types.map((t) => substituteTypeParams(t, subs)) } }
+    case "intersection" { return { kind: "intersection", types: type.types.map((t) => substituteTypeParams(t, subs)) } }
+    case "function" {
+      return {
+        kind: "function",
+        params: type.params.map((p) => substituteTypeParams(p, subs)),
+        returnType: substituteTypeParams(type.returnType, subs),
+      }
+    }
+    case "generic" { return { kind: "generic", base: type.base, args: type.args.map((a) => substituteTypeParams(a, subs)) } }
+    case "object" {
+      const props = new Map()
+      for entry in Array.from(type.properties) { props.set(entry[0], substituteTypeParams(entry[1], subs)) }
+      return { kind: "object", properties: props }
+    }
+    default { return type }
+  }
 }
 
 // ── Expression Type Inference ────────────────────────────────────
@@ -242,21 +307,40 @@ fn checkStatement(stmt, env, diags) {
       if stmt.name { env.define(stmt.name.name, resolvedType) }
     }
     case "FunctionDeclaration" {
-      const paramTypes = stmt.params.map((p) => annotationToType(p.typeAnnotation))
-      const retType = annotationToType(stmt.returnType)
-      env.define(stmt.name.name, { kind: "function", params: paramTypes, returnType: retType })
       env.push()
+      const tpNames = stmt.typeParams || []
+      for tp in tpNames { env.defineTypeParam(tp) }
+      const paramTypes = stmt.params.map((p) => {
+        const ann = annotationToType(p.typeAnnotation)
+        if ann.kind == "named" && tpNames.includes(ann.name) {
+          return env.lookupTypeParam(ann.name) ?? ann
+        }
+        return ann
+      })
+      const retAnn = annotationToType(stmt.returnType)
+      let retType = retAnn
+      if retAnn.kind == "named" && tpNames.includes(retAnn.name) {
+        retType = env.lookupTypeParam(retAnn.name) ?? retAnn
+      }
+      const fnType = { kind: "function", params: paramTypes, returnType: retType, typeParams: tpNames.length > 0 ? tpNames : undefined }
+      env.pop()
+      env.define(stmt.name.name, fnType)
+      env.push()
+      for tp in tpNames { env.defineTypeParam(tp) }
       let pi = 0
       while pi < stmt.params.length {
         env.define(stmt.params[pi].name, paramTypes[pi])
         pi = pi + 1
       }
       checkStatements(stmt.body, env, diags)
-      if retType.kind != "any" { checkReturnTypes(stmt.body, retType, env, diags) }
+      if retType.kind != "any" && retType.kind != "typeParam" { checkReturnTypes(stmt.body, retType, env, diags) }
       env.pop()
     }
     case "ClassDeclaration" {
       env.define(stmt.name.name, { kind: "named", name: stmt.name.name })
+      if stmt.implements && stmt.implements.length > 0 {
+        checkImplements(stmt, env, diags)
+      }
     }
     case "ExpressionStatement" {
       inferExpression(stmt.expression, env)
@@ -323,6 +407,76 @@ fn checkStatement(stmt, env, diags) {
     }
     case "InterfaceDeclaration" {
       env.define(stmt.name.name, { kind: "named", name: stmt.name.name })
+      // Register interface members for conformance checking
+      const members = new Map()
+      for prop in stmt.properties {
+        let propType = annotationToType(prop.valueType)
+        if prop.method {
+          const mParams = (prop.params || []).map(annotationToType)
+          propType = { kind: "function", params: mParams, returnType: annotationToType(prop.valueType) }
+        }
+        members.set(prop.name.name, { type: propType, optional: prop.optional, method: prop.method })
+      }
+      const extendNames = (stmt.extends || []).map((id) => id.name)
+      env.interfaces.set(stmt.name.name, { name: stmt.name.name, members: members, extends: extendNames })
+    }
+  }
+}
+
+// ── Interface Conformance ────────────────────────────────────────
+
+fn collectInterfaceMembers(ifaceName, env) {
+  const iface = env.interfaces.get(ifaceName)
+  if !iface { return new Map() }
+  const all = new Map()
+  for parent in iface.extends {
+    const parentMembers = collectInterfaceMembers(parent, env)
+    for entry in Array.from(parentMembers) { all.set(entry[0], entry[1]) }
+  }
+  for entry in Array.from(iface.members) { all.set(entry[0], entry[1]) }
+  return all
+}
+
+fn checkImplements(cls, env, diags) {
+  if !cls.implements { return }
+  for ifaceId in cls.implements {
+    const ifaceDef = env.interfaces.get(ifaceId.name)
+    if !ifaceDef {
+      diags.push({
+        line: getLine(cls), column: getCol(cls),
+        message: "Interface '" + ifaceId.name + "' is not defined",
+        severity: "error",
+      })
+      continue
+    }
+    const required = collectInterfaceMembers(ifaceId.name, env)
+    const classMembers = new Map()
+    for member in cls.body {
+      if member.type == "ClassMethod" {
+        const mName = member.name.name || member.name.value
+        if mName && member.kind != "constructor" {
+          classMembers.set(mName, { isMethod: true })
+        }
+      } else if member.type == "ClassField" {
+        const fName = member.name.name || member.name.value
+        if fName {
+          classMembers.set(fName, { isMethod: false })
+        }
+      }
+    }
+    for entry in Array.from(required) {
+      const memberName = entry[0]
+      const memberDef = entry[1]
+      if memberDef.optional { continue }
+      const classMember = classMembers.get(memberName)
+      if !classMember {
+        const memberKind = memberDef.method ? "method" : "property"
+        diags.push({
+          line: getLine(cls), column: getCol(cls),
+          message: "Class '" + cls.name.name + "' is missing required " + memberKind + " '" + memberName + "' from interface '" + ifaceId.name + "'",
+          severity: "error",
+        })
+      }
     }
   }
 }
