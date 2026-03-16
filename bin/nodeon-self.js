@@ -4,9 +4,9 @@
 const path = require("path");
 const fs = require("fs");
 
-const cliBundlePath = path.resolve(__dirname, "../dist-no/nodeon-cli.cjs");
+const cliBundlePath = path.resolve(__dirname, "../dist/nodeon-cli.cjs");
 if (!fs.existsSync(cliBundlePath)) {
-  console.error("Error: dist-no/nodeon-cli.cjs not found.");
+  console.error("Error: dist/nodeon-cli.cjs not found.");
   console.error("Run 'npm run build' first.");
   process.exit(1);
 }
