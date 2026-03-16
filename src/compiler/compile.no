@@ -4,11 +4,12 @@ import { generateJS, generateJSWithSourceMap } from "./generator/js-generator.no
 import { typeCheck } from "./type-checker.no"
 import { SourceMapBuilder } from "./generator/source-map.no"
 import { format } from "./formatter/formatter.no"
+import { optimize } from "./optimizer/optimizer.no"
 
 // Compile Nodeon source to JavaScript
 export fn compile(source, options) {
   const opts = options ?? {}
-  const ast = compileToAST(source)
+  let ast = compileToAST(source)
   const rawErrors = ast.errors ?? []
   const parserErrors = []
   for err in rawErrors {
@@ -16,6 +17,10 @@ export fn compile(source, options) {
   }
   const typeErrors = opts.check ? typeCheck(ast) : []
   const diagnostics = parserErrors.concat(typeErrors)
+  // Run AST optimizer (constant folding, dead branch elimination, peephole opts)
+  if opts.optimize != false {
+    ast = optimize(ast)
+  }
   const js = generateJS(ast, opts.minify ?? false)
   return { js: js, ast: ast, diagnostics: diagnostics }
 }
@@ -23,7 +28,10 @@ export fn compile(source, options) {
 // Compile with source map
 export fn compileWithSourceMap(source, sourceFile, outputFile, options) {
   const opts = options ?? {}
-  const ast = compileToAST(source)
+  let ast = compileToAST(source)
+  if opts.optimize != false {
+    ast = optimize(ast)
+  }
   const result = generateJSWithSourceMap(ast, sourceFile, source, outputFile, opts.minify ?? false)
   return { js: result.js, ast: ast, sourceMap: result.sourceMap }
 }
@@ -41,3 +49,4 @@ export { generateJS, generateJSWithSourceMap } from "./generator/js-generator.no
 export { SourceMapBuilder } from "./generator/source-map.no"
 export { typeCheck } from "./type-checker.no"
 export { format } from "./formatter/formatter.no"
+export { optimize } from "./optimizer/optimizer.no"

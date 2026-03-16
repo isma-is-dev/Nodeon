@@ -164,6 +164,10 @@ fn emitStatement(stmt, ctx) {
     case "GoStatement" { return emitGo(stmt, ctx) }
     case "DebuggerStatement" { return "debugger;" }
     case "LabeledStatement" { return stmt.label + ": " + emitStatement(stmt.body, ctx) }
+    case "_OptimizedBlock" {
+      // Emitted by the optimizer when dead branches are eliminated
+      return stmt.body.map((s) => pad(ctx) + emitStatement(s, ctx)).join(ctx.nl)
+    }
     default { throw new Error("Unsupported statement type: " + stmt.type) }
   }
 }
@@ -257,9 +261,26 @@ fn emitFor(stmt, ctx) {
     return "for" + ctx.sp + "(let " + v + ctx.sp + "=" + ctx.sp + start + ";" + ctx.sp + v + ctx.sp + "<=" + ctx.sp + end + ";" + ctx.sp + v + "++)" + ctx.sp + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '}'
   }
 
-  // Nodeon 'in' -> JS 'of', Nodeon 'of' -> JS 'in'
-  const jsKind = stmt.kind == "of" ? "in" : "of"
-  return "for" + ctx.sp + "(const " + varStr + " " + jsKind + " " + emitExpression(iter, ctx) + ")" + ctx.sp + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '}'
+  // Nodeon 'of' -> JS 'in' (key iteration, not array-optimizable)
+  if stmt.kind == "of" {
+    return "for" + ctx.sp + "(const " + varStr + " in " + emitExpression(iter, ctx) + ")" + ctx.sp + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '}'
+  }
+
+  // V8-optimized indexed loop for array iteration:
+  // for item in arr → for(let _i=0,_len=arr.length;_i<_len;_i++){const item=arr[_i]; ...}
+  // Only when the loop variable is a simple identifier (not destructuring)
+  // and the iterable is a simple identifier (likely an array variable).
+  if stmt.variable.type == "Identifier" && iter.type == "Identifier" {
+    const arrName = emitExpression(iter, ctx)
+    const v = stmt.variable.name
+    const idx = "_i$" + v
+    const len = "_len$" + v
+    const binding = pad(forScope) + "const " + v + ctx.sp + "=" + ctx.sp + arrName + "[" + idx + "];"
+    return "for" + ctx.sp + "(let " + idx + ctx.sp + "=" + ctx.sp + "0," + ctx.sp + len + ctx.sp + "=" + ctx.sp + arrName + ".length;" + ctx.sp + idx + ctx.sp + "<" + ctx.sp + len + ";" + ctx.sp + idx + "++)" + ctx.sp + '{' + ctx.nl + binding + ctx.nl + body + ctx.nl + pad(ctx) + '}'
+  }
+
+  // Fallback: for...of for complex iterables (member expressions, call results, etc.)
+  return "for" + ctx.sp + "(const " + varStr + " of " + emitExpression(iter, ctx) + ")" + ctx.sp + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '}'
 }
 
 fn emitWhile(stmt, ctx) {
@@ -678,6 +699,28 @@ fn emitCall(call, ctx) {
   } else {
     callee = emitExpression(call.callee, ctx)
   }
+
+  // ── Strength reduction for Math builtins ──────────────────────
+  if call.callee.type == "MemberExpression" && call.callee.object.type == "Identifier" && call.callee.object.name == "Math" {
+    const method = call.callee.property.name
+    const args = call.arguments
+
+    // Math.pow(x, 2) → (x * x),  Math.pow(x, 3) → (x * x * x)
+    if method == "pow" && args.length == 2 && args[1].type == "Literal" && args[1].literalType == "number" {
+      const exp = args[1].value
+      const base = emitExpression(args[0], ctx)
+      if exp == 2 { return "(" + base + ctx.sp + "*" + ctx.sp + base + ")" }
+      if exp == 3 { return "(" + base + ctx.sp + "*" + ctx.sp + base + ctx.sp + "*" + ctx.sp + base + ")" }
+      if exp == 0 { return "1" }
+      if exp == 1 { return base }
+    }
+
+    // Math.abs(literal) → pre-computed
+    if method == "abs" && args.length == 1 && args[0].type == "Literal" && args[0].literalType == "number" {
+      return String(Math.abs(args[0].value))
+    }
+  }
+
   const allArgs = call.arguments.map((a) => emitExpression(a, ctx))
   if call.namedArgs && call.namedArgs.length > 0 {
     const props = call.namedArgs.map((na) => na.name.name + ":" + ctx.sp + emitExpression(na.value, ctx)).join("," + ctx.sp)
@@ -713,6 +756,15 @@ fn emitBinary(bin, ctx) {
     throw new Error("Range operator '..' can only be used inside 'for' loops (e.g., for i in 0..10)")
   }
 
+  // ── Codegen-level constant folding ──────────────────────────────
+  // Catch any remaining literal-on-literal operations the AST optimizer missed
+  if bin.left.type == "Literal" && bin.right.type == "Literal" {
+    const folded = foldBinaryLiterals(bin.operator, bin.left, bin.right)
+    if folded != undefined {
+      return folded
+    }
+  }
+
   let op = bin.operator
   if op == "==" { op = "===" }
   if op == "!=" { op = "!==" }
@@ -720,6 +772,39 @@ fn emitBinary(bin, ctx) {
   const left = parenthesizeIfNeeded(bin.left, bin.operator, ctx)
   const right = parenthesizeIfNeeded(bin.right, bin.operator, ctx)
   return left + ctx.sp + op + ctx.sp + right
+}
+
+// Compile-time evaluation of binary operations on two literal values.
+// Returns the JS string representation of the result, or undefined if not foldable.
+fn foldBinaryLiterals(op, leftNode, rightNode) {
+  const left = leftNode.value
+  const right = rightNode.value
+  let result = undefined
+
+  switch op {
+    case "+" { result = left + right }
+    case "-" { result = left - right }
+    case "*" { result = left * right }
+    case "/" {
+      if right != 0 { result = left / right }
+    }
+    case "%" {
+      if right != 0 { result = left % right }
+    }
+    case "**" { result = left ** right }
+    case "&" { result = left & right }
+    case "|" { result = left | right }
+    case "^" { result = left ^ right }
+    case "<<" { result = left << right }
+    case ">>" { result = left >> right }
+    case ">>>" { result = left >>> right }
+  }
+
+  if result == undefined { return undefined }
+  if typeof result == "number" { return String(result) }
+  if typeof result == "string" { return JSON.stringify(result) }
+  if typeof result == "boolean" { return String(result) }
+  return undefined
 }
 
 fn parenthesizeIfNeeded(expr, parentOp, ctx) {

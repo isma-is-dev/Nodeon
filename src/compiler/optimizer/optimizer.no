@@ -1,0 +1,497 @@
+// ── Nodeon AST Optimizer ─────────────────────────────────────────────
+// Performs compile-time optimizations on the AST before code generation.
+// Targets V8-friendly patterns for maximum runtime performance.
+
+// ── Public API ──────────────────────────────────────────────────────
+
+export fn optimize(ast) {
+  const program = {
+    type: ast.type,
+    body: ast.body.map((s) => optimizeStatement(s)),
+    errors: ast.errors,
+    loc: ast.loc,
+  }
+  return program
+}
+
+// ── Statement Optimization ──────────────────────────────────────────
+
+fn optimizeStatement(stmt) {
+  switch stmt.type {
+    case "VariableDeclaration" {
+      return {
+        ...stmt,
+        value: stmt.value ? optimizeExpression(stmt.value) : stmt.value,
+      }
+    }
+    case "ExpressionStatement" {
+      return {
+        ...stmt,
+        expression: optimizeExpression(stmt.expression),
+      }
+    }
+    case "FunctionDeclaration" {
+      return {
+        ...stmt,
+        body: stmt.body.map((s) => optimizeStatement(s)),
+      }
+    }
+    case "ReturnStatement" {
+      return {
+        ...stmt,
+        value: stmt.value ? optimizeExpression(stmt.value) : stmt.value,
+      }
+    }
+    case "IfStatement" {
+      const cond = optimizeExpression(stmt.condition)
+
+      // Dead branch elimination: if(true) → keep consequent, if(false) → keep alternate
+      if cond.type == "Literal" && cond.literalType == "boolean" {
+        if cond.value == true {
+          // Return a block wrapper that just contains the consequent statements
+          return { type: "_OptimizedBlock", body: stmt.consequent.map((s) => optimizeStatement(s)) }
+        }
+        if cond.value == false && stmt.alternate {
+          return { type: "_OptimizedBlock", body: stmt.alternate.map((s) => optimizeStatement(s)) }
+        }
+        if cond.value == false && !stmt.alternate {
+          return { type: "_OptimizedBlock", body: [] }
+        }
+      }
+
+      return {
+        ...stmt,
+        condition: cond,
+        consequent: stmt.consequent.map((s) => optimizeStatement(s)),
+        alternate: stmt.alternate ? stmt.alternate.map((s) => optimizeStatement(s)) : stmt.alternate,
+      }
+    }
+    case "ForStatement" {
+      return {
+        ...stmt,
+        iterable: optimizeExpression(stmt.iterable),
+        body: stmt.body.map((s) => optimizeStatement(s)),
+      }
+    }
+    case "WhileStatement" {
+      return {
+        ...stmt,
+        condition: optimizeExpression(stmt.condition),
+        body: stmt.body.map((s) => optimizeStatement(s)),
+      }
+    }
+    case "DoWhileStatement" {
+      return {
+        ...stmt,
+        condition: optimizeExpression(stmt.condition),
+        body: stmt.body.map((s) => optimizeStatement(s)),
+      }
+    }
+    case "ExportDeclaration" {
+      if stmt.declaration {
+        return { ...stmt, declaration: optimizeStatement(stmt.declaration) }
+      }
+      return stmt
+    }
+    case "ClassDeclaration" {
+      return {
+        ...stmt,
+        body: stmt.body.map((m) => {
+          if m.type == "ClassMethod" {
+            return { ...m, body: m.body.map((s) => optimizeStatement(s)) }
+          }
+          if m.type == "ClassField" && m.value {
+            return { ...m, value: optimizeExpression(m.value) }
+          }
+          return m
+        }),
+      }
+    }
+    case "TryCatchStatement" {
+      return {
+        ...stmt,
+        tryBlock: stmt.tryBlock.map((s) => optimizeStatement(s)),
+        catchBlock: stmt.catchBlock.map((s) => optimizeStatement(s)),
+        finallyBlock: stmt.finallyBlock ? stmt.finallyBlock.map((s) => optimizeStatement(s)) : stmt.finallyBlock,
+      }
+    }
+    case "SwitchStatement" {
+      return {
+        ...stmt,
+        discriminant: optimizeExpression(stmt.discriminant),
+        cases: stmt.cases.map((c) => ({
+          ...c,
+          test: c.test ? optimizeExpression(c.test) : c.test,
+          consequent: c.consequent.map((s) => optimizeStatement(s)),
+        })),
+      }
+    }
+    case "MatchStatement" {
+      return {
+        ...stmt,
+        discriminant: optimizeExpression(stmt.discriminant),
+        cases: stmt.cases.map((c) => ({
+          ...c,
+          pattern: c.pattern ? optimizeExpression(c.pattern) : c.pattern,
+          guard: c.guard ? optimizeExpression(c.guard) : c.guard,
+          body: c.body.map((s) => optimizeStatement(s)),
+        })),
+      }
+    }
+    case "ThrowStatement" {
+      return { ...stmt, value: optimizeExpression(stmt.value) }
+    }
+    case "LabeledStatement" {
+      return { ...stmt, body: optimizeStatement(stmt.body) }
+    }
+    default {
+      return stmt
+    }
+  }
+}
+
+// ── Expression Optimization ─────────────────────────────────────────
+
+fn optimizeExpression(expr) {
+  if !expr { return expr }
+
+  switch expr.type {
+    case "BinaryExpression" {
+      return optimizeBinaryExpression(expr)
+    }
+    case "UnaryExpression" {
+      return optimizeUnaryExpression(expr)
+    }
+    case "CallExpression" {
+      return {
+        ...expr,
+        callee: optimizeExpression(expr.callee),
+        arguments: expr.arguments.map((a) => optimizeExpression(a)),
+      }
+    }
+    case "MemberExpression" {
+      return {
+        ...expr,
+        object: optimizeExpression(expr.object),
+        property: expr.computed ? optimizeExpression(expr.property) : expr.property,
+      }
+    }
+    case "ArrayExpression" {
+      return {
+        ...expr,
+        elements: expr.elements.map((e) => optimizeExpression(e)),
+      }
+    }
+    case "ObjectExpression" {
+      return {
+        ...expr,
+        properties: expr.properties.map((p) => ({
+          ...p,
+          value: optimizeExpression(p.value),
+          key: p.computed ? optimizeExpression(p.key) : p.key,
+        })),
+      }
+    }
+    case "ArrowFunction" {
+      if Array.isArray(expr.body) {
+        return { ...expr, body: expr.body.map((s) => optimizeStatement(s)) }
+      }
+      return { ...expr, body: optimizeExpression(expr.body) }
+    }
+    case "AssignmentExpression" {
+      return {
+        ...expr,
+        left: optimizeExpression(expr.left),
+        right: optimizeExpression(expr.right),
+      }
+    }
+    case "CompoundAssignmentExpression" {
+      return {
+        ...expr,
+        left: optimizeExpression(expr.left),
+        right: optimizeExpression(expr.right),
+      }
+    }
+    case "TernaryExpression" {
+      const cond = optimizeExpression(expr.condition)
+      const cons = optimizeExpression(expr.consequent)
+      const alt = optimizeExpression(expr.alternate)
+      // Fold: true ? a : b → a,  false ? a : b → b
+      if cond.type == "Literal" && cond.literalType == "boolean" {
+        if cond.value == true { return cons }
+        return alt
+      }
+      return { ...expr, condition: cond, consequent: cons, alternate: alt }
+    }
+    case "AwaitExpression" {
+      return { ...expr, argument: optimizeExpression(expr.argument) }
+    }
+    case "SpreadExpression" {
+      return { ...expr, argument: optimizeExpression(expr.argument) }
+    }
+    case "NewExpression" {
+      return {
+        ...expr,
+        callee: optimizeExpression(expr.callee),
+        arguments: expr.arguments.map((a) => optimizeExpression(a)),
+      }
+    }
+    case "TemplateLiteral" {
+      return optimizeTemplateLiteral(expr)
+    }
+    default {
+      return expr
+    }
+  }
+}
+
+// ── Constant Folding ────────────────────────────────────────────────
+// Evaluates binary operations on known literals at compile time.
+
+fn optimizeBinaryExpression(expr) {
+  const left = optimizeExpression(expr.left)
+  const right = optimizeExpression(expr.right)
+
+  // Don't fold range operator (..) — it's handled by ForStatement
+  if expr.operator == ".." {
+    return { ...expr, left: left, right: right }
+  }
+
+  // Don't fold pipe operator (|>) — it's a function call
+  if expr.operator == "|>" {
+    return { ...expr, left: left, right: right }
+  }
+
+  // Constant folding: both operands are literals
+  if left.type == "Literal" && right.type == "Literal" {
+    const result = evalBinOp(expr.operator, left.value, right.value)
+    if result != undefined {
+      return makeLiteral(result, expr.loc)
+    }
+  }
+
+  // ── Peephole optimizations (algebraic identities) ─────────────
+  // These apply even when one operand is not a literal.
+
+  // x + 0 → x, 0 + x → x
+  if expr.operator == "+" {
+    if isLiteralNumber(right, 0) { return left }
+    if isLiteralNumber(left, 0) { return right }
+  }
+
+  // x - 0 → x
+  if expr.operator == "-" {
+    if isLiteralNumber(right, 0) { return left }
+    // x - x → 0 (when both sides are the same identifier)
+    if left.type == "Identifier" && right.type == "Identifier" && left.name == right.name {
+      return makeLiteral(0, expr.loc)
+    }
+  }
+
+  // x * 1 → x, 1 * x → x
+  if expr.operator == "*" {
+    if isLiteralNumber(right, 1) { return left }
+    if isLiteralNumber(left, 1) { return right }
+    // x * 0 → 0 (safe for numbers, not for side-effect expressions)
+    if isLiteralNumber(right, 0) && isPureExpression(left) { return makeLiteral(0, expr.loc) }
+    if isLiteralNumber(left, 0) && isPureExpression(right) { return makeLiteral(0, expr.loc) }
+  }
+
+  // x / 1 → x
+  if expr.operator == "/" {
+    if isLiteralNumber(right, 1) { return left }
+  }
+
+  // Strength reduction: x ** 2 → x * x
+  if expr.operator == "**" && isLiteralNumber(right, 2) {
+    return {
+      type: "BinaryExpression",
+      operator: "*",
+      left: left,
+      right: left,
+      loc: expr.loc,
+    }
+  }
+
+  // Boolean simplifications
+  // x && true → x, x || false → x
+  if expr.operator == "&&" && isLiteralBoolean(right, true) { return left }
+  if expr.operator == "||" && isLiteralBoolean(right, false) { return left }
+  // true && x → x, false || x → x
+  if expr.operator == "&&" && isLiteralBoolean(left, true) { return right }
+  if expr.operator == "||" && isLiteralBoolean(left, false) { return right }
+  // false && x → false (short-circuit, safe if x is pure)
+  if expr.operator == "&&" && isLiteralBoolean(left, false) && isPureExpression(right) {
+    return makeLiteral(false, expr.loc)
+  }
+  // true || x → true (short-circuit, safe if x is pure)
+  if expr.operator == "||" && isLiteralBoolean(left, true) && isPureExpression(right) {
+    return makeLiteral(true, expr.loc)
+  }
+
+  // x === x → true (for identifiers, safe assumption)
+  if (expr.operator == "===" || expr.operator == "==") && left.type == "Identifier" && right.type == "Identifier" && left.name == right.name {
+    return makeLiteral(true, expr.loc)
+  }
+
+  return { ...expr, left: left, right: right }
+}
+
+fn optimizeUnaryExpression(expr) {
+  const arg = optimizeExpression(expr.argument)
+
+  // Constant folding for unary ops on literals
+  if arg.type == "Literal" {
+    const result = evalUnaryOp(expr.operator, arg.value)
+    if result != undefined {
+      return makeLiteral(result, expr.loc)
+    }
+  }
+
+  // Double negation: !!x → x (when x is known boolean from comparison)
+  if expr.operator == "!" && arg.type == "UnaryExpression" && arg.operator == "!" {
+    // Only safe when the inner value is boolean
+    const inner = arg.argument
+    if inner.type == "BinaryExpression" {
+      const boolOps = ["==", "!=", "===", "!==", "<", ">", "<=", ">=", "instanceof"]
+      if boolOps.includes(inner.operator) {
+        return inner
+      }
+    }
+    if inner.type == "Literal" && inner.literalType == "boolean" {
+      return inner
+    }
+  }
+
+  return { ...expr, argument: arg }
+}
+
+// ── Template Literal Optimization ───────────────────────────────────
+// Collapse adjacent text parts that result from constant folding.
+
+fn optimizeTemplateLiteral(expr) {
+  const parts = expr.parts.map((p) => {
+    if p.kind == "Expression" {
+      return { ...p, expression: optimizeExpression(p.expression) }
+    }
+    return p
+  })
+
+  // Collapse: if all parts are text (no expressions), collapse to a string literal
+  const allText = parts.every((p) => p.kind == "Text")
+  if allText {
+    const text = parts.map((p) => p.value).join("")
+    return { type: "Literal", value: text, literalType: "string", loc: expr.loc }
+  }
+
+  // Inline literal expressions into adjacent text parts
+  const collapsed = []
+  for p in parts {
+    if p.kind == "Expression" && p.expression.type == "Literal" && (p.expression.literalType == "string" || p.expression.literalType == "number") {
+      // Convert literal expression to text
+      const textValue = String(p.expression.value)
+      const last = collapsed.length > 0 ? collapsed[collapsed.length - 1] : null
+      if last && last.kind == "Text" {
+        // Merge with previous text part
+        collapsed[collapsed.length - 1] = { kind: "Text", value: last.value + textValue }
+      } else {
+        collapsed.push({ kind: "Text", value: textValue })
+      }
+    } else {
+      collapsed.push(p)
+    }
+  }
+
+  // After collapsing, if everything became text, return a string literal
+  if collapsed.length == 1 && collapsed[0].kind == "Text" {
+    return { type: "Literal", value: collapsed[0].value, literalType: "string", loc: expr.loc }
+  }
+
+  return { ...expr, parts: collapsed }
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────
+
+fn makeLiteral(value, loc) {
+  let litType = typeof value
+  if value == null { litType = "null" }
+  return { type: "Literal", value: value, literalType: litType, loc: loc }
+}
+
+fn isLiteralNumber(expr, n) {
+  return expr.type == "Literal" && expr.literalType == "number" && expr.value == n
+}
+
+fn isLiteralBoolean(expr, val) {
+  return expr.type == "Literal" && expr.literalType == "boolean" && expr.value == val
+}
+
+fn isPureExpression(expr) {
+  // An expression is pure if evaluating it has no side effects
+  switch expr.type {
+    case "Literal" { return true }
+    case "Identifier" { return true }
+    case "MemberExpression" {
+      // obj.prop is pure if obj is pure (no getter side-effects assumed)
+      return isPureExpression(expr.object)
+    }
+    case "BinaryExpression" {
+      return isPureExpression(expr.left) && isPureExpression(expr.right)
+    }
+    case "UnaryExpression" {
+      if expr.operator == "delete" { return false }
+      return isPureExpression(expr.argument)
+    }
+    case "ArrayExpression" {
+      return expr.elements.every((e) => isPureExpression(e))
+    }
+    case "TemplateLiteral" { return true }
+    default { return false }
+  }
+}
+
+fn evalBinOp(op, left, right) {
+  switch op {
+    case "+" { return left + right }
+    case "-" { return left - right }
+    case "*" { return left * right }
+    case "/" {
+      if right == 0 { return undefined }
+      return left / right
+    }
+    case "%" {
+      if right == 0 { return undefined }
+      return left % right
+    }
+    case "**" { return left ** right }
+    case "==" { return left === right }
+    case "===" { return left === right }
+    case "!=" { return left !== right }
+    case "!==" { return left !== right }
+    case "<" { return left < right }
+    case ">" { return left > right }
+    case "<=" { return left <= right }
+    case ">=" { return left >= right }
+    case "&&" { return left && right }
+    case "||" { return left || right }
+    case "??" { return left ?? right }
+    case "&" { return left & right }
+    case "|" { return left | right }
+    case "^" { return left ^ right }
+    case "<<" { return left << right }
+    case ">>" { return left >> right }
+    case ">>>" { return left >>> right }
+    default { return undefined }
+  }
+}
+
+fn evalUnaryOp(op, arg) {
+  switch op {
+    case "-" { return -arg }
+    case "+" { return +arg }
+    case "!" { return !arg }
+    case "~" { return ~arg }
+    case "typeof" { return typeof arg }
+    default { return undefined }
+  }
+}
