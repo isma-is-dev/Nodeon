@@ -1,0 +1,648 @@
+import { ParserExpressions } from "./parser-expressions.js";
+export class ParserStatements extends ParserExpressions {
+  constructor(tokens, source) {
+    super(tokens, source);
+  }
+
+  parseBlock() {
+    this.consumeDelimiter("{", `Expected '{'`);
+    const statements = [];
+    while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+      statements.push(this.parseStatement());
+    }
+    this.consumeDelimiter("}", "Expected '}'");
+    return statements;
+  }
+
+  parseAsync() {
+    this.consumeKeyword("async");
+    const tok = this.peek();
+    if (tok.type === "Keyword" && tok.value === "fn") {
+      const next = this.peekNext();
+      return this.parseFunctionDeclaration(true, next?.type === "Operator" && next?.value === "*");
+    }
+    this.error(tok, "Expected 'fn' after 'async'");
+  }
+
+  parseFunctionDeclaration(isAsync, isGenerator) {
+    const isGen = isGenerator ?? false;
+    this.consumeKeyword("fn");
+    if (isGen && this.checkOperator("*")) {
+      this.advance();
+    }
+    const name = this.consumeIdentifier("Expected function name");
+    const typeParams = this.parseTypeParams();
+    this.consumeDelimiter("(", "Expected '('");
+    const params = this.parseParamList();
+    this.consumeDelimiter(")", "Expected ')'");
+    let returnType = undefined;
+    if (this.checkDelimiter(":")) {
+      this.advance();
+      returnType = this.parseTypeAnnotation();
+    }
+    if (this.checkOperator("=")) {
+      this.advance();
+      const expr = this.parseExpression();
+      return { type: "FunctionDeclaration", name: name, params: params, body: [{ type: "ExpressionStatement", expression: expr }], async: isAsync, generator: isGen, returnType: returnType, typeParams: typeParams };
+    }
+    const body = this.parseBlock();
+    return { type: "FunctionDeclaration", name: name, params: params, body: body, async: isAsync, generator: isGen, returnType: returnType, typeParams: typeParams };
+  }
+
+  parseParamList() {
+    const params = [];
+    if (this.checkDelimiter(")")) {
+      return params;
+    }
+    do {
+      if (this.checkDelimiter(")")) {
+        break;
+      }
+      let rest = false;
+      let dv = undefined;
+      if (this.checkOperator("...")) {
+        this.advance();
+        rest = true;
+      }
+      if (this.checkDelimiter("{")) {
+        const pattern = this.parseObjectPattern();
+        if (this.checkOperator("=")) {
+          this.advance();
+          dv = this.parseExpression();
+        }
+        params.push({ type: "Param", name: "__destructured", pattern: pattern, defaultValue: dv, rest: rest });
+        continue;
+      }
+      if (this.checkDelimiter("[")) {
+        const pattern = this.parseArrayPattern();
+        if (this.checkOperator("=")) {
+          this.advance();
+          dv = this.parseExpression();
+        }
+        params.push({ type: "Param", name: "__destructured", pattern: pattern, defaultValue: dv, rest: rest });
+        continue;
+      }
+      const tok = this.peek();
+      if (!this.isIdentifierLike(tok)) {
+        this.error(tok, "Expected parameter name");
+      }
+      this.advance();
+      let typeAnnotation = undefined;
+      if (this.checkDelimiter(":")) {
+        this.advance();
+        typeAnnotation = this.parseTypeAnnotation();
+      }
+      if (this.checkOperator("=")) {
+        this.advance();
+        dv = this.parseExpression();
+      }
+      params.push({ type: "Param", name: tok.value, typeAnnotation: typeAnnotation, defaultValue: dv, rest: rest });
+    } while (this.matchDelimiter(","));
+    return params;
+  }
+
+  parseIfStatement() {
+    this.consumeKeyword("if");
+    const condition = this.parseExpression();
+    const consequent = this.parseBlock();
+    let alternate = null;
+    if (this.checkKeyword("else")) {
+      this.advance();
+      if (this.checkKeyword("if")) {
+        alternate = [this.parseIfStatement()];
+      } else {
+        alternate = this.parseBlock();
+      }
+    }
+    return { type: "IfStatement", condition: condition, consequent: consequent, alternate: alternate };
+  }
+
+  parseForStatement() {
+    this.consumeKeyword("for");
+    let variable = null;
+    if (this.checkDelimiter("{")) {
+      variable = this.parseObjectPattern();
+    } else if (this.checkDelimiter("[")) {
+      variable = this.parseArrayPattern();
+    } else {
+      variable = this.consumeIdentifier("Expected loop variable");
+    }
+    let kind = "in";
+    if (this.checkKeyword("of")) {
+      kind = "of";
+      this.advance();
+    } else {
+      this.consumeKeyword("in");
+    }
+    const iterable = this.parseExpression();
+    const body = this.parseBlock();
+    return { type: "ForStatement", variable: variable, iterable: iterable, body: body, kind: kind };
+  }
+
+  parseWhileStatement() {
+    this.consumeKeyword("while");
+    const condition = this.parseExpression();
+    const body = this.parseBlock();
+    return { type: "WhileStatement", condition: condition, body: body };
+  }
+
+  parseDoWhileStatement() {
+    this.consumeKeyword("do");
+    const body = this.parseBlock();
+    this.consumeKeyword("while");
+    const condition = this.parseExpression();
+    return { type: "DoWhileStatement", condition: condition, body: body };
+  }
+
+  parseReturnStatement() {
+    this.consumeKeyword("return");
+    if (this.isAtEnd() || this.checkDelimiter("}")) {
+      return { type: "ReturnStatement", value: null };
+    }
+    const value = this.parseExpression();
+    return { type: "ReturnStatement", value: value };
+  }
+
+  parseImportDeclaration() {
+    this.consumeKeyword("import");
+    let defaultImport = null;
+    const namedImports = [];
+    if (this.checkDelimiter("{")) {
+      this.advance();
+      if (!this.checkDelimiter("}")) {
+        do {
+          const tok = this.peek();
+          if (!this.isIdentifierLike(tok)) {
+            this.error(tok, "Expected import name");
+          }
+          const name = tok.value;
+          this.advance();
+          let alias = undefined;
+          if (this.checkContextualKeyword("as") || this.checkKeyword("as")) {
+            this.advance();
+            const aliasTok = this.peek();
+            if (!this.isIdentifierLike(aliasTok)) {
+              this.error(aliasTok, "Expected alias name");
+            }
+            alias = aliasTok.value;
+            this.advance();
+          }
+          namedImports.push({ type: "ImportSpecifier", name: name, alias: alias });
+        } while (this.matchDelimiter(","));
+      }
+      this.consumeDelimiter("}", "Expected '}'");
+    } else if (this.checkOperator("*")) {
+      this.advance();
+      const asTok = this.peek();
+      if ((asTok.type === "Identifier" || asTok.type === "Keyword") && asTok.value === "as") {
+        this.advance();
+      } else {
+        this.error(asTok, "Expected 'as' after '*'");
+      }
+      const tok = this.peek();
+      if (!this.isIdentifierLike(tok)) {
+        this.error(tok, "Expected module name");
+      }
+      defaultImport = "* as " + tok.value;
+      this.advance();
+    } else {
+      const tok = this.peek();
+      if (!this.isIdentifierLike(tok)) {
+        this.error(tok, "Expected module name");
+      }
+      defaultImport = tok.value;
+      this.advance();
+    }
+    this.consumeKeyword("from");
+    const srcTok = this.peek();
+    if (srcTok.type !== "String" && srcTok.type !== "RawString") {
+      this.error(srcTok, "Expected module source string");
+    }
+    this.advance();
+    return { type: "ImportDeclaration", defaultImport: defaultImport, namedImports: namedImports, source: srcTok.value };
+  }
+
+  parseExportDeclaration() {
+    this.consumeKeyword("export");
+    if (this.checkKeyword("default")) {
+      this.advance();
+      const declaration = this.parseStatement();
+      return { type: "ExportDeclaration", declaration: declaration, isDefault: true };
+    }
+    if (this.checkOperator("*")) {
+      this.advance();
+      let exportAllAlias = undefined;
+      if (this.checkContextualKeyword("as")) {
+        this.advance();
+        exportAllAlias = this.consumeIdentifier("Expected alias name").name;
+      }
+      this.consumeKeyword("from");
+      const allSource = this.peek().value;
+      this.advance();
+      return { type: "ExportDeclaration", isDefault: false, exportAll: true, source: allSource, exportAllAlias: exportAllAlias };
+    }
+    if (this.checkDelimiter("{")) {
+      this.advance();
+      const namedExports = [];
+      while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+        const name = this.consumeIdentifier("Expected export name").name;
+        let alias = undefined;
+        if (this.checkContextualKeyword("as")) {
+          this.advance();
+          alias = this.consumeIdentifier("Expected alias name").name;
+        }
+        namedExports.push({ type: "ExportSpecifier", name: name, alias: alias });
+        if (!this.matchDelimiter(",")) {
+          break;
+        }
+      }
+      this.consumeDelimiter("}", "Expected '}'");
+      let source = undefined;
+      if (this.checkKeyword("from")) {
+        this.advance();
+        source = this.peek().value;
+        this.advance();
+      }
+      return { type: "ExportDeclaration", isDefault: false, namedExports: namedExports, source: source };
+    }
+    const declaration = this.parseStatement();
+    return { type: "ExportDeclaration", declaration: declaration, isDefault: false };
+  }
+
+  parseClassDeclaration() {
+    this.consumeKeyword("class");
+    const name = this.consumeIdentifier("Expected class name");
+    const typeParams = this.parseTypeParams();
+    let superClass = null;
+    if (this.checkKeyword("extends")) {
+      this.advance();
+      superClass = this.consumeIdentifier("Expected superclass name");
+    }
+    let implementsList = undefined;
+    if (this.checkContextualKeyword("implements")) {
+      this.advance();
+      implementsList = [];
+      do {
+        implementsList.push(this.consumeIdentifier("Expected interface name after 'implements'"));
+      } while (this.checkDelimiter(",") && this.advance());
+    }
+    this.consumeDelimiter("{", `Expected '{'`);
+    const body = [];
+    while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+      let isStatic = false;
+      let isAsync = false;
+      let kind = "method";
+      if (this.checkKeyword("static")) {
+        isStatic = true;
+        this.advance();
+      }
+      if (this.checkKeyword("async")) {
+        isAsync = true;
+        this.advance();
+      }
+      if (this.peek().type === "Identifier" && (this.peek().value === "get" || this.peek().value === "set")) {
+        const next = this.peekNext();
+        if (next && (next.type === "Identifier" || next.type === "Delimiter" && next.value === "[")) {
+          kind = this.peek().value;
+          this.advance();
+        }
+      }
+      let isGenerator = false;
+      if (this.checkKeyword("fn")) {
+        this.advance();
+        if (this.checkOperator("*")) {
+          isGenerator = true;
+          this.advance();
+        }
+      }
+      let memberName = null;
+      let computed = false;
+      if (this.checkDelimiter("[")) {
+        computed = true;
+        this.advance();
+        memberName = this.parseExpression();
+        this.consumeDelimiter("]", "Expected ']'");
+      } else {
+        memberName = this.consumeIdentifier("Expected member name");
+      }
+      if (!computed && memberName.name === "constructor") {
+        kind = "constructor";
+      }
+      if (this.checkDelimiter("(")) {
+        this.consumeDelimiter("(", "Expected '('");
+        const params = this.parseParamList();
+        this.consumeDelimiter(")", "Expected ')'");
+        let returnType = undefined;
+        if (this.checkDelimiter(":")) {
+          this.advance();
+          returnType = this.parseTypeAnnotation();
+        }
+        const methodBody = this.parseBlock();
+        body.push({ type: "ClassMethod", name: memberName, params: params, body: methodBody, async: isAsync, generator: isGenerator, static: isStatic, kind: kind, computed: computed, returnType: returnType });
+      } else {
+        let value = null;
+        if (this.checkOperator("=")) {
+          this.advance();
+          value = this.parseExpression();
+        }
+        body.push({ type: "ClassField", name: memberName, value: value, static: isStatic, computed: computed });
+      }
+    }
+    this.consumeDelimiter("}", "Expected '}'");
+    return { type: "ClassDeclaration", name: name, superClass: superClass, implements: implementsList, body: body, typeParams: typeParams };
+  }
+
+  parseTryCatch() {
+    this.consumeKeyword("try");
+    const tryBlock = this.parseBlock();
+    let catchParam = null;
+    let catchBlock = [];
+    let finallyBlock = null;
+    if (this.checkKeyword("catch")) {
+      this.consumeKeyword("catch");
+      if (this.checkDelimiter("(")) {
+        this.advance();
+        catchParam = this.consumeIdentifier("Expected catch parameter");
+        this.consumeDelimiter(")", "Expected ')'");
+      } else if (this.peek().type === "Identifier") {
+        catchParam = this.consumeIdentifier("Expected catch parameter");
+      }
+      catchBlock = this.parseBlock();
+    }
+    if (this.checkKeyword("finally")) {
+      this.advance();
+      finallyBlock = this.parseBlock();
+    }
+    return { type: "TryCatchStatement", tryBlock: tryBlock, catchParam: catchParam, catchBlock: catchBlock, finallyBlock: finallyBlock };
+  }
+
+  parseThrowStatement() {
+    this.consumeKeyword("throw");
+    const value = this.parseExpression();
+    return { type: "ThrowStatement", value: value };
+  }
+
+  parseConstDeclaration() {
+    this.consumeKeyword("const");
+    return this.parseVariableOrDestructuring("const");
+  }
+
+  parseLetDeclaration() {
+    this.consumeKeyword("let");
+    return this.parseVariableOrDestructuring("let");
+  }
+
+  parseVarDeclaration() {
+    this.consumeKeyword("var");
+    return this.parseVariableOrDestructuring("var");
+  }
+
+  parseVariableOrDestructuring(kind) {
+    if (this.checkDelimiter("{")) {
+      const pattern = this.parseObjectPattern();
+      this.consumeOperator("=", "Expected '=' after destructuring pattern");
+      const value = this.parseExpression();
+      return { type: "DestructuringDeclaration", pattern: pattern, value: value, kind: kind };
+    }
+    if (this.checkDelimiter("[")) {
+      const pattern = this.parseArrayPattern();
+      this.consumeOperator("=", "Expected '=' after destructuring pattern");
+      const value = this.parseExpression();
+      return { type: "DestructuringDeclaration", pattern: pattern, value: value, kind: kind };
+    }
+    return this.parseVariableDeclaration(kind);
+  }
+
+  parseVariableDeclaration(kind) {
+    const name = this.consumeIdentifier("Expected variable name");
+    let typeAnnotation = undefined;
+    if (this.checkDelimiter(":")) {
+      this.advance();
+      typeAnnotation = this.parseTypeAnnotation();
+    }
+    this.consumeOperator("=", "Expected '=' in assignment");
+    const value = this.parseExpression();
+    return { type: "VariableDeclaration", name: name, value: value, kind: kind, typeAnnotation: typeAnnotation };
+  }
+
+  parseSwitchStatement() {
+    this.consumeKeyword("switch");
+    const discriminant = this.parseExpression();
+    this.consumeDelimiter("{", `Expected '{'`);
+    const cases = [];
+    while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+      if (this.checkKeyword("case")) {
+        this.advance();
+        const test = this.parseExpression();
+        this.consumeDelimiter("{", `Expected '{'`);
+        const consequent = [];
+        while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+          consequent.push(this.parseStatement());
+        }
+        this.consumeDelimiter("}", "Expected '}'");
+        cases.push({ type: "SwitchCase", test: test, consequent: consequent });
+      } else if (this.checkKeyword("default")) {
+        this.advance();
+        this.consumeDelimiter("{", `Expected '{'`);
+        const consequent = [];
+        while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+          consequent.push(this.parseStatement());
+        }
+        this.consumeDelimiter("}", "Expected '}'");
+        cases.push({ type: "SwitchCase", test: null, consequent: consequent });
+      } else {
+        this.error(this.peek(), "Expected 'case' or 'default'");
+      }
+    }
+    this.consumeDelimiter("}", "Expected '}'");
+    return { type: "SwitchStatement", discriminant: discriminant, cases: cases };
+  }
+
+  parseMatchStatement() {
+    this.consumeKeyword("match");
+    const discriminant = this.parseExpression();
+    this.consumeDelimiter("{", `Expected '{'`);
+    const cases = [];
+    while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+      if (this.checkKeyword("case")) {
+        this.advance();
+        const pattern = this.parseExpression();
+        let guard = undefined;
+        if (this.checkKeyword("if")) {
+          this.advance();
+          guard = this.parseExpression();
+        }
+        const body = this.parseBlock();
+        cases.push({ type: "MatchCase", pattern: pattern, guard: guard, body: body });
+      } else if (this.checkKeyword("default")) {
+        this.advance();
+        const body = this.parseBlock();
+        cases.push({ type: "MatchCase", pattern: null, body: body });
+      } else {
+        this.error(this.peek(), "Expected 'case' or 'default' in match");
+      }
+    }
+    this.consumeDelimiter("}", "Expected '}'");
+    return { type: "MatchStatement", discriminant: discriminant, cases: cases };
+  }
+
+  parseEnumDeclaration() {
+    this.consumeKeyword("enum");
+    const nameTok = this.advance();
+    if (nameTok.type !== "Identifier") {
+      this.error(nameTok, "Expected enum name");
+    }
+    const name = { type: "Identifier", name: nameTok.value };
+    this.consumeDelimiter("{", `Expected '{' after enum name`);
+    const members = [];
+    while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+      const memberTok = this.advance();
+      if (memberTok.type !== "Identifier" && memberTok.type !== "Keyword") {
+        this.error(memberTok, "Expected enum member name");
+      }
+      const memberName = { type: "Identifier", name: memberTok.value };
+      let value = null;
+      if (this.checkOperator("=")) {
+        this.advance();
+        value = this.parseExpression();
+      }
+      members.push({ type: "EnumMember", name: memberName, value: value });
+      if (this.checkDelimiter(",")) {
+        this.advance();
+      }
+    }
+    this.consumeDelimiter("}", "Expected '}' after enum body");
+    return { type: "EnumDeclaration", name: name, members: members };
+  }
+
+  parseInterfaceDeclaration() {
+    this.consumeKeyword("interface");
+    const nameTok = this.advance();
+    if (nameTok.type !== "Identifier") {
+      this.error(nameTok, "Expected interface name");
+    }
+    const name = { type: "Identifier", name: nameTok.value };
+    let extendsIds = undefined;
+    if (this.checkKeyword("extends")) {
+      this.advance();
+      extendsIds = [];
+      do {
+        const extTok = this.advance();
+        if (extTok.type !== "Identifier") {
+          this.error(extTok, "Expected interface name after 'extends'");
+        }
+        extendsIds.push({ type: "Identifier", name: extTok.value });
+      } while (this.matchDelimiter(","));
+    }
+    this.consumeDelimiter("{", `Expected '{' after interface name`);
+    const properties = [];
+    while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+      const propTok = this.advance();
+      if (propTok.type !== "Identifier") {
+        this.error(propTok, "Expected property name in interface");
+      }
+      const propName = { type: "Identifier", name: propTok.value };
+      let optional = false;
+      if (this.checkOperator("?")) {
+        this.advance();
+        optional = true;
+      }
+      if (this.checkDelimiter("(")) {
+        this.advance();
+        const params = [];
+        while (!this.checkDelimiter(")") && !this.isAtEnd()) {
+          this.advance();
+          if (this.checkDelimiter(":")) {
+            this.advance();
+            params.push(this.parseTypeAnnotation());
+          }
+          if (this.checkDelimiter(",")) {
+            this.advance();
+          }
+        }
+        this.consumeDelimiter(")", "Expected ')' in method signature");
+        let returnType = { kind: "named", name: "void" };
+        if (this.checkDelimiter(":")) {
+          this.advance();
+          returnType = this.parseTypeAnnotation();
+        }
+        properties.push({ type: "InterfaceProperty", name: propName, valueType: returnType, optional: optional, method: true, params: params });
+      } else {
+        this.consumeDelimiter(":", "Expected ':' after property name");
+        const valueType = this.parseTypeAnnotation();
+        properties.push({ type: "InterfaceProperty", name: propName, valueType: valueType, optional: optional, method: false });
+      }
+      if (this.checkDelimiter(",") || this.checkDelimiter(";")) {
+        this.advance();
+      }
+    }
+    this.consumeDelimiter("}", "Expected '}' after interface body");
+    return { type: "InterfaceDeclaration", name: name, properties: properties, extends: extendsIds };
+  }
+
+  parseTypeOrADT() {
+    this.consumeContextualKeyword("type");
+    const name = this.consumeIdentifier("Expected type alias name");
+    const typeParams = this.parseTypeParams();
+    this.consumeOperator("=", "Expected '=' after type alias name");
+    const cur = this.peek();
+    const next = this.peekNext();
+    if (cur.type === "Identifier" && /^[A-Z]/.test(cur.value)) {
+      if (next?.type === "Delimiter" && (next.value === "(" || next.value === "|") || next?.type === "Operator" && next.value === "|") {
+        return this.parseADTVariants(name, typeParams);
+      }
+    }
+    const value = this.parseTypeAnnotation();
+    return { type: "TypeAliasDeclaration", name: name, typeParams: typeParams, value: value };
+  }
+
+  parseADTVariants(name, typeParams) {
+    const variants = [];
+    variants.push(this.parseOneVariant());
+    while ((this.checkOperator("|") || this.checkDelimiter("|")) && !this.isAtEnd()) {
+      this.advance();
+      variants.push(this.parseOneVariant());
+    }
+    return { type: "ADTDeclaration", name: name, typeParams: typeParams, variants: variants };
+  }
+
+  parseOneVariant() {
+    const vName = this.consumeIdentifier("Expected variant name");
+    const fields = [];
+    if (this.checkDelimiter("(")) {
+      this.advance();
+      if (!this.checkDelimiter(")")) {
+        do {
+          if (this.checkDelimiter(")")) {
+            break;
+          }
+          let fieldName = null;
+          let typeAnnotation = undefined;
+          const cur = this.peek();
+          const next = this.peekNext();
+          if ((cur.type === "Identifier" || this.isIdentifierLike(cur)) && next && next.type === "Delimiter" && next.value === ":") {
+            fieldName = { type: "Identifier", name: cur.value };
+            this.advance();
+            this.advance();
+            typeAnnotation = this.parseTypeAnnotation();
+          } else {
+            typeAnnotation = this.parseTypeAnnotation();
+          }
+          fields.push({ type: "ADTField", name: fieldName, typeAnnotation: typeAnnotation });
+        } while (this.matchDelimiter(","));
+      }
+      this.consumeDelimiter(")", "Expected ')'");
+    }
+    return { type: "ADTVariant", name: vName, fields: fields };
+  }
+
+  parseGoStatement() {
+    this.consumeKeyword("go");
+    if (this.checkDelimiter(`{`)) {
+      const body = this.parseBlock();
+      return { type: "GoStatement", expression: null, body: body };
+    }
+    const expression = this.parseExpression();
+    return { type: "GoStatement", expression: expression, body: null };
+  }
+}

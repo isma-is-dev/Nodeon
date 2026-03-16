@@ -11,6 +11,17 @@ if (!fs.existsSync(distEntry)) {
   process.exit(1);
 }
 
+const noResolvePlugin = {
+  name: "no-resolve",
+  setup(b) {
+    b.onResolve({ filter: /\.no$/ }, (args) => {
+      const jsPath = args.path.replace(/\.no$/, ".js");
+      const absPath = path.resolve(args.resolveDir, jsPath);
+      return { path: absPath };
+    });
+  },
+};
+
 build({
   entryPoints: [distEntry],
   outfile: outFile,
@@ -24,6 +35,7 @@ build({
     "@commands": path.resolve(__dirname, "../src/cli/commands"),
     "@compiler": path.resolve(__dirname, "../src/compiler"),
   },
+  plugins: [noResolvePlugin],
   logLevel: "info",
 }).catch((err) => {
   console.error(err);

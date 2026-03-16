@@ -1,0 +1,111 @@
+import { GREEN, RED, DIM, YELLOW, RESET } from "../utils/colors.js";
+import { compileFile } from "../utils/compile.js";
+import { resolveNodeonFile } from "./run.js";
+const fs = require("fs");
+const path = require("path");
+function loadConfig() {
+  const configPath = path.resolve(process.cwd(), "nodeon.json");
+  if (!fs.existsSync(configPath)) {
+    return null;
+  }
+  try {
+    return JSON.parse(fs.readFileSync(configPath, "utf8"));
+  } catch (e) {
+    return null;
+  }
+}
+export function runBuild(args) {
+  const flags = args;
+  const positional = flags.filter(f => !f.startsWith("-"));
+  const config = loadConfig();
+  const minify = flags.includes("-min") || flags.includes("--minify") || (config?.minify ?? false);
+  const sourceMap = flags.includes("--map") || (config?.sourceMap ?? false);
+  const check = flags.includes("--check") || (config?.strict ?? false);
+  let inputArg = positional[0];
+  if (!inputArg && config?.entry) {
+    inputArg = config.entry;
+    console.log(DIM + "using nodeon.json entry: " + config.entry + RESET);
+  }
+  if (!inputArg) {
+    console.error("build requires an input .no file (or a nodeon.json with 'entry')");
+    process.exit(1);
+  }
+  let input = "";
+  try {
+    input = resolveNodeonFile(inputArg);
+  } catch (err) {
+    console.error(RED + "error" + RESET + ": " + err.message);
+    process.exit(1);
+  }
+  const output = positional[1] || config?.outDir ? path.resolve(config.outDir, path.basename(input).replace(/\.no$/, ".js")) : undefined;
+  const absInput = path.resolve(input);
+  const filesToCompile = collectDependencies(absInput);
+  let compiled = 0;
+  let failed = 0;
+  for (const file of filesToCompile) {
+    const relFile = path.relative(process.cwd(), file);
+    try {
+      const outPath = file === absInput ? output : undefined;
+      const result = compileFile(relFile, outPath, { minify: minify, write: true, sourceMap: sourceMap, check: check });
+      const extra = [minify ? "minified" : "", sourceMap ? "+map" : ""].filter(Boolean).join(", ");
+      console.log("  " + GREEN + "✓" + RESET + " " + path.basename(relFile) + " → " + path.basename(result.out) + extra ? " (" + extra + ")" : "");
+      if (result.diagnostics && result.diagnostics.length > 0) {
+        printDiagnostics(relFile, result.diagnostics);
+      }
+      compiled = compiled + 1;
+    } catch (err) {
+      console.error("  " + RED + "✗" + RESET + " " + path.basename(relFile) + ": " + err.message);
+      failed = failed + 1;
+    }
+  }
+  if (filesToCompile.length > 1) {
+    console.log("\n" + DIM + compiled + " compiled" + failed ? ", " + failed + " failed" : "" + RESET);
+  }
+}
+function printDiagnostics(file, diagnostics) {
+  for (const d of diagnostics) {
+    let sev = DIM + "hint" + RESET;
+    if (d.severity === "error") {
+      sev = RED + "error" + RESET;
+    }
+    if (d.severity === "warning") {
+      sev = YELLOW + "warn" + RESET;
+    }
+    console.log("    " + sev + ": " + d.message + " " + DIM + "(" + file + ":" + d.line + 1 + ":" + d.column + 1 + ")" + RESET);
+  }
+}
+function collectDependencies(entryFile) {
+  const visited = new Set();
+  const ordered = [];
+  const compiler = require("../../compiler/compile.js") ?? require("../../compiler/compile.no");
+  const resolver = require("../../compiler/resolver.js") ?? require("../../compiler/resolver.no");
+  function walk(absFile) {
+    if (visited.has(absFile)) {
+      return;
+    }
+    visited.add(absFile);
+    try {
+      const source = fs.readFileSync(absFile, "utf8");
+      const ast = compiler.compileToAST(source);
+      for (const stmt of ast.body) {
+        let importSource = undefined;
+        if (stmt.type === "ImportDeclaration") {
+          importSource = stmt.source;
+        } else if (stmt.type === "ExportDeclaration" && stmt.source) {
+          importSource = stmt.source;
+        }
+        if (importSource) {
+          const resolved = resolver.resolveImport(importSource, absFile);
+          if (resolved) {
+            walk(resolved);
+          }
+        }
+      }
+    } catch (e) {
+
+    }
+    ordered.push(absFile);
+  }
+  walk(entryFile);
+  return ordered;
+}

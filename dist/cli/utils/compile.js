@@ -1,0 +1,104 @@
+import { formatError } from "./errors.js";
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
+const os = require("os");
+const CACHE_MODE = process.env.NODEON_CACHE ?? "".toLowerCase();
+const CACHE_DISABLED = CACHE_MODE === "none" || CACHE_MODE === "memory";
+const CACHE_DIR = process.env.NODEON_CACHE_DIR ? path.resolve(process.cwd(), process.env.NODEON_CACHE_DIR) : path.resolve(process.cwd(), "node_modules", ".cache", "nodeon");
+let compilerModule = null;
+function getCompiler() {
+  if (!compilerModule) {
+    const candidates = ["../../compiler/compile.js", "../../compiler/compile.no"];
+    for (const c of candidates) {
+      try {
+        compilerModule = require(c);
+        break;
+      } catch (err) {
+        if (err.code !== "MODULE_NOT_FOUND") {
+          throw err;
+        }
+      }
+    }
+  }
+  return compilerModule;
+}
+function resolveOutFileName(outputPath, absIn, minify) {
+  if (outputPath) {
+    return path.basename(outputPath);
+  }
+  if (minify) {
+    return path.basename(absIn).replace(/\.no$/, ".min.js");
+  }
+  return path.basename(absIn).replace(/\.no$/, ".js");
+}
+function computeCacheKey(inputPath, source, minify, sourceMap, outFileName) {
+  const hash = crypto.createHash("sha1");
+  hash.update(inputPath);
+  hash.update("|");
+  hash.update(source);
+  hash.update("|");
+  hash.update(minify ? "1" : "0");
+  hash.update("|");
+  hash.update(sourceMap ? "1" : "0");
+  hash.update("|");
+  hash.update(outFileName);
+  return hash.digest("hex");
+}
+function computeOutputPath(outputPath, absIn, options) {
+  if (options.write) {
+    if (outputPath) {
+      return path.resolve(process.cwd(), outputPath);
+    }
+    if (options.minify) {
+      return absIn.replace(/\.no$/, ".min.js");
+    }
+    return absIn.replace(/\.no$/, ".js");
+  }
+  return null;
+}
+export function compileFile(inputPath, outputPath, opts) {
+  const options = opts ?? { minify: false, write: true };
+  const absIn = path.resolve(process.cwd(), inputPath);
+  if (!fs.existsSync(absIn)) {
+    throw new Error("file not found: " + inputPath);
+  }
+  const source = fs.readFileSync(absIn, "utf8");
+  const cacheDir = CACHE_DIR;
+  const outFileName = resolveOutFileName(outputPath, absIn, options.minify);
+  const cacheKey = computeCacheKey(inputPath, source, options.minify, options.sourceMap, outFileName);
+  const cachePath = path.join(cacheDir, cacheKey + ".json");
+  try {
+    let out = computeOutputPath(outputPath, absIn, options);
+    if (!CACHE_DISABLED) {
+      if (!fs.existsSync(cacheDir)) {
+        fs.mkdirSync(cacheDir, { recursive: true });
+      }
+      if (fs.existsSync(cachePath)) {
+        const cached = JSON.parse(fs.readFileSync(cachePath, "utf8"));
+        if (options.sourceMap && cached.sourceMap && out) {
+          fs.writeFileSync(out, cached.jsCode, "utf8");
+          fs.writeFileSync(out + ".map", JSON.stringify(cached.sourceMap), "utf8");
+        } else if (options.write && out) {
+          fs.writeFileSync(out, cached.jsCode, "utf8");
+        }
+        return { ast: null, jsCode: cached.jsCode, out: out };
+      }
+    }
+    const compiler = getCompiler();
+    const result = compiler.compile(source, { minify: options.minify, check: options.check });
+    const jsCode = result.js;
+    const ast = result.ast;
+    const diagnostics = result.diagnostics;
+    if (!CACHE_DISABLED) {
+      fs.writeFileSync(cachePath, JSON.stringify({ jsCode: jsCode }), "utf8");
+    }
+    if (out) {
+      fs.writeFileSync(out, jsCode, "utf8");
+    }
+    return { ast: ast, jsCode: jsCode, out: out, diagnostics: diagnostics };
+  } catch (err) {
+    console.error(formatError(inputPath, source, err));
+    process.exit(1);
+  }
+}

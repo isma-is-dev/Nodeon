@@ -7,8 +7,6 @@ Thumbs.db
 node_modules/
 
 # Build output
-dist/
-dist-no/
 *.tsbuildinfo
 *.vsix
 

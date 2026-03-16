@@ -1,0 +1,516 @@
+import { PRECEDENCE, COMPOUND_ASSIGN } from "../../language/precedence.js";
+import { ParserTypes } from "./parser-types.js";
+import { Lexer } from "../lexer/lexer.js";
+export class ParserExpressions extends ParserTypes {
+  constructor(tokens, source) {
+    super(tokens, source);
+  }
+
+  parseExpressionStatement() {
+    const expression = this.parseExpression();
+    return { type: "ExpressionStatement", expression: expression };
+  }
+
+  parseExpression(precedence) {
+    const prec = precedence ?? 0;
+    let left = this.parseUnary();
+    while (true) {
+      const tok = this.peek();
+      if (tok.type === "Operator" && COMPOUND_ASSIGN.has(tok.value) && prec === 0) {
+        if (left.type === "Identifier" || left.type === "MemberExpression") {
+          this.advance();
+          const right = this.parseExpression(0);
+          left = { type: "CompoundAssignmentExpression", operator: tok.value, left: left, right: right };
+          continue;
+        }
+      }
+      if (tok.type === "Operator" && tok.value === "=" && prec === 0) {
+        if (left.type === "Identifier" || left.type === "MemberExpression") {
+          this.advance();
+          const right = this.parseExpression(0);
+          left = { type: "AssignmentExpression", left: left, right: right };
+          continue;
+        }
+      }
+      if (tok.type === "Operator" && PRECEDENCE[tok.value] !== undefined) {
+        const opPrec = PRECEDENCE[tok.value];
+        if (opPrec <= prec) {
+          break;
+        }
+        this.advance();
+        const right = this.parseExpression(tok.value === "**" ? opPrec - 1 : opPrec);
+        left = { type: "BinaryExpression", operator: tok.value, left: left, right: right };
+        continue;
+      }
+      if (tok.type === "Keyword" && (tok.value === "instanceof" || tok.value === "in")) {
+        const opPrec = PRECEDENCE[tok.value];
+        if (opPrec <= prec) {
+          break;
+        }
+        this.advance();
+        const right = this.parseExpression(opPrec);
+        left = { type: "BinaryExpression", operator: tok.value, left: left, right: right };
+        continue;
+      }
+      if ((tok.type === "Identifier" || tok.type === "Keyword") && tok.value === "as") {
+        this.advance();
+        const typeAnnotation = this.parseTypeAnnotation();
+        left = { type: "AsExpression", expression: left, typeAnnotation: typeAnnotation };
+        continue;
+      }
+      if (tok.type === "Operator" && tok.value === "?" && prec === 0) {
+        const next = this.peekNext();
+        if (next && next.type === "Operator" && next.value === ".") {
+          break;
+        }
+        this.advance();
+        const consequent = this.parseExpression();
+        this.consumeDelimiter(":", "Expected ':' in ternary");
+        const alternate = this.parseExpression();
+        left = { type: "TernaryExpression", condition: left, consequent: consequent, alternate: alternate };
+        continue;
+      }
+      break;
+    }
+    return left;
+  }
+
+  parseUnary() {
+    const tok = this.peek();
+    if (tok.type === "Keyword" && tok.value === "await") {
+      this.advance();
+      return { type: "AwaitExpression", argument: this.parseUnary() };
+    }
+    if (tok.type === "Keyword" && tok.value === "typeof") {
+      this.advance();
+      return { type: "TypeofExpression", argument: this.parseUnary() };
+    }
+    if (tok.type === "Keyword" && tok.value === "void") {
+      this.advance();
+      return { type: "VoidExpression", argument: this.parseUnary() };
+    }
+    if (tok.type === "Keyword" && tok.value === "delete") {
+      this.advance();
+      return { type: "DeleteExpression", argument: this.parseUnary() };
+    }
+    if (tok.type === "Keyword" && tok.value === "yield") {
+      this.advance();
+      let delegate = false;
+      if (this.checkOperator("*")) {
+        this.advance();
+        delegate = true;
+      }
+      if (this.isAtEnd() || this.checkDelimiter("}") || this.checkDelimiter(")")) {
+        return { type: "YieldExpression", argument: null, delegate: delegate };
+      }
+      return { type: "YieldExpression", argument: this.parseExpression(), delegate: delegate };
+    }
+    if (tok.type === "Keyword" && tok.value === "new") {
+      this.advance();
+      let callee = this.consumeIdentifier("Expected constructor name");
+      while (this.checkOperator(".")) {
+        this.advance();
+        const prop = this.consumePropertyName("Expected property name");
+        callee = { type: "MemberExpression", object: callee, property: prop, computed: false, optional: false };
+      }
+      const args = [];
+      if (this.checkDelimiter("(")) {
+        this.advance();
+        if (!this.checkDelimiter(")")) {
+          do {
+            args.push(this.parseExpression());
+          } while (this.matchDelimiter(","));
+        }
+        this.consumeDelimiter(")", "Expected ')'");
+      }
+      const newExpr = { type: "NewExpression", callee: callee, arguments: args };
+      return this.parsePostfix(newExpr);
+    }
+    if (tok.type === "Operator" && tok.value === "...") {
+      this.advance();
+      return { type: "SpreadExpression", argument: this.parseUnary() };
+    }
+    if (tok.type === "Operator" && (tok.value === "++" || tok.value === "--")) {
+      this.advance();
+      return { type: "UpdateExpression", operator: tok.value, argument: this.parseUnary(), prefix: true };
+    }
+    if (tok.type === "Operator" && (tok.value === "!" || tok.value === "-" || tok.value === "~" || tok.value === "+")) {
+      this.advance();
+      return { type: "UnaryExpression", operator: tok.value, argument: this.parseUnary() };
+    }
+    return this.parsePostfix();
+  }
+
+  parsePostfix(initial) {
+    let left = initial ?? this.parsePrimary();
+    while (!this.isAtEnd()) {
+      const tok = this.peek();
+      if (tok.type === "Operator" && (tok.value === "++" || tok.value === "--")) {
+        if (left.type === "Identifier" || left.type === "MemberExpression") {
+          this.advance();
+          left = { type: "UpdateExpression", operator: tok.value, argument: left, prefix: false };
+          continue;
+        }
+      }
+      if (tok.type === "Operator" && (tok.value === "." || tok.value === "?.")) {
+        const optional = tok.value === "?.";
+        this.advance();
+        if (optional && this.checkDelimiter("(")) {
+          left = this.parseCallArguments(left, true);
+          continue;
+        }
+        if (optional && this.checkDelimiter("[")) {
+          this.advance();
+          const prop = this.parseExpression();
+          this.consumeDelimiter("]", "Expected ']'");
+          left = { type: "MemberExpression", object: left, property: prop, computed: true, optional: true };
+          continue;
+        }
+        const prop = this.consumePropertyName("Expected property name");
+        left = { type: "MemberExpression", object: left, property: prop, computed: false, optional: optional };
+        if (this.checkDelimiter("(")) {
+          left = this.parseCallArguments(left, false);
+        }
+        continue;
+      }
+      if (tok.type === "Delimiter" && tok.value === "[") {
+        this.advance();
+        const prop = this.parseExpression();
+        this.consumeDelimiter("]", "Expected ']'");
+        left = { type: "MemberExpression", object: left, property: prop, computed: true, optional: false };
+        continue;
+      }
+      if (tok.type === "Delimiter" && tok.value === "(") {
+        if (left.type === "Identifier" || left.type === "MemberExpression" || left.type === "CallExpression") {
+          left = this.parseCallArguments(left, false);
+          continue;
+        }
+      }
+      break;
+    }
+    return left;
+  }
+
+  parsePrimary() {
+    const token = this.peek();
+    if (token.type === "Delimiter" && token.value === "(") {
+      if (this.isArrowFunction()) {
+        return this.parseArrowFunction(false);
+      }
+      this.advance();
+      const expr = this.parseExpression();
+      this.consumeDelimiter(")", "Expected ')'");
+      return expr;
+    }
+    if (token.type === "Delimiter" && token.value === "[") {
+      return this.parseArrayExpression();
+    }
+    if (token.type === "Delimiter" && token.value === "{") {
+      return this.parseObjectExpression();
+    }
+    if (token.type === "Keyword" && (token.value === "true" || token.value === "false")) {
+      this.advance();
+      return { type: "Literal", value: token.value === "true", literalType: "boolean" };
+    }
+    if (token.type === "Keyword" && token.value === "null") {
+      this.advance();
+      return { type: "Literal", value: null, literalType: "null" };
+    }
+    if (token.type === "Keyword" && token.value === "undefined") {
+      this.advance();
+      return { type: "Literal", value: undefined, literalType: "undefined" };
+    }
+    if (token.type === "Keyword" && token.value === "this") {
+      this.advance();
+      return { type: "Identifier", name: "this" };
+    }
+    if (token.type === "Keyword" && token.value === "super") {
+      this.advance();
+      return { type: "Identifier", name: "super" };
+    }
+    if (token.type === "Keyword" && token.value === "if") {
+      this.advance();
+      const condition = this.parseExpression();
+      const consequent = this.parseBlock();
+      this.consumeKeyword("else");
+      const alternate = this.parseBlock();
+      return { type: "IfExpression", condition: condition, consequent: consequent, alternate: alternate };
+    }
+    if (token.type === "Keyword" && token.value === "import" && this.peekNext()?.type === "Delimiter" && this.peekNext()?.value === "(") {
+      this.advance();
+      return this.parseCallArguments({ type: "Identifier", name: "import" }, false);
+    }
+    if (token.type === "Identifier" && token.value === "comptime") {
+      this.advance();
+      if (this.checkDelimiter(`{`)) {
+        const body = this.parseBlock();
+        return { type: "ComptimeExpression", expression: null, body: body };
+      }
+      const expression = this.parseExpression();
+      return { type: "ComptimeExpression", expression: expression, body: null };
+    }
+    if (this.isIdentifierLike(token)) {
+      this.advance();
+      return { type: "Identifier", name: token.value };
+    }
+    if (token.type === "Number") {
+      this.advance();
+      return { type: "Literal", value: Number(token.value), literalType: "number" };
+    }
+    if (token.type === "RawString") {
+      this.advance();
+      return { type: "Literal", value: token.value, literalType: "string" };
+    }
+    if (token.type === "String") {
+      this.advance();
+      return this.parseStringLiteral(token.value, token.loc);
+    }
+    if (token.type === "TemplateLiteral") {
+      this.advance();
+      return this.parseTemplateLiteral(token.value, token.loc);
+    }
+    if (token.type === "RegExp") {
+      this.advance();
+      const regexStr = token.value;
+      const lastSlash = regexStr.lastIndexOf("/");
+      const pattern = regexStr.slice(1, lastSlash);
+      const flags = regexStr.slice(lastSlash + 1);
+      return { type: "RegExpLiteral", pattern: pattern, flags: flags };
+    }
+    this.error(token, "Expected expression");
+  }
+
+  parseCallArguments(callee, optional) {
+    const opt = optional ?? false;
+    this.consumeDelimiter("(", "Expected '('");
+    const args = [];
+    const namedArgs = [];
+    if (!this.checkDelimiter(")")) {
+      do {
+        if (this.checkDelimiter(")")) {
+          break;
+        }
+        if (this.isNamedArgument()) {
+          const name = this.consumeIdentifier("Expected argument name");
+          this.consumeDelimiter(":", "Expected ':'");
+          const value = this.parseExpression();
+          namedArgs.push({ type: "NamedArgument", name: name, value: value });
+        } else {
+          args.push(this.parseExpression());
+        }
+      } while (this.matchDelimiter(","));
+    }
+    this.consumeDelimiter(")", "Expected ')'");
+    const call = { type: "CallExpression", callee: callee, arguments: args, optional: opt };
+    if (namedArgs.length > 0) {
+      call.namedArgs = namedArgs;
+    }
+    return call;
+  }
+
+  isNamedArgument() {
+    const cur = this.peek();
+    const next = this.peekNext();
+    if ((cur.type === "Identifier" || this.isIdentifierLike(cur)) && next && next.type === "Delimiter" && next.value === ":") {
+      return true;
+    }
+    return false;
+  }
+
+  parseArrayExpression() {
+    this.consumeDelimiter("[", "Expected '['");
+    const elements = [];
+    if (!this.checkDelimiter("]")) {
+      do {
+        if (this.checkDelimiter("]")) {
+          break;
+        }
+        elements.push(this.parseExpression());
+      } while (this.matchDelimiter(","));
+    }
+    this.consumeDelimiter("]", "Expected ']'");
+    return { type: "ArrayExpression", elements: elements };
+  }
+
+  parseObjectExpression() {
+    this.consumeDelimiter("{", `Expected '{'`);
+    const properties = [];
+    if (!this.checkDelimiter("}")) {
+      do {
+        if (this.checkDelimiter("}")) {
+          break;
+        }
+        const keyTok = this.peek();
+        let key = null;
+        let computed = false;
+        if (keyTok.type === "Delimiter" && keyTok.value === "[") {
+          computed = true;
+          this.advance();
+          key = this.parseExpression();
+          this.consumeDelimiter("]", "Expected ']'");
+        } else if (keyTok.type === "Identifier" || keyTok.type === "Keyword") {
+          key = { type: "Identifier", name: keyTok.value };
+          this.advance();
+        } else if (keyTok.type === "String" || keyTok.type === "RawString") {
+          key = { type: "Literal", value: keyTok.value, literalType: "string" };
+          this.advance();
+        } else if (keyTok.type === "Number") {
+          key = { type: "Literal", value: Number(keyTok.value), literalType: "number" };
+          this.advance();
+        } else {
+          this.error(keyTok, "Expected property key");
+        }
+        if (!computed && !this.checkDelimiter(":")) {
+          properties.push({ type: "ObjectProperty", key: key, value: { type: "Identifier", name: key.name }, shorthand: true, computed: false });
+        } else {
+          if (this.checkDelimiter(":")) {
+            this.advance();
+          }
+          const value = this.parseExpression();
+          properties.push({ type: "ObjectProperty", key: key, value: value, shorthand: false, computed: computed });
+        }
+      } while (this.matchDelimiter(","));
+    }
+    this.consumeDelimiter("}", "Expected '}'");
+    return { type: "ObjectExpression", properties: properties };
+  }
+
+  isArrowFunction() {
+    const saved = this.current;
+    try {
+      this.advance();
+      let depth = 1;
+      while (depth > 0 && !this.isAtEnd()) {
+        const t = this.advance();
+        if (t.type === "Delimiter" && t.value === "(") {
+          depth = depth + 1;
+        }
+        if (t.type === "Delimiter" && t.value === ")") {
+          depth = depth - 1;
+        }
+      }
+      const next = this.peek();
+      return next.type === "Operator" && next.value === "=>";
+    } catch (e) {
+      return false;
+    } finally {
+      this.current = saved;
+    }
+  }
+
+  parseArrowFunction(isAsync) {
+    this.consumeDelimiter("(", "Expected '('");
+    const params = this.parseParamList();
+    this.consumeDelimiter(")", "Expected ')'");
+    this.consumeOperator("=>", "Expected '=>'");
+    if (this.checkDelimiter("{")) {
+      const body = this.parseBlock();
+      return { type: "ArrowFunction", params: params, body: body, async: isAsync };
+    }
+    const expr = this.parseExpression();
+    return { type: "ArrowFunction", params: params, body: expr, async: isAsync };
+  }
+
+  parseStringLiteral(raw, loc) {
+    if (!raw.includes("{")) {
+      return { type: "Literal", value: raw, literalType: "string" };
+    }
+    const parts = [];
+    let buffer = "";
+    let i = 0;
+    while (i < raw.length) {
+      if (raw[i] === "\\") {
+        if (i + 1 < raw.length && raw[i + 1] === "{") {
+          buffer = buffer + "{";
+          i = i + 2;
+          continue;
+        }
+      }
+      if (raw[i] === "{") {
+        if (buffer) {
+          parts.push({ kind: "Text", value: buffer });
+          buffer = "";
+        }
+        let j = i + 1;
+        let inner = "";
+        let braceDepth = 1;
+        while (j < raw.length && braceDepth > 0) {
+          if (raw[j] === "{") {
+            braceDepth = braceDepth + 1;
+          } else if (raw[j] === "}") {
+            braceDepth = braceDepth - 1;
+            if (braceDepth === 0) {
+              break;
+            }
+          }
+          inner = inner + raw[j];
+          j = j + 1;
+        }
+        if (j >= raw.length) {
+          const where = loc ? " at " + loc.line + ":" + loc.column + i : "";
+          throw new SyntaxError("Unterminated interpolation in string literal" + where);
+        }
+        const innerTokens = new Lexer(inner).tokenize();
+        const innerParser = new ParserExpressions(innerTokens);
+        const expr = innerParser.parseExpression();
+        parts.push({ kind: "Expression", expression: expr });
+        i = j + 1;
+        continue;
+      }
+      buffer = buffer + raw[i];
+      i = i + 1;
+    }
+    if (buffer) {
+      parts.push({ kind: "Text", value: buffer });
+    }
+    return { type: "TemplateLiteral", parts: parts };
+  }
+
+  parseTemplateLiteral(raw, loc) {
+    const parts = [];
+    let buffer = "";
+    let i = 0;
+    while (i < raw.length) {
+      if (raw[i] === "$" && i + 1 < raw.length && raw[i + 1] === "{") {
+        if (buffer) {
+          parts.push({ kind: "Text", value: buffer });
+          buffer = "";
+        }
+        i = i + 2;
+        let inner = "";
+        let braceDepth = 1;
+        while (i < raw.length && braceDepth > 0) {
+          if (raw[i] === "{") {
+            braceDepth = braceDepth + 1;
+          } else if (raw[i] === "}") {
+            braceDepth = braceDepth - 1;
+            if (braceDepth === 0) {
+              break;
+            }
+          }
+          inner = inner + raw[i];
+          i = i + 1;
+        }
+        if (braceDepth !== 0) {
+          const where = loc ? " at " + loc.line + ":" + loc.column + i : "";
+          throw new SyntaxError("Unterminated interpolation in template literal" + where);
+        }
+        i = i + 1;
+        const innerTokens = new Lexer(inner).tokenize();
+        const innerParser = new ParserExpressions(innerTokens);
+        const expr = innerParser.parseExpression();
+        parts.push({ kind: "Expression", expression: expr });
+        continue;
+      }
+      buffer = buffer + raw[i];
+      i = i + 1;
+    }
+    if (buffer) {
+      parts.push({ kind: "Text", value: buffer });
+    }
+    if (parts.length === 0) {
+      parts.push({ kind: "Text", value: "" });
+    }
+    return { type: "TemplateLiteral", parts: parts };
+  }
+}

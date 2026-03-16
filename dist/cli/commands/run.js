@@ -1,0 +1,98 @@
+import { RED, BOLD, RESET, DIM } from "../utils/colors.js";
+import { suggestClosest } from "../utils/strings.js";
+import { compileFile } from "../utils/compile.js";
+import { runInSandbox } from "../utils/runtime.js";
+const fs = require("fs");
+const path = require("path");
+export function resolveNodeonFile(input) {
+  const candidates = [input, input + ".no", path.join(input, "index.no")];
+  for (const candidate of candidates) {
+    const abs = path.resolve(process.cwd(), candidate);
+    if (fs.existsSync(abs)) {
+      return candidate;
+    }
+  }
+  const suggestion = suggestClosestFile(input);
+  const msg = suggestion ? "file not found: " + input + " (did you mean: " + suggestion + " ?)" : "file not found: " + input;
+  throw new Error(msg);
+}
+function suggestClosestFile(input) {
+  const parsed = path.basename(input);
+  const dir = path.dirname(input) === "." ? "." : path.dirname(input);
+  const desired = parsed.includes(".") ? parsed : parsed + ".no";
+  const dirAbs = path.resolve(process.cwd(), dir);
+  try {
+    const entries = fs.readdirSync(dirAbs, { withFileTypes: true });
+    const noFiles = entries.filter(e => e.isFile() && e.name.endsWith(".no")).map(e => e.name);
+    return suggestClosest(desired, noFiles, 3);
+  } catch (e) {
+    return null;
+  }
+}
+export function runRun(args) {
+  const watchMode = args.includes("-w") || args.includes("--watch");
+  const positional = args.filter(f => !f.startsWith("-"));
+  const input = positional[0];
+  if (!input) {
+    console.error("run requires an input .no file");
+    process.exit(1);
+  }
+  let resolvedInput = "";
+  try {
+    resolvedInput = resolveNodeonFile(input);
+  } catch (err) {
+    console.error(RED + "error" + RESET + ": " + err.message);
+    process.exit(1);
+  }
+  executeFile(resolvedInput);
+  if (watchMode) {
+    console.log("\n" + DIM + "watching " + path.basename(resolvedInput) + " for changes..." + RESET + " (Ctrl+C to stop)");
+    watchAndRun(resolvedInput);
+  }
+}
+function executeFile(resolvedInput) {
+  try {
+    const result = compileFile(resolvedInput, undefined, { minify: false, write: false });
+    if (!result) {
+      return false;
+    }
+    const jsCode = result.jsCode;
+    runInSandbox(jsCode, path.basename(resolvedInput).replace(/\.no$/, ".js"));
+    return true;
+  } catch (err) {
+    if (err instanceof SyntaxError || err.name === "SyntaxError") {
+      console.error(RED + "error" + RESET + ": " + err.message);
+    } else {
+      console.error(RED + BOLD + "runtime error" + RESET + ": " + err.message);
+    }
+    return false;
+  }
+}
+function watchAndRun(resolvedInput) {
+  const absInput = path.resolve(resolvedInput);
+  const dir = path.dirname(absInput);
+  let debounceTimer = null;
+  const watcher = fs.watch(dir, (eventType, filename) => {
+    if (!filename || !filename.endsWith(".no")) {
+      return;
+    }
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+    debounceTimer = setTimeout(() => {
+      console.log("\n" + DIM + "change detected: " + filename + RESET);
+      console.log("-".repeat(40));
+      executeFile(resolvedInput);
+      console.log("\n" + DIM + "waiting for changes..." + RESET);
+    }, 150);
+  });
+  const keepAlive = setInterval(() => {
+
+  }, 2147483647);
+  process.on("SIGINT", () => {
+    watcher.close();
+    clearInterval(keepAlive);
+    console.log("\n" + DIM + "watch stopped." + RESET);
+    process.exit(0);
+  });
+}

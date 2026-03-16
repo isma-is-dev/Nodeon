@@ -1,0 +1,80 @@
+import { RED, BOLD, RESET, DIM, CYAN } from "./colors.js";
+const vm = require("vm");
+const fs = require("fs");
+const path = require("path");
+const ReferenceError = globalThis.ReferenceError;
+const URIError = globalThis.URIError;
+const EvalError = globalThis.EvalError;
+const URL = globalThis.URL;
+const URLSearchParams = globalThis.URLSearchParams;
+const TextEncoder = globalThis.TextEncoder;
+const TextDecoder = globalThis.TextDecoder;
+const queueMicrotask = globalThis.queueMicrotask;
+const Intl = globalThis.Intl;
+const sandboxGlobals = { console: console, setTimeout: setTimeout, setInterval: setInterval, clearTimeout: clearTimeout, clearInterval: clearInterval, JSON: JSON, Math: Math, Date: Date, RegExp: RegExp, Error: Error, TypeError: TypeError, RangeError: RangeError, SyntaxError: SyntaxError, ReferenceError: ReferenceError, URIError: URIError, EvalError: EvalError, parseInt: parseInt, parseFloat: parseFloat, isNaN: isNaN, isFinite: isFinite, encodeURIComponent: encodeURIComponent, decodeURIComponent: decodeURIComponent, encodeURI: encodeURI, decodeURI: decodeURI, Array: Array, Object: Object, String: String, Number: Number, Boolean: Boolean, Map: Map, Set: Set, WeakMap: WeakMap, WeakSet: WeakSet, Promise: Promise, Symbol: Symbol, Proxy: Proxy, Reflect: Reflect, require: require, process: process, Buffer: Buffer, URL: URL, URLSearchParams: URLSearchParams, TextEncoder: TextEncoder, TextDecoder: TextDecoder, queueMicrotask: queueMicrotask, Intl: Intl, globalThis: globalThis };
+export function runInSandbox(jsCode, filename) {
+  const cjsCode = esmToCjs(jsCode);
+  const absFile = path.resolve(process.cwd(), filename);
+  try {
+    const ctx = Object.assign({}, sandboxGlobals, { __filename: absFile, __dirname: path.dirname(absFile), module: { exports: {} }, exports: {} });
+    vm.runInNewContext(cjsCode, ctx, { filename: filename });
+  } catch (err) {
+    const name = err?.name || "RuntimeError";
+    const message = err?.message || String(err);
+    const stack = typeof err?.stack === "string" ? err.stack : "";
+    const locMatch = stack.match(/([^\s()]+\.\w+):(\d+):(\d+)/);
+    const lineNum = locMatch ? Number(locMatch[2]) : 1;
+    const colNum = locMatch ? Number(locMatch[3]) : 1;
+    const fileOnStack = locMatch ? locMatch[1] : filename;
+    const candidateNo = fileOnStack.endsWith(".no") ? fileOnStack : fileOnStack.replace(/\.js$/, ".no");
+    const resolvedNo = path.resolve(process.cwd(), candidateNo);
+    const resolvedJs = path.resolve(process.cwd(), fileOnStack);
+    const filePath = fs.existsSync(resolvedNo) ? resolvedNo : resolvedJs;
+    let sourceLine = "";
+    if (fs.existsSync(filePath)) {
+      const fileLines = fs.readFileSync(filePath, "utf8").split(/\r?\n/);
+      sourceLine = fileLines[lineNum - 1] ?? "";
+    }
+    const relPath = filePath ? filePath.replace(process.cwd() + path.sep, "") : fileOnStack;
+    console.error(RED + BOLD + name + RESET + ": " + message);
+    console.error(DIM + "  --> " + RESET + CYAN + relPath + ":" + lineNum + ":" + colNum + RESET);
+    if (sourceLine) {
+      console.error("   " + lineNum + " | " + sourceLine);
+      const marker = " ".repeat(Math.max(0, String(lineNum).length + 3 + Math.max(0, colNum - 1))) + "^";
+      console.error("   " + marker);
+    }
+    process.exit(1);
+  }
+}
+function esmToCjs(code) {
+  let out = code;
+  out = out.replace(~/^[\t ]*import\s+([A-Za-z_$][\w$]*)\s+from\s+["']([^"']+)["'];?/gm, (m, def, src) => `const ${def} = require(${JSON.stringify(src)});`);
+  out = out.replace(~/^[\t ]*import\s+\*\s+as\s+([A-Za-z_$][\w$]*)\s+from\s+["']([^"']+)["'];?/gm, (m, ns, src) => `const ${ns} = require(${JSON.stringify(src)});`);
+  out = out.replace(~/^[\t ]*import\s+{\s*([^}]+)\s*}\s+from\s+["']([^"']+)["'];?/gm, (m, names, src) => {
+    const mapped = names.split(",").map(n => {
+      const [orig, alias] = n.trim().split(/\s+as\s+/i);
+      return alias ? `${orig}: ${alias}` : orig;
+    }).filter(Boolean).join(", ");
+    return `const { ${mapped} } = require(${JSON.stringify(src)});`;
+  });
+  out = out.replace(~/^[\t ]*import\s+([A-Za-z_$][\w$]*)\s*,\s*{\s*([^}]+)\s*}\s+from\s+["']([^"']+)["'];?/gm, (m, def, names, src) => {
+    const mapped = names.split(",").map(n => {
+      const [orig, alias] = n.trim().split(/\s+as\s+/i);
+      return alias ? `${orig}: ${alias}` : orig;
+    }).filter(Boolean).join(", ");
+    const tmp = `__mod_${Math.random().toString(36).slice(2)}`;
+    return `const ${tmp} = require(${JSON.stringify(src)});
+const ${def} = ${tmp}.default ?? ${tmp};
+const { ${mapped} } = ${tmp};`;
+  });
+  out = out.replace(~/^[\t ]*export\s+default\s+/gm, "module.exports = ");
+  out = out.replace(~/^[\t ]*export\s+(const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/gm, (m, kind, name) => `${kind} ${name}
+exports.${name} = ${name}`);
+  out = out.replace(~/^[\t ]*export\s+{\s*([^}]+)\s*};?/gm, (m, names) => names.split(",").map(n => {
+    const [orig, alias] = n.trim().split(/\s+as\s+/i);
+    const target = alias || orig;
+    const source = orig;
+    return `exports.${target} = ${source};`;
+  }).join("\n"));
+  return out;
+}
