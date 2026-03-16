@@ -19,6 +19,20 @@ var __copyProps = (to, from, except, desc) => {
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
+// dist/cli/utils/colors.js
+var RED, GREEN, YELLOW, CYAN, DIM, BOLD, RESET;
+var init_colors = __esm({
+  "dist/cli/utils/colors.js"() {
+    RED = "\x1B[31m";
+    GREEN = "\x1B[32m";
+    YELLOW = "\x1B[33m";
+    CYAN = "\x1B[36m";
+    DIM = "\x1B[2m";
+    BOLD = "\x1B[1m";
+    RESET = "\x1B[0m";
+  }
+});
+
 // dist/language/keywords.js
 var KEYWORDS;
 var init_keywords = __esm({
@@ -2466,8 +2480,8 @@ function generateJSWithSourceMap(program, sourceFile, sourceContent, outputFile,
     }
   }
   const js = outputLines.join(nl) + nl + "//# sourceMappingURL=" + outputFile + ".map";
-  const sourceMap = builder.toJSON(outputFile);
-  return { js, sourceMap };
+  const sourceMap2 = builder.toJSON(outputFile);
+  return { js, sourceMap: sourceMap2 };
 }
 function collectInnerLocs(stmt) {
   const locs = [];
@@ -2640,18 +2654,18 @@ function emitFunction(f, ctx) {
   } else {
     body = f.body.map((s) => pad(fnScope) + emitStatement(s, fnScope)).join(ctx.nl);
   }
-  let result = asyncPrefix + "function" + star + " " + f.name.name + "(" + params + ")" + ctx.sp + "{" + ctx.nl + body + ctx.nl + pad(ctx) + "}";
+  let result2 = asyncPrefix + "function" + star + " " + f.name.name + "(" + params + ")" + ctx.sp + "{" + ctx.nl + body + ctx.nl + pad(ctx) + "}";
   if (f.decorators && f.decorators.length > 0) {
     for (const dec of f.decorators) {
       const args = dec.arguments ? dec.arguments.map((a) => emitExpression(a, ctx)).join("," + ctx.sp) : "";
       if (dec.arguments) {
-        result = result + ctx.nl + pad(ctx) + f.name.name + ctx.sp + "=" + ctx.sp + dec.name + "(" + args + ")(" + f.name.name + ");";
+        result2 = result2 + ctx.nl + pad(ctx) + f.name.name + ctx.sp + "=" + ctx.sp + dec.name + "(" + args + ")(" + f.name.name + ");";
       } else {
-        result = result + ctx.nl + pad(ctx) + f.name.name + ctx.sp + "=" + ctx.sp + dec.name + "(" + f.name.name + ");";
+        result2 = result2 + ctx.nl + pad(ctx) + f.name.name + ctx.sp + "=" + ctx.sp + dec.name + "(" + f.name.name + ");";
       }
     }
   }
-  return result;
+  return result2;
 }
 function emitParam(p, ctx) {
   let out = "";
@@ -2761,18 +2775,18 @@ function emitClass(cls, ctx) {
     }
     return pad(inner) + emitMethod(m, inner);
   }).join(ctx.nl + ctx.nl);
-  let result = "class " + cls.name.name + ext + ctx.sp + "{" + ctx.nl + members + ctx.nl + pad(ctx) + "}";
+  let result2 = "class " + cls.name.name + ext + ctx.sp + "{" + ctx.nl + members + ctx.nl + pad(ctx) + "}";
   if (cls.decorators && cls.decorators.length > 0) {
     for (const dec of cls.decorators) {
       const args = dec.arguments ? dec.arguments.map((a) => emitExpression(a, ctx)).join("," + ctx.sp) : "";
       if (dec.arguments) {
-        result = result + ctx.nl + pad(ctx) + cls.name.name + ctx.sp + "=" + ctx.sp + dec.name + "(" + args + ")(" + cls.name.name + ");";
+        result2 = result2 + ctx.nl + pad(ctx) + cls.name.name + ctx.sp + "=" + ctx.sp + dec.name + "(" + args + ")(" + cls.name.name + ");";
       } else {
-        result = result + ctx.nl + pad(ctx) + cls.name.name + ctx.sp + "=" + ctx.sp + dec.name + "(" + cls.name.name + ");";
+        result2 = result2 + ctx.nl + pad(ctx) + cls.name.name + ctx.sp + "=" + ctx.sp + dec.name + "(" + cls.name.name + ");";
       }
     }
   }
-  return result;
+  return result2;
 }
 function emitClassField(f, ctx) {
   const staticPrefix = f.static ? "static " : "";
@@ -3095,13 +3109,13 @@ function emitExpression(expr, ctx) {
           code2 = "return undefined;";
         }
         const evaluator = new Function(code2);
-        const result = evaluator();
-        return comptimeSerialize(result);
+        const result2 = evaluator();
+        return comptimeSerialize(result2);
       } else {
         code2 = emitExpression(expr.expression, ctx);
         const evaluator2 = new Function("return (" + code2 + ")");
-        const result = evaluator2();
-        return comptimeSerialize(result);
+        const result2 = evaluator2();
+        return comptimeSerialize(result2);
       }
       break;
     }
@@ -3151,26 +3165,26 @@ function emitLiteral(lit) {
     }
   }
 }
-function comptimeSerialize(result) {
-  if (result === void 0) {
+function comptimeSerialize(result2) {
+  if (result2 === void 0) {
     return "undefined";
   }
-  if (result === null) {
+  if (result2 === null) {
     return "null";
   }
-  if (typeof result === "string") {
-    return JSON.stringify(result);
+  if (typeof result2 === "string") {
+    return JSON.stringify(result2);
   }
-  if (typeof result === "number" || typeof result === "boolean") {
-    return String(result);
+  if (typeof result2 === "number" || typeof result2 === "boolean") {
+    return String(result2);
   }
-  if (Array.isArray(result)) {
-    return JSON.stringify(result);
+  if (Array.isArray(result2)) {
+    return JSON.stringify(result2);
   }
-  if (typeof result === "object") {
-    return JSON.stringify(result);
+  if (typeof result2 === "object") {
+    return JSON.stringify(result2);
   }
-  return String(result);
+  return String(result2);
 }
 function emitCall(call, ctx) {
   let callee = "";
@@ -3618,25 +3632,154 @@ function getCol(stmt) {
   return stmt?.loc?.column ? stmt.loc.column - 1 : 0;
 }
 function extractTypeGuard(cond2) {
+  if (cond2.type === "Identifier") {
+    return { name: cond2.name, narrowedType: { kind: "union", types: [NULL_TYPE, UNDEFINED] }, guardKind: "negative" };
+  }
+  if (cond2.type === "UnaryExpression" && cond2.operator === "!") {
+    if (cond2.argument && cond2.argument.type === "Identifier") {
+      return { name: cond2.argument.name, narrowedType: { kind: "union", types: [NULL_TYPE, UNDEFINED] }, guardKind: "positive" };
+    }
+  }
   if (cond2.type !== "BinaryExpression") {
     return null;
   }
-  if (cond2.operator !== "===" && cond2.operator !== "==") {
-    return null;
-  }
-  if (cond2.left.type === "UnaryExpression" && cond2.left.operator === "typeof" && cond2.left.argument.type === "Identifier" && cond2.right.type === "Literal" && typeof cond2.right.value === "string") {
-    const mapped = TYPEOF_MAP[cond2.right.value];
-    if (mapped) {
-      return { name: cond2.left.argument.name, narrowedType: mapped };
+  if (cond2.operator === "===" || cond2.operator === "==") {
+    if (cond2.left.type === "UnaryExpression" && cond2.left.operator === "typeof" && cond2.left.argument && cond2.left.argument.type === "Identifier" && cond2.right.type === "Literal" && typeof cond2.right.value === "string") {
+      const mapped = TYPEOF_MAP[cond2.right.value];
+      if (mapped) {
+        return { name: cond2.left.argument.name, narrowedType: mapped, guardKind: "positive" };
+      }
+    }
+    if (cond2.right.type === "UnaryExpression" && cond2.right.operator === "typeof" && cond2.right.argument && cond2.right.argument.type === "Identifier" && cond2.left.type === "Literal" && typeof cond2.left.value === "string") {
+      const mapped = TYPEOF_MAP[cond2.left.value];
+      if (mapped) {
+        return { name: cond2.right.argument.name, narrowedType: mapped, guardKind: "positive" };
+      }
+    }
+    if (cond2.left.type === "Identifier" && cond2.right.type === "Literal" && cond2.right.value === null) {
+      return { name: cond2.left.name, narrowedType: NULL_TYPE, guardKind: "positive" };
+    }
+    if (cond2.left.type === "Identifier" && cond2.right.type === "Identifier" && cond2.right.name === "undefined") {
+      return { name: cond2.left.name, narrowedType: UNDEFINED, guardKind: "positive" };
     }
   }
-  if (cond2.right.type === "UnaryExpression" && cond2.right.operator === "typeof" && cond2.right.argument.type === "Identifier" && cond2.left.type === "Literal" && typeof cond2.left.value === "string") {
-    const mapped = TYPEOF_MAP[cond2.left.value];
-    if (mapped) {
-      return { name: cond2.right.argument.name, narrowedType: mapped };
+  if (cond2.operator === "!==" || cond2.operator === "!=") {
+    if (cond2.left.type === "UnaryExpression" && cond2.left.operator === "typeof" && cond2.left.argument && cond2.left.argument.type === "Identifier" && cond2.right.type === "Literal" && typeof cond2.right.value === "string") {
+      const mapped = TYPEOF_MAP[cond2.right.value];
+      if (mapped) {
+        return { name: cond2.left.argument.name, narrowedType: mapped, guardKind: "negative" };
+      }
     }
+    if (cond2.left.type === "Identifier" && cond2.right.type === "Literal" && cond2.right.value === null) {
+      return { name: cond2.left.name, narrowedType: NULL_TYPE, guardKind: "negative" };
+    }
+    if (cond2.left.type === "Identifier" && cond2.right.type === "Identifier" && cond2.right.name === "undefined") {
+      return { name: cond2.left.name, narrowedType: UNDEFINED, guardKind: "negative" };
+    }
+  }
+  if (cond2.operator === "instanceof" && cond2.left.type === "Identifier" && cond2.right.type === "Identifier") {
+    return { name: cond2.left.name, narrowedType: { kind: "named", name: cond2.right.name }, guardKind: "positive" };
   }
   return null;
+}
+function applyGuard(guard, env) {
+  if (guard.guardKind === "positive") {
+    env.define(guard.name, guard.narrowedType);
+  } else {
+    const current = env.lookup(guard.name);
+    if (!current || current.kind === "any") {
+      return;
+    }
+    if (current.kind === "union") {
+      const remaining = current.types.filter((t) => !isAssignableTo(t, guard.narrowedType));
+      if (remaining.length === 1) {
+        env.define(guard.name, remaining[0]);
+      } else if (remaining.length > 1) {
+        env.define(guard.name, { kind: "union", types: remaining });
+      }
+    }
+  }
+}
+function applyInverseGuard(guard, env) {
+  if (guard.guardKind === "positive") {
+    const current = env.lookup(guard.name);
+    if (!current || current.kind === "any") {
+      return;
+    }
+    if (current.kind === "union") {
+      const remaining = current.types.filter((t) => !isAssignableTo(t, guard.narrowedType));
+      if (remaining.length === 1) {
+        env.define(guard.name, remaining[0]);
+      } else if (remaining.length > 1) {
+        env.define(guard.name, { kind: "union", types: remaining });
+      }
+    }
+  } else {
+    env.define(guard.name, guard.narrowedType);
+  }
+}
+function extractExportedTypes(stmts) {
+  const exports2 = /* @__PURE__ */ new Map();
+  for (const stmt of stmts) {
+    if (stmt.type === "ExportDeclaration") {
+      const decl = stmt.declaration;
+      if (!decl) {
+        continue;
+      }
+      if (decl.type === "FunctionDeclaration") {
+        const paramTypes = decl.params.map((p) => annotationToType(p.typeAnnotation));
+        const retType = annotationToType(decl.returnType);
+        exports2.set(decl.name.name, { kind: "function", params: paramTypes, returnType: retType });
+      } else if (decl.type === "VariableDeclaration") {
+        if (decl.name) {
+          const t = decl.typeAnnotation ? annotationToType(decl.typeAnnotation) : ANY;
+          exports2.set(decl.name.name, t);
+        }
+      } else if (decl.type === "ClassDeclaration") {
+        exports2.set(decl.name.name, { kind: "named", name: decl.name.name });
+      } else if (decl.type === "InterfaceDeclaration") {
+        exports2.set(decl.name.name, { kind: "named", name: decl.name.name });
+      }
+    }
+    if (stmt.type === "FunctionDeclaration" && stmt.exported) {
+      const paramTypes = stmt.params.map((p) => annotationToType(p.typeAnnotation));
+      exports2.set(stmt.name.name, { kind: "function", params: paramTypes, returnType: annotationToType(stmt.returnType) });
+    }
+    if (stmt.type === "ClassDeclaration" && stmt.exported) {
+      exports2.set(stmt.name.name, { kind: "named", name: stmt.name.name });
+    }
+  }
+  return exports2;
+}
+function resolveModuleTypes(source, env) {
+  if (!source || !source.startsWith("./") && !source.startsWith("../")) {
+    return /* @__PURE__ */ new Map();
+  }
+  if (moduleTypeCache.has(source)) {
+    return moduleTypeCache.get(source);
+  }
+  try {
+    const fs15 = require("fs");
+    const resolver = (init_resolver(), __toCommonJS(resolver_exports));
+    const compiler2 = (init_compile(), __toCommonJS(compile_exports));
+    if (!env.filePath) {
+      moduleTypeCache.set(source, /* @__PURE__ */ new Map());
+      return /* @__PURE__ */ new Map();
+    }
+    const resolved = resolver.resolveImport(source, env.filePath);
+    if (!resolved || !fs15.existsSync(resolved)) {
+      moduleTypeCache.set(source, /* @__PURE__ */ new Map());
+      return /* @__PURE__ */ new Map();
+    }
+    const fileSource = fs15.readFileSync(resolved, "utf8");
+    const ast = compiler2.compileToAST(fileSource);
+    const types = extractExportedTypes(ast.body);
+    moduleTypeCache.set(source, types);
+    return types;
+  } catch (e) {
+    moduleTypeCache.set(source, /* @__PURE__ */ new Map());
+    return /* @__PURE__ */ new Map();
+  }
 }
 function checkStatements(stmts, env, diags) {
   for (const stmt of stmts) {
@@ -3710,16 +3853,51 @@ function checkStatement(stmt, env, diags) {
     }
     case "IfStatement": {
       inferExpression(stmt.condition, env);
-      env.push();
       const guard = extractTypeGuard(stmt.condition);
+      env.push();
       if (guard) {
-        env.define(guard.name, guard.narrowedType);
+        applyGuard(guard, env);
       }
       checkStatements(stmt.consequent, env, diags);
       env.pop();
       if (stmt.alternate) {
         env.push();
+        if (guard) {
+          applyInverseGuard(guard, env);
+        }
         checkStatements(stmt.alternate, env, diags);
+        env.pop();
+      }
+      break;
+    }
+    case "MatchStatement": {
+      const matchExpr = stmt.expression;
+      if (matchExpr) {
+        const exprType = inferExpression(matchExpr, env);
+        const cases = stmt.cases || [];
+        let hasDefault = false;
+        for (const c of cases) {
+          if (c.isDefault) {
+            hasDefault = true;
+          }
+          env.push();
+          checkStatements(c.body || [], env, diags);
+          env.pop();
+        }
+        if (!hasDefault && exprType.kind === "union") {
+          diags.push({ line: getLine(stmt), column: getCol(stmt), message: "Match may not be exhaustive. Consider adding a default case.", severity: "warning" });
+        }
+      }
+      break;
+    }
+    case "SwitchStatement": {
+      if (stmt.discriminant) {
+        inferExpression(stmt.discriminant, env);
+      }
+      const cases = stmt.cases || [];
+      for (const c of cases) {
+        env.push();
+        checkStatements(c.body || c.consequent || [], env, diags);
         env.pop();
       }
       break;
@@ -3754,11 +3932,13 @@ function checkStatement(stmt, env, diags) {
       break;
     }
     case "ImportDeclaration": {
+      const exportedTypes = resolveModuleTypes(stmt.source, env);
       if (stmt.defaultImport) {
-        env.define(stmt.defaultImport, ANY);
+        env.define(stmt.defaultImport, exportedTypes.get("default") ?? ANY);
       }
       for (const spec of stmt.namedImports) {
-        env.define(spec.alias ?? spec.name, ANY);
+        const resolved = exportedTypes.get(spec.name) ?? ANY;
+        env.define(spec.alias ?? spec.name, resolved);
       }
       break;
     }
@@ -3881,13 +4061,16 @@ function checkReturnTypes(body, expected, env, diags) {
     }
   }
 }
-function typeCheck(ast) {
+function typeCheck(ast, filePath) {
   const diags = [];
   const env = new TypeEnv();
+  if (filePath) {
+    env.filePath = filePath;
+  }
   checkStatements(ast.body, env, diags);
   return diags;
 }
-var ANY, VOID, STRING, NUMBER, BOOLEAN, NULL_TYPE, UNDEFINED, TypeEnv, TYPEOF_MAP;
+var ANY, VOID, STRING, NUMBER, BOOLEAN, NULL_TYPE, UNDEFINED, TypeEnv, TYPEOF_MAP, moduleTypeCache;
 var init_type_checker = __esm({
   "dist/compiler/type-checker.js"() {
     ANY = { kind: "any" };
@@ -3940,6 +4123,7 @@ var init_type_checker = __esm({
       }
     };
     TYPEOF_MAP = { "string": STRING, "number": NUMBER, "boolean": BOOLEAN, "undefined": UNDEFINED, "object": { kind: "named", name: "object" }, "function": { kind: "function", params: [], returnType: ANY } };
+    moduleTypeCache = /* @__PURE__ */ new Map();
   }
 });
 
@@ -4604,40 +4788,40 @@ var init_plugin = __esm({
         return this.#plugins = [];
       }
       runBeforeParse(source, ctx) {
-        let result = source;
+        let result2 = source;
         for (const plugin of this.#plugins) {
           if (plugin.beforeParse) {
-            result = plugin.beforeParse(result, ctx);
+            result2 = plugin.beforeParse(result2, ctx);
           }
         }
-        return result;
+        return result2;
       }
       runAfterParse(ast, ctx) {
-        let result = ast;
+        let result2 = ast;
         for (const plugin of this.#plugins) {
           if (plugin.afterParse) {
-            result = plugin.afterParse(result, ctx);
+            result2 = plugin.afterParse(result2, ctx);
           }
         }
-        return result;
+        return result2;
       }
       runBeforeGenerate(ast, ctx) {
-        let result = ast;
+        let result2 = ast;
         for (const plugin of this.#plugins) {
           if (plugin.beforeGenerate) {
-            result = plugin.beforeGenerate(result, ctx);
+            result2 = plugin.beforeGenerate(result2, ctx);
           }
         }
-        return result;
+        return result2;
       }
       runAfterGenerate(js, ctx) {
-        let result = js;
+        let result2 = js;
         for (const plugin of this.#plugins) {
           if (plugin.afterGenerate) {
-            result = plugin.afterGenerate(result, ctx);
+            result2 = plugin.afterGenerate(result2, ctx);
           }
         }
-        return result;
+        return result2;
       }
       runResolveImport(specifier, fromFile) {
         for (const plugin of this.#plugins) {
@@ -4698,9 +4882,9 @@ function compileWithSourceMap(source, sourceFile, outputFile, options) {
   let ast = compileToAST(transformedSource);
   ast = registry.runAfterParse(ast, ctx);
   ast = registry.runBeforeGenerate(ast, ctx);
-  const result = generateJSWithSourceMap(ast, sourceFile, transformedSource, outputFile, opts.minify ?? false);
-  const js = registry.runAfterGenerate(result.js, ctx);
-  return { js, ast, sourceMap: result.sourceMap };
+  const result2 = generateJSWithSourceMap(ast, sourceFile, transformedSource, outputFile, opts.minify ?? false);
+  const js = registry.runAfterGenerate(result2.js, ctx);
+  return { js, ast, sourceMap: result2.sourceMap };
 }
 function compileToAST(source) {
   const tokens = new Lexer(source).tokenize();
@@ -4725,21 +4909,265 @@ var init_compile = __esm({
   }
 });
 
+// dist/cli/commands/build-prod.js
+var build_prod_exports = {};
+function generateServerEntry(config2, serverOutDir2, outDir2) {
+  const port = config2.port ?? 3e3;
+  let entry = "// Auto-generated Nodeon production server\n";
+  entry = entry + 'const http = require("http");\n';
+  entry = entry + 'const fs = require("fs");\n';
+  entry = entry + 'const path = require("path");\n\n';
+  entry = entry + "const PORT = process.env.PORT || " + port + ";\n";
+  entry = entry + "const STATIC_DIR = __dirname;\n";
+  entry = entry + 'const SERVER_DIR = path.join(__dirname, "server");\n\n';
+  entry = entry + "const MIME_TYPES = {\n";
+  entry = entry + '  ".html": "text/html",\n';
+  entry = entry + '  ".js": "application/javascript",\n';
+  entry = entry + '  ".css": "text/css",\n';
+  entry = entry + '  ".json": "application/json",\n';
+  entry = entry + '  ".png": "image/png",\n';
+  entry = entry + '  ".jpg": "image/jpeg",\n';
+  entry = entry + '  ".svg": "image/svg+xml",\n';
+  entry = entry + '  ".ico": "image/x-icon",\n';
+  entry = entry + '  ".woff2": "font/woff2",\n';
+  entry = entry + "};\n\n";
+  entry = entry + "const server = http.createServer(async (req, res) => {\n";
+  entry = entry + '  const url = new URL(req.url, "http://localhost");\n';
+  entry = entry + "  const pathname = url.pathname;\n\n";
+  entry = entry + "  // API routes\n";
+  entry = entry + '  const apiDir = path.join(SERVER_DIR, "pages", "api");\n';
+  entry = entry + '  if (pathname.startsWith("/api/")) {\n';
+  entry = entry + '    const apiFile = path.join(apiDir, pathname.slice(5) + ".js");\n';
+  entry = entry + "    if (fs.existsSync(apiFile)) {\n";
+  entry = entry + "      try {\n";
+  entry = entry + "        const mod = require(apiFile);\n";
+  entry = entry + "        const handler = mod.handler || mod.default || mod.GET || mod[req.method];\n";
+  entry = entry + "        if (handler) {\n";
+  entry = entry + "          const result = await handler(req, res);\n";
+  entry = entry + "          if (!res.headersSent && result !== undefined) {\n";
+  entry = entry + '            res.writeHead(200, { "Content-Type": "application/json" });\n';
+  entry = entry + "            res.end(JSON.stringify(result));\n";
+  entry = entry + "          }\n";
+  entry = entry + "          return;\n";
+  entry = entry + "        }\n";
+  entry = entry + "      } catch (e) {\n";
+  entry = entry + '        res.writeHead(500, { "Content-Type": "application/json" });\n';
+  entry = entry + "        res.end(JSON.stringify({ error: e.message }));\n";
+  entry = entry + "        return;\n";
+  entry = entry + "      }\n";
+  entry = entry + "    }\n";
+  entry = entry + "  }\n\n";
+  entry = entry + "  // Static files\n";
+  entry = entry + '  let filePath = pathname === "/" ? "/index.html" : pathname;\n';
+  entry = entry + "  let fullPath = path.join(STATIC_DIR, filePath);\n\n";
+  entry = entry + "  // Try /path/index.html for clean URLs\n";
+  entry = entry + "  if (!path.extname(fullPath) && !fs.existsSync(fullPath)) {\n";
+  entry = entry + '    fullPath = path.join(STATIC_DIR, filePath, "index.html");\n';
+  entry = entry + "  }\n\n";
+  entry = entry + "  if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) {\n";
+  entry = entry + "    const ext = path.extname(fullPath);\n";
+  entry = entry + '    const contentType = MIME_TYPES[ext] || "application/octet-stream";\n';
+  entry = entry + '    res.writeHead(200, { "Content-Type": contentType });\n';
+  entry = entry + "    fs.createReadStream(fullPath).pipe(res);\n";
+  entry = entry + "    return;\n";
+  entry = entry + "  }\n\n";
+  entry = entry + '  res.writeHead(404, { "Content-Type": "text/html" });\n';
+  entry = entry + '  res.end("<h1>404 Not Found</h1>");\n';
+  entry = entry + "});\n\n";
+  entry = entry + "server.listen(PORT, () => {\n";
+  entry = entry + '  console.log("\\n  Nodeon production server on http://localhost:" + PORT + "\\n");\n';
+  entry = entry + "});\n";
+  return entry;
+}
+function wrapHtml(body, title, config2) {
+  let html = '<!DOCTYPE html>\n<html lang="en">\n<head>\n';
+  html = html + '  <meta charset="UTF-8">\n';
+  html = html + '  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n';
+  html = html + "  <title>" + title + "</title>\n";
+  if (config2.css) {
+    html = html + '  <link rel="stylesheet" href="' + config2.css + '">\n';
+  }
+  html = html + "</head>\n<body>\n";
+  html = html + body + "\n";
+  html = html + '  <script type="module">\n';
+  html = html + '    document.querySelectorAll("[data-island]").forEach(async el => {\n';
+  html = html + "      const name = el.dataset.island;\n";
+  html = html + "      try {\n";
+  html = html + '        const mod = await import("/_nova/islands/" + name + ".js");\n';
+  html = html + "        if (mod.default?.hydrate) mod.default.hydrate(el);\n";
+  html = html + "        else if (mod.hydrate) mod.hydrate(el);\n";
+  html = html + '      } catch (e) { console.warn("Island hydration failed:", name, e); }\n';
+  html = html + "    });\n";
+  html = html + "  </script>\n";
+  html = html + "</body>\n</html>";
+  return html;
+}
+function fileToRoute(relPath) {
+  let route = relPath.replace(/\\/g, "/").replace(/\.no$/, "").replace(/\.js$/, "");
+  if (route.endsWith("/index")) {
+    route = route.slice(0, route.length - 6);
+  }
+  if (route === "index") {
+    route = "";
+  }
+  route = route.replace(/\[(\w+)\]/g, ":$1");
+  return "/" + route;
+}
+function walkFiles(dir, ext) {
+  const results = [];
+  if (!fs12.existsSync(dir)) {
+    return results;
+  }
+  const entries = fs12.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const full = path12.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === "node_modules" || entry.name.startsWith(".")) {
+        continue;
+      }
+      const sub = walkFiles(full, ext);
+      for (const s of sub) {
+        results.push(s);
+      }
+    } else if (entry.name.endsWith(ext)) {
+      results.push(full);
+    }
+  }
+  return results;
+}
+var fs12, path12, vm4, exportedNames, exportRegex, origJs, exportMatch, islandsDir, componentsDir, islandFiles, serverEntry, elapsed, elapsedRaw, elapsedSec;
+var init_build_prod = __esm({
+  "dist/cli/commands/build-prod.js"() {
+    init_colors();
+    fs12 = require("fs");
+    path12 = require("path");
+    vm4 = require("vm");
+    exportedNames = [];
+    exportRegex = /^export\s+(function|class|const|let)\s+(\w+)/gm;
+    origJs = result.js;
+    exportMatch = exportRegex.exec(origJs);
+    while (exportMatch !== null) {
+      exportedNames.push(exportMatch[2]);
+      exportMatch = exportRegex.exec(origJs);
+    }
+    if (exportedNames.length > 0) {
+      let serverCode2 = serverCode2 + "\n" + exportedNames.map((n) => "module.exports." + n + " = " + n + ";").join("\n");
+    }
+    fs12.writeFileSync(jsOutPath, serverCode, "utf8");
+    if (sourceMap && result.map) {
+      fs12.writeFileSync(jsOutPath + ".map", result.map, "utf8");
+    }
+    stats.compiled = stats.compiled + 1;
+    console.log("  " + GREEN + "\u2713" + RESET + " " + stats.compiled + " files compiled");
+    if (fs12.existsSync(pagesDir)) {
+      console.log("");
+      console.log("  " + CYAN + "Pre-rendering pages..." + RESET);
+      const pageFiles = walkFiles(pagesDir, ".no");
+      for (const file of pageFiles) {
+        const relPath = path12.relative(pagesDir, file);
+        const routePath = fileToRoute(relPath);
+        if (routePath.includes(":")) {
+          console.log("  " + YELLOW + "\u2298" + RESET + " " + routePath + " " + DIM + "(dynamic \u2014 skipped)" + RESET);
+          continue;
+        }
+        if (relPath.startsWith("api" + path12.sep) || relPath.startsWith("api/")) {
+          console.log("  " + YELLOW + "\u2298" + RESET + " " + routePath + " " + DIM + "(API \u2014 server only)" + RESET);
+          continue;
+        }
+        try {
+          const source = fs12.readFileSync(file, "utf8");
+          const result2 = compiler.compile(source, { minify: false });
+          serverCode = result2.js;
+          serverCode = serverCode.replace(/^import\s+.*$/gm, "");
+          serverCode = serverCode.replace(/^export\s+/gm, "");
+          const sandbox = { module: { exports: {} }, exports: {}, require, console, process, Buffer, setTimeout };
+          sandbox.module.exports = sandbox.exports;
+          try {
+            vm4.runInNewContext(serverCode, sandbox, { timeout: 5e3 });
+          } catch (evalErr) {
+            console.log("  " + YELLOW + "\u2298" + RESET + " " + routePath + " " + DIM + "(cannot pre-render: " + evalErr.message + ")" + RESET);
+            continue;
+          }
+          const mod = sandbox.module.exports;
+          let html = "";
+          if (typeof mod.template === "function") {
+            html = mod.template();
+          } else if (typeof mod.render === "function") {
+            html = mod.render();
+          } else if (typeof mod.default === "function") {
+            const defaultExport = mod.default;
+            if (typeof defaultExport.prototype?.template === "function") {
+              const instance = new defaultExport();
+              html = instance.template();
+            } else {
+              html = defaultExport();
+            }
+          }
+          if (!html || typeof html !== "string") {
+            console.log("  " + YELLOW + "\u2298" + RESET + " " + routePath + " " + DIM + "(no template output)" + RESET);
+            continue;
+          }
+          const title = mod.title ?? mod.meta?.title ?? "Nodeon App";
+          const fullHtml = wrapHtml(html, title, config);
+          let outPath = "";
+          if (routePath === "/") {
+            outPath = path12.join(outDir, "index.html");
+          } else {
+            outPath = path12.join(outDir, routePath, "index.html");
+          }
+          fs12.mkdirSync(path12.dirname(outPath), { recursive: true });
+          fs12.writeFileSync(outPath, fullHtml, "utf8");
+          const sizeRaw = fullHtml.length / 1024;
+          const sizeKb = sizeRaw.toFixed(1);
+          console.log("  " + GREEN + "\u2713" + RESET + " " + routePath + " \u2192 " + path12.relative(projectDir, outPath) + " (" + sizeKb + "kb)");
+          stats.pages = stats.pages + 1;
+        } catch (err) {
+          console.log("  " + RED + "\u2717" + RESET + " " + routePath + ": " + err.message);
+          stats.errors = stats.errors + 1;
+        }
+      }
+    }
+    islandsDir = path12.join(srcDir, "islands");
+    componentsDir = path12.join(srcDir, "components");
+    islandFiles = [];
+    if (fs12.existsSync(islandsDir)) {
+      islandFiles = walkFiles(islandsDir, ".no").concat(walkFiles(islandsDir, ".js"));
+    }
+    if (fs12.existsSync(componentsDir)) {
+      const componentFiles = walkFiles(componentsDir, ".no").concat(walkFiles(componentsDir, ".js"));
+      for (const file of componentFiles) {
+        const content = fs12.readFileSync(file, "utf8");
+        if (content.includes("@island") || content.includes("island(")) {
+          islandFiles.push(file);
+        }
+      }
+    }
+    console.log("");
+    console.log("  " + CYAN + "Generating server entry..." + RESET);
+    serverEntry = generateServerEntry(config, serverOutDir, outDir);
+    fs12.writeFileSync(path12.join(outDir, "server.js"), serverEntry, "utf8");
+    console.log("  " + GREEN + "\u2713" + RESET + " server.js");
+    elapsed = Date.now() - startTime;
+    elapsedRaw = elapsed / 1e3;
+    elapsedSec = elapsedRaw.toFixed(2);
+    console.log("");
+    console.log("  " + BOLD + GREEN + "Build complete" + RESET + " in " + elapsedSec + "s");
+    console.log("  " + DIM + stats.compiled + " compiled, " + stats.pages + " pages, " + stats.islands + " islands" + stats.errors > 0 ? ", " + RED + stats.errors + " errors" + RESET : "" + RESET);
+    console.log("  " + DIM + "Output: " + path12.relative(projectDir, outDir) + "/" + RESET);
+    console.log("");
+    if (stats.errors > 0) {
+      process.exit(1);
+    }
+  }
+});
+
 // dist/cli/index.js
 var cli_exports = {};
 __export(cli_exports, {
   main: () => main
 });
 module.exports = __toCommonJS(cli_exports);
-
-// dist/cli/utils/colors.js
-var RED = "\x1B[31m";
-var GREEN = "\x1B[32m";
-var YELLOW = "\x1B[33m";
-var CYAN = "\x1B[36m";
-var DIM = "\x1B[2m";
-var BOLD = "\x1B[1m";
-var RESET = "\x1B[0m";
+init_colors();
 
 // dist/cli/utils/strings.js
 function levenshtein(a, b) {
@@ -4779,7 +5207,8 @@ function suggestClosest(input, candidates, maxDistance) {
 }
 
 // dist/cli/commands/help.js
-var version = "0.2.0";
+init_colors();
+var version = "0.3.0";
 var helpText = `nodeon v${version}
 
 Usage: nodeon <command> [options]
@@ -4791,8 +5220,13 @@ Project:
 
 Compile:
   build [options] <input> [output]   Compile .no to .js
+  build --prod                        Production build (bundle + pre-render)
   run <input>                        Compile and execute
   check <input>                      Type-check without compiling
+
+Deploy:
+  deploy [docker|vercel|fly]         Generate deploy config
+  deploy docker --run                Build and start Docker container
 
 Code Quality:
   test [pattern]                     Run .test.no files
@@ -4822,8 +5256,10 @@ Build Options:
 Examples:
   nodeon new my-app                  Create a full-stack project
   nodeon build hello.no              Compile to hello.js
+  nodeon build --prod                Production build with pre-rendering
   nodeon run hello.no                Compile and execute
   nodeon test                        Run all tests
+  nodeon deploy docker               Generate Dockerfile + docker-compose
   nodeon g entity user               Generate user entity + CRUD
   nodeon g module blog               Generate complete blog module`;
 function printHelp() {
@@ -4834,6 +5270,7 @@ function printVersion() {
 }
 
 // dist/cli/commands/init.js
+init_colors();
 var fs = require("fs");
 var path = require("path");
 var MAIN_TEMPLATE = `// Entry point
@@ -4877,7 +5314,11 @@ function runInit(args) {
   console.log(DIM + "run: nodeon run src/main.no" + RESET);
 }
 
+// dist/cli/commands/build.js
+init_colors();
+
 // dist/cli/utils/errors.js
+init_colors();
 function offsetToLineCol(src, offset) {
   let line = 1;
   let col = 1;
@@ -4991,7 +5432,7 @@ function resolveOutFileName(outputPath, absIn, minify) {
   }
   return path2.basename(absIn).replace(/\.no$/, ".js");
 }
-function computeCacheKey(inputPath, source, minify, sourceMap, outFileName) {
+function computeCacheKey(inputPath, source, minify, sourceMap2, outFileName) {
   const hash = crypto.createHash("sha1");
   hash.update(inputPath);
   hash.update("|");
@@ -4999,7 +5440,7 @@ function computeCacheKey(inputPath, source, minify, sourceMap, outFileName) {
   hash.update("|");
   hash.update(minify ? "1" : "0");
   hash.update("|");
-  hash.update(sourceMap ? "1" : "0");
+  hash.update(sourceMap2 ? "1" : "0");
   hash.update("|");
   hash.update(outFileName);
   return hash.digest("hex");
@@ -5044,11 +5485,11 @@ function compileFile(inputPath, outputPath, opts) {
         return { ast: null, jsCode: cached.jsCode, out };
       }
     }
-    const compiler = getCompiler();
-    const result = compiler.compile(source, { minify: options.minify, check: options.check });
-    const jsCode = result.js;
-    const ast = result.ast;
-    const diagnostics = result.diagnostics;
+    const compiler2 = getCompiler();
+    const result2 = compiler2.compile(source, { minify: options.minify, check: options.check });
+    const jsCode = result2.js;
+    const ast = result2.ast;
+    const diagnostics = result2.diagnostics;
     if (!CACHE_DISABLED) {
       fs2.writeFileSync(cachePath, JSON.stringify({ jsCode }), "utf8");
     }
@@ -5062,7 +5503,11 @@ function compileFile(inputPath, outputPath, opts) {
   }
 }
 
+// dist/cli/commands/run.js
+init_colors();
+
 // dist/cli/utils/runtime.js
+init_colors();
 var vm = require("vm");
 var fs3 = require("fs");
 var path3 = require("path");
@@ -5194,11 +5639,11 @@ function runRun(args) {
 }
 function executeFile(resolvedInput) {
   try {
-    const result = compileFile(resolvedInput, void 0, { minify: false, write: false });
-    if (!result) {
+    const result2 = compileFile(resolvedInput, void 0, { minify: false, write: false });
+    if (!result2) {
       return false;
     }
-    const jsCode = result.jsCode;
+    const jsCode = result2.jsCode;
     runInSandbox(jsCode, path4.basename(resolvedInput).replace(/\.no$/, ".js"));
     return true;
   } catch (err) {
@@ -5255,14 +5700,14 @@ function loadConfig() {
 function runBuild(args) {
   const flags = args;
   const positional = flags.filter((f) => !f.startsWith("-"));
-  const config = loadConfig();
-  const minify = flags.includes("-min") || flags.includes("--minify") || (config?.minify ?? false);
-  const sourceMap = flags.includes("--map") || (config?.sourceMap ?? false);
-  const check = flags.includes("--check") || (config?.strict ?? false);
+  const config2 = loadConfig();
+  const minify = flags.includes("-min") || flags.includes("--minify") || (config2?.minify ?? false);
+  const sourceMap2 = flags.includes("--map") || (config2?.sourceMap ?? false);
+  const check = flags.includes("--check") || (config2?.strict ?? false);
   let inputArg = positional[0];
-  if (!inputArg && config?.entry) {
-    inputArg = config.entry;
-    console.log(DIM + "using nodeon.json entry: " + config.entry + RESET);
+  if (!inputArg && config2?.entry) {
+    inputArg = config2.entry;
+    console.log(DIM + "using nodeon.json entry: " + config2.entry + RESET);
   }
   if (!inputArg) {
     console.error("build requires an input .no file (or a nodeon.json with 'entry')");
@@ -5275,7 +5720,7 @@ function runBuild(args) {
     console.error(RED + "error" + RESET + ": " + err.message);
     process.exit(1);
   }
-  const output = positional[1] || config?.outDir ? path5.resolve(config.outDir, path5.basename(input).replace(/\.no$/, ".js")) : void 0;
+  const output = positional[1] || config2?.outDir ? path5.resolve(config2.outDir, path5.basename(input).replace(/\.no$/, ".js")) : void 0;
   const absInput = path5.resolve(input);
   const filesToCompile = collectDependencies(absInput);
   let compiled = 0;
@@ -5284,11 +5729,11 @@ function runBuild(args) {
     const relFile = path5.relative(process.cwd(), file);
     try {
       const outPath = file === absInput ? output : void 0;
-      const result = compileFile(relFile, outPath, { minify, write: true, sourceMap, check });
-      const extra = [minify ? "minified" : "", sourceMap ? "+map" : ""].filter(Boolean).join(", ");
-      console.log("  " + GREEN + "\u2713" + RESET + " " + path5.basename(relFile) + " \u2192 " + path5.basename(result.out) + extra ? " (" + extra + ")" : "");
-      if (result.diagnostics && result.diagnostics.length > 0) {
-        printDiagnostics(relFile, result.diagnostics);
+      const result2 = compileFile(relFile, outPath, { minify, write: true, sourceMap: sourceMap2, check });
+      const extra = [minify ? "minified" : "", sourceMap2 ? "+map" : ""].filter(Boolean).join(", ");
+      console.log("  " + GREEN + "\u2713" + RESET + " " + path5.basename(relFile) + " \u2192 " + path5.basename(result2.out) + extra ? " (" + extra + ")" : "");
+      if (result2.diagnostics && result2.diagnostics.length > 0) {
+        printDiagnostics(relFile, result2.diagnostics);
       }
       compiled = compiled + 1;
     } catch (err) {
@@ -5315,7 +5760,7 @@ function printDiagnostics(file, diagnostics) {
 function collectDependencies(entryFile) {
   const visited = /* @__PURE__ */ new Set();
   const ordered = [];
-  const compiler = (init_compile(), __toCommonJS(compile_exports)) ?? (init_compile(), __toCommonJS(compile_exports));
+  const compiler2 = (init_compile(), __toCommonJS(compile_exports)) ?? (init_compile(), __toCommonJS(compile_exports));
   const resolver = (init_resolver(), __toCommonJS(resolver_exports)) ?? (init_resolver(), __toCommonJS(resolver_exports));
   function walk(absFile) {
     if (visited.has(absFile)) {
@@ -5324,7 +5769,7 @@ function collectDependencies(entryFile) {
     visited.add(absFile);
     try {
       const source = fs5.readFileSync(absFile, "utf8");
-      const ast = compiler.compileToAST(source);
+      const ast = compiler2.compileToAST(source);
       for (const stmt of ast.body) {
         let importSource = void 0;
         if (stmt.type === "ImportDeclaration") {
@@ -5348,6 +5793,7 @@ function collectDependencies(entryFile) {
 }
 
 // dist/cli/commands/check.js
+init_colors();
 var fs6 = require("fs");
 var path6 = require("path");
 function runCheck(args) {
@@ -5369,13 +5815,13 @@ function runCheck(args) {
   let totalErrors = 0;
   let totalWarnings = 0;
   let totalFiles = 0;
-  const compiler = (init_compile(), __toCommonJS(compile_exports));
+  const compiler2 = (init_compile(), __toCommonJS(compile_exports));
   for (const file of files) {
     const relFile = path6.relative(process.cwd(), file);
     try {
       const source = fs6.readFileSync(file, "utf8");
-      const ast = compiler.compileToAST(source);
-      const diagnostics = compiler.compile(source, { check: true }).diagnostics;
+      const ast = compiler2.compileToAST(source);
+      const diagnostics = compiler2.compile(source, { check: true }).diagnostics;
       const errors = diagnostics.filter((d) => d.severity === "error");
       const warnings = diagnostics.filter((d) => d.severity === "warning");
       if (diagnostics.length === 0) {
@@ -5428,7 +5874,7 @@ function runCheck(args) {
 function collectFiles(entryFile) {
   const visited = /* @__PURE__ */ new Set();
   const ordered = [];
-  const compiler = (init_compile(), __toCommonJS(compile_exports)) ?? (init_compile(), __toCommonJS(compile_exports));
+  const compiler2 = (init_compile(), __toCommonJS(compile_exports)) ?? (init_compile(), __toCommonJS(compile_exports));
   const resolver = (init_resolver(), __toCommonJS(resolver_exports)) ?? (init_resolver(), __toCommonJS(resolver_exports));
   function walk(absFile) {
     if (visited.has(absFile)) {
@@ -5437,7 +5883,7 @@ function collectFiles(entryFile) {
     visited.add(absFile);
     try {
       const source = fs6.readFileSync(absFile, "utf8");
-      const ast = compiler.compileToAST(source);
+      const ast = compiler2.compileToAST(source);
       for (const stmt of ast.body) {
         let importSource = void 0;
         if (stmt.type === "ImportDeclaration") {
@@ -5461,6 +5907,7 @@ function collectFiles(entryFile) {
 }
 
 // dist/cli/commands/fmt.js
+init_colors();
 var fs7 = require("fs");
 var path7 = require("path");
 function runFmt(args) {
@@ -5483,9 +5930,9 @@ function runFmt(args) {
   const relFile = path7.relative(process.cwd(), absInput);
   try {
     const source = fs7.readFileSync(absInput, "utf8");
-    const compiler = (init_compile(), __toCommonJS(compile_exports)) ?? (init_compile(), __toCommonJS(compile_exports));
+    const compiler2 = (init_compile(), __toCommonJS(compile_exports)) ?? (init_compile(), __toCommonJS(compile_exports));
     const formatter = (init_formatter(), __toCommonJS(formatter_exports)) ?? (init_formatter(), __toCommonJS(formatter_exports));
-    const ast = compiler.compileToAST(source);
+    const ast = compiler2.compileToAST(source);
     const formatted = formatter.format(ast);
     if (dryRun) {
       if (source === formatted) {
@@ -5510,6 +5957,7 @@ function runFmt(args) {
 
 // dist/cli/commands/repl.js
 init_compile();
+init_colors();
 var readline = require("readline");
 var vm2 = require("vm");
 function hasUnclosedBraces(src) {
@@ -5562,8 +6010,8 @@ function startRepl() {
   let multiLine = false;
   const evalInput = (input) => {
     try {
-      const result = compile(input);
-      const val = vm2.runInContext(result.js, ctx);
+      const result2 = compile(input);
+      const val = vm2.runInContext(result2.js, ctx);
       if (val !== void 0) {
         console.log(CYAN + formatValue(val) + RESET);
       }
@@ -5623,6 +6071,7 @@ function startRepl() {
 }
 
 // dist/cli/commands/test.js
+init_colors();
 var fs8 = require("fs");
 var path8 = require("path");
 var vm3 = require("vm");
@@ -5650,8 +6099,8 @@ function findTestFiles(dir, pattern) {
 async function runTestFile(filePath) {
   const relPath = path8.relative(process.cwd(), filePath);
   try {
-    const result = compileFile(relPath, void 0, { minify: false, write: false });
-    const cjsCode = esmToCjs(result.jsCode);
+    const result2 = compileFile(relPath, void 0, { minify: false, write: false });
+    const cjsCode = esmToCjs(result2.jsCode);
     const testDir = path8.dirname(filePath);
     const testRequire = createTestRequire(testDir);
     const mod = { exports: {} };
@@ -5707,7 +6156,7 @@ async function runTest(args) {
   }
   console.log(DIM + "  Found " + testFiles.length + " test file" + testFiles.length > 1 ? "s" : "" + RESET);
   console.log("");
-  const startTime = Date.now();
+  const startTime2 = Date.now();
   let totalPassed = 0;
   let totalFailed = 0;
   let totalSkipped = 0;
@@ -5721,7 +6170,7 @@ async function runTest(args) {
       totalSkipped = totalSkipped + fileResult.results.skipped;
     }
   }
-  const elapsed = Date.now() - startTime;
+  const elapsed2 = Date.now() - startTime2;
   console.log("");
   console.log("  " + BOLD + "Results:" + RESET);
   const passLabel = GREEN + totalPassed + " passed" + RESET;
@@ -5731,8 +6180,8 @@ async function runTest(args) {
   const total = totalPassed + totalFailed + totalSkipped;
   console.log("  Tests: " + parts.join(", ") + " (" + total + " total)");
   console.log("  Files: " + testFiles.length);
-  const elapsedSec = elapsed / 1e3;
-  console.log("  Time:  " + elapsedSec.toFixed(2) + "s");
+  const elapsedSec2 = elapsed2 / 1e3;
+  console.log("  Time:  " + elapsedSec2.toFixed(2) + "s");
   console.log("");
   if (totalFailed > 0) {
     process.exit(1);
@@ -5740,6 +6189,7 @@ async function runTest(args) {
 }
 
 // dist/cli/commands/new.js
+init_colors();
 var fs9 = require("fs");
 var path9 = require("path");
 var readline2 = require("readline");
@@ -5774,20 +6224,20 @@ function writeFile(filePath, content) {
   fs9.writeFileSync(filePath, content, "utf8");
 }
 function generateNodeonJson(name, projectType, dbChoice) {
-  const config = { name, version: "0.1.0", type: "workspace" };
+  const config2 = { name, version: "0.1.0", type: "workspace" };
   if (projectType === "fullstack" || projectType === "api") {
-    config.workspace = { apps: ["apps/*"], packages: ["packages/*"] };
+    config2.workspace = { apps: ["apps/*"], packages: ["packages/*"] };
   }
-  config.compiler = { strict: true, sourceMap: true, target: "node20" };
+  config2.compiler = { strict: true, sourceMap: true, target: "node20" };
   if (projectType === "fullstack" || projectType === "api") {
-    config.paths = { "@shared/*": ["packages/shared/src/*"], "@db/*": ["packages/db/src/*"] };
+    config2.paths = { "@shared/*": ["packages/shared/src/*"], "@db/*": ["packages/db/src/*"] };
     if (dbChoice !== "none") {
-      config.db = { driver: dbChoice, url: "${DATABASE_URL}", migrations: "packages/db/src/migrations", models: "packages/db/src/models", seeds: "packages/db/src/seeds" };
+      config2.db = { driver: dbChoice, url: "${DATABASE_URL}", migrations: "packages/db/src/migrations", models: "packages/db/src/models", seeds: "packages/db/src/seeds" };
     }
-    config.dev = { web: { port: 3e3 }, api: { port: 3001 } };
+    config2.dev = { web: { port: 3e3 }, api: { port: 3001 } };
   }
-  config.test = { include: ["tests/**/*.test.no"] };
-  return JSON.stringify(config, null, 2);
+  config2.test = { include: ["tests/**/*.test.no"] };
+  return JSON.stringify(config2, null, 2);
 }
 function generatePackageJson(name) {
   return JSON.stringify({ name, version: "0.1.0", private: true, workspaces: ["apps/*", "packages/*"] }, null, 2);
@@ -5809,56 +6259,56 @@ function generateEnvExample(dbChoice) {
 function generateReadme(name) {
   return "# " + name + "\n\nBuilt with [Nodeon](https://github.com/isma-is-dev/Nodeon) + Nova framework.\n\n## Getting Started\n\n```bash\nnodeon dev\n```\n\n## Commands\n\n| Command | Description |\n|---------|-------------|\n| `nodeon dev` | Start development server |\n| `nodeon build` | Production build |\n| `nodeon test` | Run tests |\n| `nodeon generate entity <name>` | Generate a new entity |\n| `nodeon generate page <path>` | Generate a new page |\n";
 }
-function scaffoldFullstack(projectDir, name, dbChoice) {
-  writeFile(path9.join(projectDir, "nodeon.json"), generateNodeonJson(name, "fullstack", dbChoice));
-  writeFile(path9.join(projectDir, "package.json"), generatePackageJson(name));
-  writeFile(path9.join(projectDir, ".gitignore"), generateGitignore());
-  writeFile(path9.join(projectDir, ".env.example"), generateEnvExample(dbChoice));
-  writeFile(path9.join(projectDir, "README.md"), generateReadme(name));
-  writeFile(path9.join(projectDir, "apps", "web", "src", "pages", "index.no"), 'export fn load() {\n  return { title: "Welcome to ' + name + '" }\n}\n\nexport fn template(data) {\n  return "<h1>" + data.title + "</h1>\\n<p>Edit apps/web/src/pages/index.no to get started.</p>"\n}\n');
-  writeFile(path9.join(projectDir, "apps", "web", "src", "pages", "about.no"), 'export fn template() {\n  return "<h1>About</h1>\\n<p>Built with Nodeon + Nova.</p>"\n}\n');
-  writeFile(path9.join(projectDir, "apps", "web", "src", "components", "Header.no"), 'export fn template(props) {\n  return "<header><nav><a href=\\"/\\">Home</a> | <a href=\\"/about\\">About</a></nav></header>"\n}\n');
-  writeFile(path9.join(projectDir, "apps", "web", "src", "layouts", "Main.no"), 'import { Header } from "../components/Header.no"\n\nexport fn template(props) {\n  return "<html><head><title>" + (props.title ?? "' + name + '") + "</title></head><body>" + Header.template() + "<main>" + props.content + "</main></body></html>"\n}\n');
-  writeFile(path9.join(projectDir, "apps", "api", "src", "main.no"), 'const http = require("http")\n\nconst PORT = process.env.API_PORT ?? 3001\n\nconst server = http.createServer((req, res) => {\n  res.writeHead(200, { "Content-Type": "application/json" })\n  res.end(JSON.stringify({ status: "ok", message: "' + name + ' API running" }))\n})\n\nserver.listen(PORT, () => {\n  print("API server running on http://localhost:" + PORT)\n})\n');
-  writeFile(path9.join(projectDir, "apps", "api", "src", "routes", "health.no"), 'export fn handler(req, res) {\n  return { status: "ok", timestamp: new Date().toISOString() }\n}\n');
-  writeFile(path9.join(projectDir, "packages", "shared", "src", "index.no"), '// Shared types and validation\nexport { AppConfig } from "./types/config.no"\n');
-  writeFile(path9.join(projectDir, "packages", "shared", "src", "types", "config.no"), '// Application configuration type\nexport const AppConfig = {\n  name: "' + name + '",\n  version: "0.1.0"\n}\n');
+function scaffoldFullstack(projectDir2, name, dbChoice) {
+  writeFile(path9.join(projectDir2, "nodeon.json"), generateNodeonJson(name, "fullstack", dbChoice));
+  writeFile(path9.join(projectDir2, "package.json"), generatePackageJson(name));
+  writeFile(path9.join(projectDir2, ".gitignore"), generateGitignore());
+  writeFile(path9.join(projectDir2, ".env.example"), generateEnvExample(dbChoice));
+  writeFile(path9.join(projectDir2, "README.md"), generateReadme(name));
+  writeFile(path9.join(projectDir2, "apps", "web", "src", "pages", "index.no"), 'export fn load() {\n  return { title: "Welcome to ' + name + '" }\n}\n\nexport fn template(data) {\n  return "<h1>" + data.title + "</h1>\\n<p>Edit apps/web/src/pages/index.no to get started.</p>"\n}\n');
+  writeFile(path9.join(projectDir2, "apps", "web", "src", "pages", "about.no"), 'export fn template() {\n  return "<h1>About</h1>\\n<p>Built with Nodeon + Nova.</p>"\n}\n');
+  writeFile(path9.join(projectDir2, "apps", "web", "src", "components", "Header.no"), 'export fn template(props) {\n  return "<header><nav><a href=\\"/\\">Home</a> | <a href=\\"/about\\">About</a></nav></header>"\n}\n');
+  writeFile(path9.join(projectDir2, "apps", "web", "src", "layouts", "Main.no"), 'import { Header } from "../components/Header.no"\n\nexport fn template(props) {\n  return "<html><head><title>" + (props.title ?? "' + name + '") + "</title></head><body>" + Header.template() + "<main>" + props.content + "</main></body></html>"\n}\n');
+  writeFile(path9.join(projectDir2, "apps", "api", "src", "main.no"), 'const http = require("http")\n\nconst PORT = process.env.API_PORT ?? 3001\n\nconst server = http.createServer((req, res) => {\n  res.writeHead(200, { "Content-Type": "application/json" })\n  res.end(JSON.stringify({ status: "ok", message: "' + name + ' API running" }))\n})\n\nserver.listen(PORT, () => {\n  print("API server running on http://localhost:" + PORT)\n})\n');
+  writeFile(path9.join(projectDir2, "apps", "api", "src", "routes", "health.no"), 'export fn handler(req, res) {\n  return { status: "ok", timestamp: new Date().toISOString() }\n}\n');
+  writeFile(path9.join(projectDir2, "packages", "shared", "src", "index.no"), '// Shared types and validation\nexport { AppConfig } from "./types/config.no"\n');
+  writeFile(path9.join(projectDir2, "packages", "shared", "src", "types", "config.no"), '// Application configuration type\nexport const AppConfig = {\n  name: "' + name + '",\n  version: "0.1.0"\n}\n');
   if (dbChoice !== "none") {
-    writeFile(path9.join(projectDir, "packages", "db", "src", "index.no"), '// Database client\nconst dbUrl = process.env.DATABASE_URL ?? ""\n\nexport fn getDatabase() {\n  print("Database URL: " + dbUrl)\n  return { url: dbUrl }\n}\n');
-    writeFile(path9.join(projectDir, "packages", "db", "src", "migrations", ".gitkeep"), "");
-    writeFile(path9.join(projectDir, "packages", "db", "src", "models", ".gitkeep"), "");
-    writeFile(path9.join(projectDir, "packages", "db", "src", "seeds", ".gitkeep"), "");
+    writeFile(path9.join(projectDir2, "packages", "db", "src", "index.no"), '// Database client\nconst dbUrl = process.env.DATABASE_URL ?? ""\n\nexport fn getDatabase() {\n  print("Database URL: " + dbUrl)\n  return { url: dbUrl }\n}\n');
+    writeFile(path9.join(projectDir2, "packages", "db", "src", "migrations", ".gitkeep"), "");
+    writeFile(path9.join(projectDir2, "packages", "db", "src", "models", ".gitkeep"), "");
+    writeFile(path9.join(projectDir2, "packages", "db", "src", "seeds", ".gitkeep"), "");
   }
-  writeFile(path9.join(projectDir, "tests", "example.test.no"), 'import { describe, it, expect } from "@nodeon/test"\n\ndescribe("Example", fn() {\n  it("should pass a basic assertion", fn() {\n    expect(1 + 1).toBe(2)\n  })\n\n  it("should check strings", fn() {\n    expect("hello").toContain("ell")\n  })\n\n  it("should check arrays", fn() {\n    expect([1, 2, 3]).toHaveLength(3)\n  })\n})\n');
+  writeFile(path9.join(projectDir2, "tests", "example.test.no"), 'import { describe, it, expect } from "@nodeon/test"\n\ndescribe("Example", fn() {\n  it("should pass a basic assertion", fn() {\n    expect(1 + 1).toBe(2)\n  })\n\n  it("should check strings", fn() {\n    expect("hello").toContain("ell")\n  })\n\n  it("should check arrays", fn() {\n    expect([1, 2, 3]).toHaveLength(3)\n  })\n})\n');
   if (dbChoice === "postgresql") {
-    writeFile(path9.join(projectDir, "infra", "docker", "docker-compose.yml"), 'services:\n  db:\n    image: postgres:16-alpine\n    environment:\n      POSTGRES_DB: ${DB_NAME:-myapp}\n      POSTGRES_USER: ${DB_USER:-nodeon}\n      POSTGRES_PASSWORD: ${DB_PASSWORD:-nodeon}\n    ports:\n      - "5432:5432"\n    volumes:\n      - pgdata:/var/lib/postgresql/data\n\nvolumes:\n  pgdata:\n');
+    writeFile(path9.join(projectDir2, "infra", "docker", "docker-compose.yml"), 'services:\n  db:\n    image: postgres:16-alpine\n    environment:\n      POSTGRES_DB: ${DB_NAME:-myapp}\n      POSTGRES_USER: ${DB_USER:-nodeon}\n      POSTGRES_PASSWORD: ${DB_PASSWORD:-nodeon}\n    ports:\n      - "5432:5432"\n    volumes:\n      - pgdata:/var/lib/postgresql/data\n\nvolumes:\n  pgdata:\n');
   }
 }
-function scaffoldApi(projectDir, name, dbChoice) {
-  writeFile(path9.join(projectDir, "nodeon.json"), generateNodeonJson(name, "api", dbChoice));
-  writeFile(path9.join(projectDir, "package.json"), generatePackageJson(name));
-  writeFile(path9.join(projectDir, ".gitignore"), generateGitignore());
-  writeFile(path9.join(projectDir, ".env.example"), generateEnvExample(dbChoice));
-  writeFile(path9.join(projectDir, "README.md"), generateReadme(name));
-  writeFile(path9.join(projectDir, "src", "main.no"), 'const http = require("http")\n\nconst PORT = process.env.PORT ?? 3000\n\nconst server = http.createServer((req, res) => {\n  res.writeHead(200, { "Content-Type": "application/json" })\n  res.end(JSON.stringify({ status: "ok", message: "' + name + ' API running" }))\n})\n\nserver.listen(PORT, () => {\n  print("Server running on http://localhost:" + PORT)\n})\n');
-  writeFile(path9.join(projectDir, "tests", "example.test.no"), 'import { describe, it, expect } from "@nodeon/test"\n\ndescribe("Example", fn() {\n  it("should work", fn() {\n    expect(true).toBeTruthy()\n  })\n})\n');
+function scaffoldApi(projectDir2, name, dbChoice) {
+  writeFile(path9.join(projectDir2, "nodeon.json"), generateNodeonJson(name, "api", dbChoice));
+  writeFile(path9.join(projectDir2, "package.json"), generatePackageJson(name));
+  writeFile(path9.join(projectDir2, ".gitignore"), generateGitignore());
+  writeFile(path9.join(projectDir2, ".env.example"), generateEnvExample(dbChoice));
+  writeFile(path9.join(projectDir2, "README.md"), generateReadme(name));
+  writeFile(path9.join(projectDir2, "src", "main.no"), 'const http = require("http")\n\nconst PORT = process.env.PORT ?? 3000\n\nconst server = http.createServer((req, res) => {\n  res.writeHead(200, { "Content-Type": "application/json" })\n  res.end(JSON.stringify({ status: "ok", message: "' + name + ' API running" }))\n})\n\nserver.listen(PORT, () => {\n  print("Server running on http://localhost:" + PORT)\n})\n');
+  writeFile(path9.join(projectDir2, "tests", "example.test.no"), 'import { describe, it, expect } from "@nodeon/test"\n\ndescribe("Example", fn() {\n  it("should work", fn() {\n    expect(true).toBeTruthy()\n  })\n})\n');
 }
-function scaffoldLibrary(projectDir, name) {
-  const config = { name, version: "0.1.0", type: "library", compiler: { strict: true, sourceMap: true }, test: { include: ["tests/**/*.test.no"] } };
-  writeFile(path9.join(projectDir, "nodeon.json"), JSON.stringify(config, null, 2));
-  writeFile(path9.join(projectDir, "package.json"), JSON.stringify({ name, version: "0.1.0", main: "dist/index.js", files: ["dist/**/*"] }, null, 2));
-  writeFile(path9.join(projectDir, ".gitignore"), generateGitignore());
-  writeFile(path9.join(projectDir, "README.md"), "# " + name + "\n\nA Nodeon library.\n");
-  writeFile(path9.join(projectDir, "src", "index.no"), "// " + name + ' \u2014 main entry point\n\nexport fn hello(name) {\n  return "Hello, " + name + "!"\n}\n');
-  writeFile(path9.join(projectDir, "tests", "index.test.no"), 'import { describe, it, expect } from "@nodeon/test"\nimport { hello } from "../src/index.no"\n\ndescribe("' + name + '", fn() {\n  it("greets by name", fn() {\n    expect(hello("World")).toBe("Hello, World!")\n  })\n})\n');
+function scaffoldLibrary(projectDir2, name) {
+  const config2 = { name, version: "0.1.0", type: "library", compiler: { strict: true, sourceMap: true }, test: { include: ["tests/**/*.test.no"] } };
+  writeFile(path9.join(projectDir2, "nodeon.json"), JSON.stringify(config2, null, 2));
+  writeFile(path9.join(projectDir2, "package.json"), JSON.stringify({ name, version: "0.1.0", main: "dist/index.js", files: ["dist/**/*"] }, null, 2));
+  writeFile(path9.join(projectDir2, ".gitignore"), generateGitignore());
+  writeFile(path9.join(projectDir2, "README.md"), "# " + name + "\n\nA Nodeon library.\n");
+  writeFile(path9.join(projectDir2, "src", "index.no"), "// " + name + ' \u2014 main entry point\n\nexport fn hello(name) {\n  return "Hello, " + name + "!"\n}\n');
+  writeFile(path9.join(projectDir2, "tests", "index.test.no"), 'import { describe, it, expect } from "@nodeon/test"\nimport { hello } from "../src/index.no"\n\ndescribe("' + name + '", fn() {\n  it("greets by name", fn() {\n    expect(hello("World")).toBe("Hello, World!")\n  })\n})\n');
 }
-function scaffoldCli(projectDir, name) {
-  const config = { name, version: "0.1.0", type: "cli", entry: "src/main.no", compiler: { strict: true, sourceMap: true } };
-  writeFile(path9.join(projectDir, "nodeon.json"), JSON.stringify(config, null, 2));
-  writeFile(path9.join(projectDir, "package.json"), JSON.stringify({ name, version: "0.1.0", bin: { [name]: "./dist/main.js" }, files: ["dist/**/*"] }, null, 2));
-  writeFile(path9.join(projectDir, ".gitignore"), generateGitignore());
-  writeFile(path9.join(projectDir, "README.md"), "# " + name + "\n\nA CLI tool built with Nodeon.\n");
-  writeFile(path9.join(projectDir, "src", "main.no"), 'const args = process.argv.slice(2)\nconst cmd = args[0]\n\nif !cmd || cmd == "help" {\n  print("Usage: ' + name + ' <command>")\n  print("Commands: greet, version, help")\n} else {\n  if cmd == "version" {\n    print("' + name + ' v0.1.0")\n  } else {\n    if cmd == "greet" {\n      const name = args[1] ?? "World"\n      print("Hello, " + name + "!")\n    } else {\n      print("Unknown command: " + cmd)\n      process.exit(1)\n    }\n  }\n}\n');
+function scaffoldCli(projectDir2, name) {
+  const config2 = { name, version: "0.1.0", type: "cli", entry: "src/main.no", compiler: { strict: true, sourceMap: true } };
+  writeFile(path9.join(projectDir2, "nodeon.json"), JSON.stringify(config2, null, 2));
+  writeFile(path9.join(projectDir2, "package.json"), JSON.stringify({ name, version: "0.1.0", bin: { [name]: "./dist/main.js" }, files: ["dist/**/*"] }, null, 2));
+  writeFile(path9.join(projectDir2, ".gitignore"), generateGitignore());
+  writeFile(path9.join(projectDir2, "README.md"), "# " + name + "\n\nA CLI tool built with Nodeon.\n");
+  writeFile(path9.join(projectDir2, "src", "main.no"), 'const args = process.argv.slice(2)\nconst cmd = args[0]\n\nif !cmd || cmd == "help" {\n  print("Usage: ' + name + ' <command>")\n  print("Commands: greet, version, help")\n} else {\n  if cmd == "version" {\n    print("' + name + ' v0.1.0")\n  } else {\n    if cmd == "greet" {\n      const name = args[1] ?? "World"\n      print("Hello, " + name + "!")\n    } else {\n      print("Unknown command: " + cmd)\n      process.exit(1)\n    }\n  }\n}\n');
 }
 async function runNew(args) {
   const nameArg = args.filter((a) => !a.startsWith("-"))[0];
@@ -5892,21 +6342,21 @@ async function runNew(args) {
     }
   }
   rl.close();
-  const projectDir = path9.resolve(process.cwd(), name);
-  if (fs9.existsSync(projectDir)) {
+  const projectDir2 = path9.resolve(process.cwd(), name);
+  if (fs9.existsSync(projectDir2)) {
     console.error(RED + "  Directory '" + name + "' already exists." + RESET);
     process.exit(1);
   }
   console.log("");
   console.log(DIM + "  Creating project..." + RESET);
   if (projectType === "fullstack") {
-    scaffoldFullstack(projectDir, name, dbChoice);
+    scaffoldFullstack(projectDir2, name, dbChoice);
   } else if (projectType === "api") {
-    scaffoldApi(projectDir, name, dbChoice);
+    scaffoldApi(projectDir2, name, dbChoice);
   } else if (projectType === "library") {
-    scaffoldLibrary(projectDir, name);
+    scaffoldLibrary(projectDir2, name);
   } else {
-    scaffoldCli(projectDir, name);
+    scaffoldCli(projectDir2, name);
   }
   console.log("");
   console.log(GREEN + "  \u2713" + RESET + " Project " + BOLD + name + RESET + " created!");
@@ -5936,7 +6386,7 @@ async function runNew(args) {
       idx = idx + 1;
     }
   }
-  listDir(projectDir, "");
+  listDir(projectDir2, "");
   console.log("");
   console.log("  Next steps:");
   console.log("    " + CYAN + "cd " + name + RESET);
@@ -5949,6 +6399,7 @@ async function runNew(args) {
 }
 
 // dist/cli/commands/generate.js
+init_colors();
 var fs10 = require("fs");
 var path10 = require("path");
 function writeFile2(filePath, content) {
@@ -6121,6 +6572,7 @@ function runGenerate(args) {
 }
 
 // dist/cli/commands/dev.js
+init_colors();
 var fs11 = require("fs");
 var path11 = require("path");
 var http = require("http");
@@ -6138,35 +6590,35 @@ function loadConfig2() {
 var MIME_TYPES = { ".html": "text/html", ".css": "text/css", ".js": "application/javascript", ".json": "application/json", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".svg": "image/svg+xml", ".ico": "image/x-icon", ".woff": "font/woff", ".woff2": "font/woff2", ".ttf": "font/ttf", ".wasm": "application/wasm" };
 function compileAndRun(filePath) {
   const source = fs11.readFileSync(filePath, "utf8");
-  const compiler = require(path11.resolve(process.cwd(), "dist", "nodeon-compiler.cjs"));
-  const result = compiler.compile(source);
-  if (result.diagnostics.length > 0) {
-    for (const diag of result.diagnostics) {
+  const compiler2 = require(path11.resolve(process.cwd(), "dist", "nodeon-compiler.cjs"));
+  const result2 = compiler2.compile(source);
+  if (result2.diagnostics.length > 0) {
+    for (const diag of result2.diagnostics) {
       console.error("  " + RED + "error" + RESET + ": " + diag.message);
     }
     return null;
   }
-  const vm4 = require("vm");
+  const vm5 = require("vm");
   const mod = { exports: {} };
-  let code2 = result.js;
+  let code2 = result2.js;
   code2 = code2.replace(/import\s+\{([^}]+)\}\s+from\s+["']([^"']+)["'];?/g, 'const {$1} = require("$2");');
   code2 = code2.replace(/import\s+(\w+)\s+from\s+["']([^"']+)["'];?/g, 'const $1 = require("$2");');
   code2 = code2.replace(/export\s+(class|function|const|let|var)\s+/g, "$1 ");
   code2 = code2.replace(/export\s+default\s+/g, "module.exports.default = ");
   const exportPattern = /(?:class|function)\s+(\w+)/g;
-  let matched = exportPattern.exec(result.js);
+  let matched = exportPattern.exec(result2.js);
   const namedExports = [];
   while (matched !== null) {
-    if (result.js.includes("export " + matched[0].trim().split(" ")[0]) || result.js.includes("export " + matched[0])) {
+    if (result2.js.includes("export " + matched[0].trim().split(" ")[0]) || result2.js.includes("export " + matched[0])) {
       namedExports.push(matched[1]);
     }
-    matched = exportPattern.exec(result.js);
+    matched = exportPattern.exec(result2.js);
   }
   for (const name of namedExports) {
     code2 = code2 + "\nmodule.exports." + name + " = typeof " + name + " !== 'undefined' ? " + name + " : undefined;";
   }
   try {
-    const script = new vm4.Script(code2, { filename: filePath });
+    const script = new vm5.Script(code2, { filename: filePath });
     const sandbox = { module: mod, exports: mod.exports, require, __filename: filePath, __dirname: path11.dirname(filePath), console, process, Buffer, setTimeout, setInterval, clearTimeout, clearInterval, URL, URLSearchParams };
     script.runInNewContext(sandbox);
     return mod.exports;
@@ -6175,9 +6627,9 @@ function compileAndRun(filePath) {
     return null;
   }
 }
-function buildRoutes(pagesDir) {
+function buildRoutes(pagesDir2) {
   const routes = [];
-  if (!fs11.existsSync(pagesDir)) {
+  if (!fs11.existsSync(pagesDir2)) {
     return routes;
   }
   function scan(dir, prefix) {
@@ -6204,7 +6656,7 @@ function buildRoutes(pagesDir) {
       }
     }
   }
-  scan(pagesDir, "");
+  scan(pagesDir2, "");
   routes.sort((a, b) => {
     if (a.isDynamic !== b.isDynamic) {
       return a.isDynamic ? 1 : -1;
@@ -6262,26 +6714,26 @@ function notifyReload() {
   }
 }
 function runDev(args) {
-  const config = loadConfig2();
+  const config2 = loadConfig2();
   const flags = args || [];
   let port = 3e3;
   const portIdx = flags.indexOf("--port");
   if (portIdx !== -1 && flags[portIdx + 1]) {
     port = parseInt(flags[portIdx + 1], 10);
-  } else if (config.port) {
-    port = config.port;
+  } else if (config2.port) {
+    port = config2.port;
   }
-  const projectDir = process.cwd();
-  const pagesDir = path11.join(projectDir, "src", "pages");
-  const publicDir = path11.join(projectDir, "public");
-  if (!fs11.existsSync(pagesDir)) {
+  const projectDir2 = process.cwd();
+  const pagesDir2 = path11.join(projectDir2, "src", "pages");
+  const publicDir = path11.join(projectDir2, "public");
+  if (!fs11.existsSync(pagesDir2)) {
     console.error("");
     console.error("  " + RED + "Error:" + RESET + " No src/pages/ directory found.");
     console.error("  " + DIM + "Run 'nodeon new' to create a project, or create src/pages/ manually." + RESET);
     console.error("");
     process.exit(1);
   }
-  let routes = buildRoutes(pagesDir);
+  let routes = buildRoutes(pagesDir2);
   function handleRequest(req, res) {
     const url = new URL(req.url, "http://localhost");
     const urlPath = url.pathname;
@@ -6315,21 +6767,21 @@ function runDev(args) {
         }
         if (matched.route.isApi) {
           const handler = pageMod.default || pageMod;
-          let result = null;
+          let result2 = null;
           if (typeof handler === "function") {
-            result = handler(req, res, matched.params);
+            result2 = handler(req, res, matched.params);
           } else {
             const method = req.method.toLowerCase();
             const methodName = method === "delete" ? "del" : method;
             if (handler[methodName] && typeof handler[methodName] === "function") {
-              result = handler[methodName](req, matched.params);
+              result2 = handler[methodName](req, matched.params);
             } else if (typeof handler === "object") {
-              result = handler;
+              result2 = handler;
             }
           }
           if (!res.headersSent) {
             res.writeHead(200, { "Content-Type": "application/json" });
-            res.end(JSON.stringify(result));
+            res.end(JSON.stringify(result2));
           }
         } else {
           const PageClass = pageMod.default || pageMod;
@@ -6374,17 +6826,17 @@ function runDev(args) {
       clearTimeout(debounceTimer);
     }
     debounceTimer = setTimeout(() => {
-      routes = buildRoutes(pagesDir);
+      routes = buildRoutes(pagesDir2);
       console.log("  " + DIM + "[nova] Routes reloaded (" + routes.length + " routes)" + RESET);
       notifyReload();
     }, 100);
   }
-  if (fs11.existsSync(pagesDir)) {
-    fs11.watch(pagesDir, { recursive: true }, watchHandler);
+  if (fs11.existsSync(pagesDir2)) {
+    fs11.watch(pagesDir2, { recursive: true }, watchHandler);
   }
-  const srcDir = path11.join(projectDir, "src");
-  if (fs11.existsSync(srcDir)) {
-    fs11.watch(srcDir, { recursive: true }, (eventType, filename) => {
+  const srcDir2 = path11.join(projectDir2, "src");
+  if (fs11.existsSync(srcDir2)) {
+    fs11.watch(srcDir2, { recursive: true }, (eventType, filename) => {
       if (filename && !filename.startsWith("pages")) {
         if (debounceTimer) {
           clearTimeout(debounceTimer);
@@ -6415,6 +6867,486 @@ function runDev(args) {
 }
 
 // dist/cli/index.js
+init_build_prod();
+
+// dist/cli/commands/deploy.js
+init_colors();
+var fs13 = require("fs");
+var path13 = require("path");
+function loadConfig3() {
+  const configPath = path13.resolve(process.cwd(), "nodeon.json");
+  if (!fs13.existsSync(configPath)) {
+    return {};
+  }
+  try {
+    return JSON.parse(fs13.readFileSync(configPath, "utf8"));
+  } catch (e) {
+    return {};
+  }
+}
+async function runDeploy(args) {
+  const config2 = loadConfig3();
+  const projectDir2 = process.cwd();
+  const target = args[0] ?? config2.deploy?.target ?? "docker";
+  console.log("");
+  console.log("  " + CYAN + BOLD + "\u{1F680} Nodeon deploy" + RESET + " \u2192 " + target);
+  console.log("");
+  if (target === "docker") {
+    await deployDocker(projectDir2, config2, args);
+  } else if (target === "vercel") {
+    deployVercel(projectDir2, config2);
+  } else if (target === "fly") {
+    deployFly(projectDir2, config2);
+  } else {
+    console.error("  " + RED + "Unknown deploy target: " + target + RESET);
+    console.error("  Supported: docker, vercel, fly");
+    process.exit(1);
+  }
+}
+async function deployDocker(projectDir2, config2, args) {
+  const outDir2 = path13.resolve(projectDir2, config2.outDir ?? "dist");
+  const port = config2.port ?? 3e3;
+  const appName = config2.name ?? path13.basename(projectDir2);
+  if (!fs13.existsSync(outDir2) || !fs13.existsSync(path13.join(outDir2, "server.js"))) {
+    console.log("  " + YELLOW + "No production build found. Running build first..." + RESET);
+    console.log("");
+    const buildProd = (init_build_prod(), __toCommonJS(build_prod_exports));
+    await buildProd.runBuildProd(["--prod"]);
+  }
+  const dockerfile = generateDockerfile(port, config2);
+  const dockerfilePath = path13.join(projectDir2, "Dockerfile");
+  fs13.writeFileSync(dockerfilePath, dockerfile, "utf8");
+  console.log("  " + GREEN + "\u2713" + RESET + " Generated Dockerfile");
+  const compose = generateDockerCompose(appName, port, config2);
+  const composePath = path13.join(projectDir2, "docker-compose.yml");
+  fs13.writeFileSync(composePath, compose, "utf8");
+  console.log("  " + GREEN + "\u2713" + RESET + " Generated docker-compose.yml");
+  const dockerignore = generateDockerignore();
+  const ignorePath = path13.join(projectDir2, ".dockerignore");
+  if (!fs13.existsSync(ignorePath)) {
+    fs13.writeFileSync(ignorePath, dockerignore, "utf8");
+    console.log("  " + GREEN + "\u2713" + RESET + " Generated .dockerignore");
+  }
+  console.log("");
+  console.log("  " + DIM + "To build and run:" + RESET);
+  console.log("    docker compose up --build");
+  console.log("");
+  console.log("  " + DIM + "To build image only:" + RESET);
+  console.log("    docker build -t " + appName + " .");
+  console.log("    docker run -p " + port + ":" + port + " " + appName);
+  console.log("");
+  if (args.includes("--run")) {
+    console.log("  " + CYAN + "Starting container..." + RESET);
+    const exec = require("child_process").execSync;
+    try {
+      exec("docker compose up --build", { stdio: "inherit", cwd: projectDir2 });
+    } catch (e) {
+    }
+  }
+}
+function deployVercel(projectDir2, config2) {
+  const outDir2 = config2.outDir ?? "dist";
+  const vercelConfig = { version: 2, builds: [{ src: outDir2 + "/server.js", use: "@vercel/node" }], routes: [{ src: "/_nova/(.*)", dest: "/" + outDir2 + "/_nova/$1" }, { src: "/(.*)", dest: "/" + outDir2 + "/server.js" }] };
+  const vercelPath = path13.join(projectDir2, "vercel.json");
+  fs13.writeFileSync(vercelPath, JSON.stringify(vercelConfig, null, 2), "utf8");
+  console.log("  " + GREEN + "\u2713" + RESET + " Generated vercel.json");
+  console.log("");
+  console.log("  " + DIM + "Deploy with:" + RESET);
+  console.log("    npx vercel --prod");
+  console.log("");
+}
+function deployFly(projectDir2, config2) {
+  const appName = config2.name ?? path13.basename(projectDir2);
+  const port = config2.port ?? 3e3;
+  const flyToml = 'app = "' + appName + '"\nprimary_region = "iad"\n\n[build]\n  dockerfile = "Dockerfile"\n\n[http_service]\n  internal_port = ' + port + "\n  force_https = true\n  auto_stop_machines = true\n  auto_start_machines = true\n";
+  const flyPath = path13.join(projectDir2, "fly.toml");
+  fs13.writeFileSync(flyPath, flyToml, "utf8");
+  console.log("  " + GREEN + "\u2713" + RESET + " Generated fly.toml");
+  if (!fs13.existsSync(path13.join(projectDir2, "Dockerfile"))) {
+    const dockerfile = generateDockerfile(port, config2);
+    fs13.writeFileSync(path13.join(projectDir2, "Dockerfile"), dockerfile, "utf8");
+    console.log("  " + GREEN + "\u2713" + RESET + " Generated Dockerfile");
+  }
+  console.log("");
+  console.log("  " + DIM + "Deploy with:" + RESET);
+  console.log("    fly launch");
+  console.log("    fly deploy");
+  console.log("");
+}
+function generateDockerfile(port, config2) {
+  const outDir2 = config2.outDir ?? "dist";
+  let df = "# Auto-generated by nodeon deploy\n";
+  df = df + "FROM node:20-alpine\n\n";
+  df = df + "WORKDIR /app\n\n";
+  df = df + "# Copy production build\n";
+  df = df + "COPY " + outDir2 + "/ ./dist/\n";
+  df = df + "COPY package.json ./\n\n";
+  df = df + "# Install production dependencies only\n";
+  df = df + "RUN npm ci --omit=dev 2>/dev/null || npm install --omit=dev 2>/dev/null || true\n\n";
+  df = df + "ENV NODE_ENV=production\n";
+  df = df + "ENV PORT=" + port + "\n\n";
+  df = df + "EXPOSE " + port + "\n\n";
+  df = df + 'CMD ["node", "dist/server.js"]\n';
+  return df;
+}
+function generateDockerCompose(appName, port, config2) {
+  let dc = "# Auto-generated by nodeon deploy\n";
+  dc = dc + "version: '3.8'\n\n";
+  dc = dc + "services:\n";
+  dc = dc + "  app:\n";
+  dc = dc + "    build: .\n";
+  dc = dc + "    container_name: " + appName + "\n";
+  dc = dc + "    ports:\n";
+  dc = dc + "      - '" + port + ":" + port + "'\n";
+  dc = dc + "    environment:\n";
+  dc = dc + "      - NODE_ENV=production\n";
+  dc = dc + "      - PORT=" + port + "\n";
+  if (config2.db) {
+    dc = dc + "    depends_on:\n";
+    dc = dc + "      - db\n";
+    dc = dc + "    environment:\n";
+    dc = dc + "      - DATABASE_URL=postgresql://nodeon:nodeon@db:5432/" + appName + "\n";
+    dc = dc + "\n";
+    dc = dc + "  db:\n";
+    dc = dc + "    image: postgres:16-alpine\n";
+    dc = dc + "    environment:\n";
+    dc = dc + "      POSTGRES_USER: nodeon\n";
+    dc = dc + "      POSTGRES_PASSWORD: nodeon\n";
+    dc = dc + "      POSTGRES_DB: " + appName + "\n";
+    dc = dc + "    volumes:\n";
+    dc = dc + "      - pgdata:/var/lib/postgresql/data\n";
+    dc = dc + "    ports:\n";
+    dc = dc + "      - '5432:5432'\n";
+    dc = dc + "\nvolumes:\n";
+    dc = dc + "  pgdata:\n";
+  }
+  return dc;
+}
+function generateDockerignore() {
+  return "node_modules\n.git\n.env\n*.log\nsrc\nbootstrap\ntests\n.windsurf\n";
+}
+
+// dist/cli/commands/lint.js
+init_colors();
+var fs14 = require("fs");
+var path14 = require("path");
+var BUILTIN_RULES = { "no-unused-vars": { description: "Warn about declared variables that are never used", defaultLevel: "warn", check: checkNoUnusedVars }, "no-any": { description: "Warn when using 'any' type annotation explicitly", defaultLevel: "off", check: checkNoAny }, "no-implicit-return": { description: "Warn when a function lacks an explicit return type annotation", defaultLevel: "off", check: checkNoImplicitReturn }, "prefer-const": { description: "Warn when let is used but never reassigned", defaultLevel: "warn", check: checkPreferConst }, "max-line-length": { description: "Warn when lines exceed a maximum length", defaultLevel: "off", check: checkMaxLineLength, options: { max: 120 } }, "no-console": { description: "Warn when using print/console.log in production code", defaultLevel: "off", check: checkNoConsole }, "no-empty-fn": { description: "Warn about empty function bodies", defaultLevel: "warn", check: checkNoEmptyFn } };
+function checkNoUnusedVars(ast, source, opts) {
+  const issues = [];
+  const declared = /* @__PURE__ */ new Map();
+  const used = /* @__PURE__ */ new Set();
+  function walkStmts(stmts) {
+    for (const stmt of stmts) {
+      if (stmt.type === "VariableDeclaration" && stmt.name) {
+        declared.set(stmt.name.name, stmt);
+      }
+      if (stmt.type === "FunctionDeclaration" && stmt.name) {
+        declared.set(stmt.name.name, stmt);
+        for (const p of stmt.params) {
+          declared.set(p.name, stmt);
+        }
+        walkStmts(stmt.body || []);
+      }
+      if (stmt.type === "IfStatement") {
+        walkStmts(stmt.consequent || []);
+        if (stmt.alternate) {
+          walkStmts(stmt.alternate);
+        }
+      }
+      if (stmt.type === "ForStatement" || stmt.type === "WhileStatement" || stmt.type === "DoWhileStatement") {
+        walkStmts(stmt.body || []);
+      }
+      if (stmt.type === "ExportDeclaration" && stmt.declaration) {
+        if (stmt.declaration.name) {
+          used.add(stmt.declaration.name.name);
+        }
+      }
+      collectUsedIdentifiers(stmt, used);
+    }
+  }
+  function collectUsedIdentifiers(node, usedSet) {
+    if (!node || typeof node !== "object") {
+      return;
+    }
+    if (node.type === "Identifier" && node.name) {
+      usedSet.add(node.name);
+    }
+    const keys = Object.keys(node);
+    for (const key of keys) {
+      if (key === "name" && node.type === "VariableDeclaration") {
+        continue;
+      }
+      if (key === "name" && node.type === "FunctionDeclaration") {
+        continue;
+      }
+      const val = node[key];
+      if (Array.isArray(val)) {
+        for (const item of val) {
+          collectUsedIdentifiers(item, usedSet);
+        }
+      } else if (val && typeof val === "object" && val.type) {
+        collectUsedIdentifiers(val, usedSet);
+      }
+    }
+  }
+  walkStmts(ast.body);
+  for (const entry of Array.from(declared)) {
+    const name = entry[0];
+    const stmt = entry[1];
+    if (!used.has(name) && !name.startsWith("_")) {
+      issues.push({ rule: "no-unused-vars", message: "'" + name + "' is declared but never used", line: stmt?.loc?.line ?? 0, column: stmt?.loc?.column ?? 0 });
+    }
+  }
+  return issues;
+}
+function checkNoAny(ast, source, opts) {
+  const issues = [];
+  function walkNode(node) {
+    if (!node || typeof node !== "object") {
+      return;
+    }
+    if (node.typeAnnotation && node.typeAnnotation.kind === "named" && node.typeAnnotation.name === "any") {
+      issues.push({ rule: "no-any", message: "Avoid using 'any' type annotation", line: node?.loc?.line ?? 0, column: node?.loc?.column ?? 0 });
+    }
+    const keys = Object.keys(node);
+    for (const key of keys) {
+      const val = node[key];
+      if (Array.isArray(val)) {
+        for (const item of val) {
+          walkNode(item);
+        }
+      } else if (val && typeof val === "object" && val.type) {
+        walkNode(val);
+      }
+    }
+  }
+  for (const stmt of ast.body) {
+    walkNode(stmt);
+  }
+  return issues;
+}
+function checkNoImplicitReturn(ast, source, opts) {
+  const issues = [];
+  for (const stmt of ast.body) {
+    if (stmt.type === "FunctionDeclaration" && !stmt.returnType) {
+      issues.push({ rule: "no-implicit-return", message: "Function '" + (stmt.name?.name ?? "anonymous") + "' lacks a return type annotation", line: stmt?.loc?.line ?? 0, column: stmt?.loc?.column ?? 0 });
+    }
+    if (stmt.type === "ExportDeclaration" && stmt.declaration?.type === "FunctionDeclaration" && !stmt.declaration.returnType) {
+      issues.push({ rule: "no-implicit-return", message: "Function '" + (stmt.declaration.name?.name ?? "anonymous") + "' lacks a return type annotation", line: stmt?.loc?.line ?? 0, column: stmt?.loc?.column ?? 0 });
+    }
+  }
+  return issues;
+}
+function checkPreferConst(ast, source, opts) {
+  const issues = [];
+  const letDecls = /* @__PURE__ */ new Map();
+  const reassigned = /* @__PURE__ */ new Set();
+  function walkStmts(stmts) {
+    for (const stmt of stmts) {
+      if (stmt.type === "VariableDeclaration" && stmt.kind === "let" && stmt.name) {
+        letDecls.set(stmt.name.name, stmt);
+      }
+      if (stmt.type === "ExpressionStatement" && stmt.expression?.type === "AssignmentExpression") {
+        if (stmt.expression.left?.type === "Identifier") {
+          reassigned.add(stmt.expression.left.name);
+        }
+      }
+      if (stmt.body) {
+        walkStmts(stmt.body);
+      }
+      if (stmt.consequent) {
+        walkStmts(stmt.consequent);
+      }
+      if (stmt.alternate) {
+        walkStmts(stmt.alternate);
+      }
+    }
+  }
+  walkStmts(ast.body);
+  for (const entry of Array.from(letDecls)) {
+    const name = entry[0];
+    const stmt = entry[1];
+    if (!reassigned.has(name)) {
+      issues.push({ rule: "prefer-const", message: "'" + name + "' is never reassigned, use 'const' instead of 'let'", line: stmt?.loc?.line ?? 0, column: stmt?.loc?.column ?? 0 });
+    }
+  }
+  return issues;
+}
+function checkMaxLineLength(ast, source, opts) {
+  const issues = [];
+  const maxLen = opts?.max ?? 120;
+  const lines = source.split("\n");
+  let lineNum = 1;
+  for (const line of lines) {
+    if (line.length > maxLen) {
+      issues.push({ rule: "max-line-length", message: "Line exceeds " + maxLen + " characters (" + line.length + ")", line: lineNum, column: maxLen });
+    }
+    lineNum = lineNum + 1;
+  }
+  return issues;
+}
+function checkNoConsole(ast, source, opts) {
+  const issues = [];
+  function walkNode(node) {
+    if (!node || typeof node !== "object") {
+      return;
+    }
+    if (node.type === "CallExpression" && node.callee?.type === "Identifier" && node.callee.name === "print") {
+      issues.push({ rule: "no-console", message: "Unexpected 'print' statement", line: node?.loc?.line ?? 0, column: node?.loc?.column ?? 0 });
+    }
+    if (node.type === "CallExpression" && node.callee?.type === "MemberExpression" && node.callee.object?.name === "console") {
+      issues.push({ rule: "no-console", message: "Unexpected 'console." + (node.callee.property?.name ?? "log") + "' call", line: node?.loc?.line ?? 0, column: node?.loc?.column ?? 0 });
+    }
+    const keys = Object.keys(node);
+    for (const key of keys) {
+      const val = node[key];
+      if (Array.isArray(val)) {
+        for (const item of val) {
+          walkNode(item);
+        }
+      } else if (val && typeof val === "object" && val.type) {
+        walkNode(val);
+      }
+    }
+  }
+  for (const stmt of ast.body) {
+    walkNode(stmt);
+  }
+  return issues;
+}
+function checkNoEmptyFn(ast, source, opts) {
+  const issues = [];
+  function walkStmts(stmts) {
+    for (const stmt of stmts) {
+      if (stmt.type === "FunctionDeclaration" && (!stmt.body || stmt.body.length === 0)) {
+        issues.push({ rule: "no-empty-fn", message: "Function '" + (stmt.name?.name ?? "anonymous") + "' has an empty body", line: stmt?.loc?.line ?? 0, column: stmt?.loc?.column ?? 0 });
+      }
+      if (stmt.body) {
+        walkStmts(stmt.body);
+      }
+      if (stmt.consequent) {
+        walkStmts(stmt.consequent);
+      }
+      if (stmt.alternate) {
+        walkStmts(stmt.alternate);
+      }
+    }
+  }
+  walkStmts(ast.body);
+  return issues;
+}
+function loadLintConfig() {
+  const configPath = path14.resolve(process.cwd(), "nodeon.json");
+  if (!fs14.existsSync(configPath)) {
+    return {};
+  }
+  try {
+    const config2 = JSON.parse(fs14.readFileSync(configPath, "utf8"));
+    return config2.lint ?? {};
+  } catch (e) {
+    return {};
+  }
+}
+function collectFiles2(inputPath) {
+  const absPath = path14.resolve(inputPath);
+  if (!fs14.existsSync(absPath)) {
+    return [];
+  }
+  const stat = fs14.statSync(absPath);
+  if (stat.isFile() && absPath.endsWith(".no")) {
+    return [absPath];
+  }
+  if (!stat.isDirectory()) {
+    return [];
+  }
+  const results = [];
+  function walk(dir) {
+    const entries = fs14.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = path14.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === "node_modules" || entry.name.startsWith(".") || entry.name === "dist") {
+          continue;
+        }
+        walk(full);
+      } else if (entry.name.endsWith(".no")) {
+        results.push(full);
+      }
+    }
+  }
+  walk(absPath);
+  return results;
+}
+function runLint(args) {
+  const config2 = loadLintConfig();
+  const inputPath = args[0] ?? "src";
+  const fix = args.includes("--fix");
+  const ruleConfig = {};
+  const ruleNames = Object.keys(BUILTIN_RULES);
+  for (const name of ruleNames) {
+    const rule = BUILTIN_RULES[name];
+    ruleConfig[name] = { level: config2[name] ?? rule.defaultLevel, options: config2[name + "-options"] ?? rule.options ?? {} };
+  }
+  const files = collectFiles2(inputPath);
+  if (files.length === 0) {
+    console.log("  " + DIM + "No .no files found in " + inputPath + RESET);
+    return;
+  }
+  const compiler2 = (init_compile(), __toCommonJS(compile_exports));
+  let totalIssues = 0;
+  let totalErrors = 0;
+  let totalWarnings = 0;
+  for (const file of files) {
+    try {
+      const source = fs14.readFileSync(file, "utf8");
+      const ast = compiler2.compileToAST(source);
+      const relFile = path14.relative(process.cwd(), file);
+      let fileIssues = [];
+      for (const name of ruleNames) {
+        const rc = ruleConfig[name];
+        if (rc.level === "off") {
+          continue;
+        }
+        const rule = BUILTIN_RULES[name];
+        const issues = rule.check(ast, source, rc.options);
+        for (const issue of issues) {
+          issue.level = rc.level;
+          fileIssues.push(issue);
+        }
+      }
+      if (fileIssues.length > 0) {
+        console.log("");
+        console.log("  " + BOLD + relFile + RESET);
+        for (const issue of fileIssues) {
+          const color = issue.level === "error" ? RED : YELLOW;
+          const label = issue.level === "error" ? "error" : "warn ";
+          console.log("    " + color + label + RESET + " " + issue.message + " " + DIM + "(" + issue.rule + " L" + issue.line + ")" + RESET);
+          if (issue.level === "error") {
+            totalErrors = totalErrors + 1;
+          }
+          if (issue.level === "warn") {
+            totalWarnings = totalWarnings + 1;
+          }
+          totalIssues = totalIssues + 1;
+        }
+      }
+    } catch (err) {
+      console.log("  " + RED + "\u2717" + RESET + " " + path14.relative(process.cwd(), file) + ": " + err.message);
+    }
+  }
+  console.log("");
+  if (totalIssues === 0) {
+    console.log("  " + GREEN + "\u2713 No lint issues found" + RESET + " " + DIM + "(" + files.length + " files)" + RESET);
+  } else {
+    console.log("  " + totalIssues + " issues " + DIM + "(" + totalErrors + " errors, " + totalWarnings + " warnings, " + files.length + " files)" + RESET);
+  }
+  console.log("");
+  if (totalErrors > 0) {
+    process.exit(1);
+  }
+}
+
+// dist/cli/index.js
 async function main(argv) {
   const args = argv ?? process.argv.slice(2);
   const cmd = args[0];
@@ -6439,7 +7371,16 @@ async function main(argv) {
     return;
   }
   if (cmd === "build") {
-    runBuild(args.slice(1));
+    const buildArgs = args.slice(1);
+    if (buildArgs.includes("--prod") || buildArgs.includes("--production")) {
+      await (void 0)(buildArgs);
+    } else {
+      runBuild(buildArgs);
+    }
+    return;
+  }
+  if (cmd === "deploy") {
+    await runDeploy(args.slice(1));
     return;
   }
   if (cmd === "run") {
@@ -6462,6 +7403,10 @@ async function main(argv) {
     runFmt(args.slice(1));
     return;
   }
+  if (cmd === "lint") {
+    runLint(args.slice(1));
+    return;
+  }
   if (cmd === "generate" || cmd === "g") {
     runGenerate(args.slice(1));
     return;
@@ -6472,7 +7417,7 @@ async function main(argv) {
     return;
   } catch (e) {
   }
-  const knownCommands = ["build", "run", "repl", "check", "fmt", "help", "version", "init", "new", "test", "generate", "dev"];
+  const knownCommands = ["build", "run", "repl", "check", "fmt", "help", "version", "init", "new", "test", "generate", "dev", "deploy", "lint"];
   const suggestion = suggestClosest(cmd, knownCommands);
   console.error("Unknown command '" + cmd + "'");
   console.error("See " + CYAN + "'nodeon help'" + RESET + ".");

@@ -1,5 +1,5 @@
 import { CYAN, BOLD, RESET } from "../utils/colors.js";
-const version = "0.2.0";
+const version = "0.3.0";
 const helpText = `nodeon v${version}
 
 Usage: nodeon <command> [options]
@@ -11,8 +11,13 @@ Project:
 
 Compile:
   build [options] <input> [output]   Compile .no to .js
+  build --prod                        Production build (bundle + pre-render)
   run <input>                        Compile and execute
   check <input>                      Type-check without compiling
+
+Deploy:
+  deploy [docker|vercel|fly]         Generate deploy config
+  deploy docker --run                Build and start Docker container
 
 Code Quality:
   test [pattern]                     Run .test.no files
@@ -42,8 +47,10 @@ Build Options:
 Examples:
   nodeon new my-app                  Create a full-stack project
   nodeon build hello.no              Compile to hello.js
+  nodeon build --prod                Production build with pre-rendering
   nodeon run hello.no                Compile and execute
   nodeon test                        Run all tests
+  nodeon deploy docker               Generate Dockerfile + docker-compose
   nodeon g entity user               Generate user entity + CRUD
   nodeon g module blog               Generate complete blog module`;
 export function printHelp() {

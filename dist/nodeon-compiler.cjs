@@ -2,6 +2,9 @@ var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __esm = (fn, res) => function __init() {
+  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+};
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
@@ -16,523 +19,531 @@ var __copyProps = (to, from, except, desc) => {
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// dist/compiler/compile.js
-var compile_exports = {};
-__export(compile_exports, {
-  Lexer: () => Lexer,
-  Parser: () => Parser,
-  PluginRegistry: () => PluginRegistry,
-  SourceMapBuilder: () => SourceMapBuilder,
-  compile: () => compile,
-  compileToAST: () => compileToAST,
-  compileWithSourceMap: () => compileWithSourceMap,
-  defaultRegistry: () => defaultRegistry,
-  format: () => format,
-  generateJS: () => generateJS,
-  generateJSWithSourceMap: () => generateJSWithSourceMap,
-  typeCheck: () => typeCheck
-});
-module.exports = __toCommonJS(compile_exports);
-
 // dist/language/keywords.js
-var KEYWORDS = /* @__PURE__ */ new Set(["fn", "if", "else", "for", "in", "of", "import", "from", "export", "return", "print", "class", "static", "extends", "new", "while", "do", "try", "catch", "finally", "throw", "async", "await", "const", "let", "var", "switch", "case", "default", "break", "continue", "typeof", "instanceof", "void", "delete", "yield", "this", "super", "true", "false", "null", "undefined", "debugger", "match", "enum", "interface", "go", "type", "as", "implements"]);
+var KEYWORDS;
+var init_keywords = __esm({
+  "dist/language/keywords.js"() {
+    KEYWORDS = /* @__PURE__ */ new Set(["fn", "if", "else", "for", "in", "of", "import", "from", "export", "return", "print", "class", "static", "extends", "new", "while", "do", "try", "catch", "finally", "throw", "async", "await", "const", "let", "var", "switch", "case", "default", "break", "continue", "typeof", "instanceof", "void", "delete", "yield", "this", "super", "true", "false", "null", "undefined", "debugger", "match", "enum", "interface", "go", "type", "as", "implements"]);
+  }
+});
 
 // dist/language/operators.js
-var OPERATORS = /* @__PURE__ */ new Set(["+", "-", "*", "/", "=", "<", ">", "!", ".", "%", "&", "|", "~", "^", "?"]);
-var TWO_CHAR_OPERATORS = /* @__PURE__ */ new Set(["==", "!=", "<=", ">=", "..", "=>", "&&", "||", "??", "+=", "-=", "*=", "/=", "%=", "++", "--", "**", "?.", "<<", ">>", "|>", "&=", "|=", "^="]);
-var THREE_CHAR_OPERATORS = /* @__PURE__ */ new Set(["...", "===", "!==", "**=", "&&=", "||=", "??=", ">>>", "<<=", ">>="]);
-var FOUR_CHAR_OPERATORS = /* @__PURE__ */ new Set([">>>="]);
+var OPERATORS, TWO_CHAR_OPERATORS, THREE_CHAR_OPERATORS, FOUR_CHAR_OPERATORS;
+var init_operators = __esm({
+  "dist/language/operators.js"() {
+    OPERATORS = /* @__PURE__ */ new Set(["+", "-", "*", "/", "=", "<", ">", "!", ".", "%", "&", "|", "~", "^", "?"]);
+    TWO_CHAR_OPERATORS = /* @__PURE__ */ new Set(["==", "!=", "<=", ">=", "..", "=>", "&&", "||", "??", "+=", "-=", "*=", "/=", "%=", "++", "--", "**", "?.", "<<", ">>", "|>", "&=", "|=", "^="]);
+    THREE_CHAR_OPERATORS = /* @__PURE__ */ new Set(["...", "===", "!==", "**=", "&&=", "||=", "??=", ">>>", "<<=", ">>="]);
+    FOUR_CHAR_OPERATORS = /* @__PURE__ */ new Set([">>>="]);
+  }
+});
 
 // dist/language/symbols.js
-var DELIMITERS = /* @__PURE__ */ new Set(["{", "}", "(", ")", ",", "[", "]", ":", ";"]);
+var DELIMITERS;
+var init_symbols = __esm({
+  "dist/language/symbols.js"() {
+    DELIMITERS = /* @__PURE__ */ new Set(["{", "}", "(", ")", ",", "[", "]", ":", ";"]);
+  }
+});
 
 // dist/compiler/lexer/lexer.js
-var Lexer = class {
-  constructor(source) {
-    this.src = source;
-    this.pos = 0;
-    this.line = 1;
-    this.column = 1;
-  }
-  tokenize() {
-    const tokens = [];
-    while (!this.isAtEnd()) {
-      this.skipWhitespaceAndComments();
-      if (this.isAtEnd()) {
-        break;
+var Lexer;
+var init_lexer = __esm({
+  "dist/compiler/lexer/lexer.js"() {
+    init_keywords();
+    init_operators();
+    init_symbols();
+    Lexer = class {
+      constructor(source) {
+        this.src = source;
+        this.pos = 0;
+        this.line = 1;
+        this.column = 1;
       }
-      const char = this.peek();
-      const loc = this.loc();
-      if (char === "$" || this.isAlpha(char) || char === "_") {
-        tokens.push(this.readIdentifier(loc));
-        continue;
-      }
-      if (this.isDigit(char)) {
-        tokens.push(this.readNumber(loc));
-        continue;
-      }
-      if (char === '"' || char === "'") {
-        tokens.push(this.readString(loc));
-        continue;
-      }
-      if (char === "`") {
-        tokens.push(this.readTemplateLiteral(loc));
-        continue;
-      }
-      if (char === "#" && this.pos + 1 < this.src.length && (this.isAlpha(this.src[this.pos + 1]) || this.src[this.pos + 1] === "_")) {
-        this.advance();
-        const ident = this.readIdentifier(loc);
-        tokens.push(this.makeToken("Identifier", "#" + ident.value, loc));
-        continue;
-      }
-      if (char === "@" && this.pos + 1 < this.src.length && (this.isAlpha(this.src[this.pos + 1]) || this.src[this.pos + 1] === "_")) {
-        this.advance();
-        const ident = this.readIdentifier(loc);
-        tokens.push(this.makeToken("Decorator", "@" + ident.value, loc));
-        continue;
-      }
-      if (char === "/" && this.isRegexStart(tokens)) {
-        const nextCh = this.pos + 1 < this.src.length ? this.src[this.pos + 1] : "";
-        if (nextCh !== " " && nextCh !== "	" && nextCh !== "=" && nextCh !== "*") {
-          tokens.push(this.readRegExp(loc));
-          continue;
+      tokenize() {
+        const tokens = [];
+        while (!this.isAtEnd()) {
+          this.skipWhitespaceAndComments();
+          if (this.isAtEnd()) {
+            break;
+          }
+          const char = this.peek();
+          const loc = this.loc();
+          if (char === "$" || this.isAlpha(char) || char === "_") {
+            tokens.push(this.readIdentifier(loc));
+            continue;
+          }
+          if (this.isDigit(char)) {
+            tokens.push(this.readNumber(loc));
+            continue;
+          }
+          if (char === '"' || char === "'") {
+            tokens.push(this.readString(loc));
+            continue;
+          }
+          if (char === "`") {
+            tokens.push(this.readTemplateLiteral(loc));
+            continue;
+          }
+          if (char === "#" && this.pos + 1 < this.src.length && (this.isAlpha(this.src[this.pos + 1]) || this.src[this.pos + 1] === "_")) {
+            this.advance();
+            const ident = this.readIdentifier(loc);
+            tokens.push(this.makeToken("Identifier", "#" + ident.value, loc));
+            continue;
+          }
+          if (char === "@" && this.pos + 1 < this.src.length && (this.isAlpha(this.src[this.pos + 1]) || this.src[this.pos + 1] === "_")) {
+            this.advance();
+            const ident = this.readIdentifier(loc);
+            tokens.push(this.makeToken("Decorator", "@" + ident.value, loc));
+            continue;
+          }
+          if (char === "/" && this.isRegexStart(tokens)) {
+            const nextCh = this.pos + 1 < this.src.length ? this.src[this.pos + 1] : "";
+            if (nextCh !== " " && nextCh !== "	" && nextCh !== "=" && nextCh !== "*") {
+              tokens.push(this.readRegExp(loc));
+              continue;
+            }
+          }
+          const opToken = this.readOperatorOrDelimiter(loc);
+          if (opToken) {
+            tokens.push(opToken);
+            continue;
+          }
+          throw new Error(`Unexpected character '${char}' at ${this.line}:${this.column}`);
         }
+        tokens.push(this.makeToken("EOF", "", this.loc()));
+        return tokens;
       }
-      const opToken = this.readOperatorOrDelimiter(loc);
-      if (opToken) {
-        tokens.push(opToken);
-        continue;
+      loc() {
+        return { line: this.line, column: this.column, offset: this.pos };
       }
-      throw new Error(`Unexpected character '${char}' at ${this.line}:${this.column}`);
-    }
-    tokens.push(this.makeToken("EOF", "", this.loc()));
-    return tokens;
-  }
-  loc() {
-    return { line: this.line, column: this.column, offset: this.pos };
-  }
-  makeToken(type, value, loc) {
-    return { type, value, position: loc.offset, loc };
-  }
-  readIdentifier(loc) {
-    let value = "";
-    while (!this.isAtEnd() && (this.isAlphaNumeric(this.peek()) || this.peek() === "_" || this.peek() === "$")) {
-      value = value + this.advance();
-    }
-    const type = KEYWORDS.has(value) ? "Keyword" : "Identifier";
-    return this.makeToken(type, value, loc);
-  }
-  readNumber(loc) {
-    let value = "";
-    if (this.peek() === "0" && !this.isAtEnd()) {
-      const next = this.peekNext();
-      if (next === "x" || next === "X") {
-        value = value + this.advance();
-        value = value + this.advance();
-        while (!this.isAtEnd() && this.isHexDigit(this.peek())) {
+      makeToken(type, value, loc) {
+        return { type, value, position: loc.offset, loc };
+      }
+      readIdentifier(loc) {
+        let value = "";
+        while (!this.isAtEnd() && (this.isAlphaNumeric(this.peek()) || this.peek() === "_" || this.peek() === "$")) {
           value = value + this.advance();
         }
-        return this.makeToken("Number", value, loc);
+        const type = KEYWORDS.has(value) ? "Keyword" : "Identifier";
+        return this.makeToken(type, value, loc);
       }
-      if (next === "b" || next === "B") {
-        value = value + this.advance();
-        value = value + this.advance();
-        while (!this.isAtEnd() && (this.peek() === "0" || this.peek() === "1")) {
-          value = value + this.advance();
-        }
-        return this.makeToken("Number", value, loc);
-      }
-      if (next === "o" || next === "O") {
-        value = value + this.advance();
-        value = value + this.advance();
-        while (!this.isAtEnd() && this.peek() >= "0" && this.peek() <= "7") {
-          value = value + this.advance();
-        }
-        return this.makeToken("Number", value, loc);
-      }
-    }
-    while (!this.isAtEnd() && this.isDigit(this.peek())) {
-      value = value + this.advance();
-    }
-    if (!this.isAtEnd() && this.peek() === "." && this.isDigit(this.peekNext())) {
-      value = value + this.advance();
-      while (!this.isAtEnd() && this.isDigit(this.peek())) {
-        value = value + this.advance();
-      }
-    }
-    if (!this.isAtEnd() && (this.peek() === "e" || this.peek() === "E")) {
-      value = value + this.advance();
-      if (!this.isAtEnd() && (this.peek() === "+" || this.peek() === "-")) {
-        value = value + this.advance();
-      }
-      while (!this.isAtEnd() && this.isDigit(this.peek())) {
-        value = value + this.advance();
-      }
-    }
-    if (!this.isAtEnd() && this.peek() === "n") {
-      value = value + this.advance();
-    }
-    return this.makeToken("Number", value, loc);
-  }
-  readString(loc) {
-    const quote = this.advance();
-    let value = "";
-    while (!this.isAtEnd() && this.peek() !== quote) {
-      if (this.peek() === "\\") {
-        this.advance();
-        if (this.isAtEnd()) {
-          break;
-        }
-        const esc = this.advance();
-        switch (esc) {
-          case "n": {
-            value = value + "\n";
-            break;
-          }
-          case "t": {
-            value = value + "	";
-            break;
-          }
-          case "r": {
-            value = value + "\r";
-            break;
-          }
-          case "\\": {
-            value = value + "\\";
-            break;
-          }
-          case "'": {
-            value = value + "'";
-            break;
-          }
-          case '"': {
-            value = value + '"';
-            break;
-          }
-          case "0": {
-            value = value + "\0";
-            break;
-          }
-          case "x": {
-            value = value + this.readHexEscape();
-            break;
-          }
-          case "u": {
-            value = value + this.readUnicodeEscape();
-            break;
-          }
-          default: {
-            value = value + "\\" + esc;
-            break;
-          }
-        }
-        continue;
-      }
-      value = value + this.advance();
-    }
-    if (this.isAtEnd()) {
-      throw new SyntaxError(`Unterminated string literal at ${loc.line}:${loc.column}`);
-    }
-    this.advance();
-    const tokenType = quote === "'" ? "RawString" : "String";
-    return this.makeToken(tokenType, value, loc);
-  }
-  readTemplateLiteral(loc) {
-    this.advance();
-    let value = "";
-    while (!this.isAtEnd() && this.peek() !== "`") {
-      if (this.peek() === "\\") {
-        this.advance();
-        if (this.isAtEnd()) {
-          break;
-        }
-        const esc = this.advance();
-        switch (esc) {
-          case "n": {
-            value = value + "\n";
-            break;
-          }
-          case "t": {
-            value = value + "	";
-            break;
-          }
-          case "r": {
-            value = value + "\r";
-            break;
-          }
-          case "\\": {
-            value = value + "\\";
-            break;
-          }
-          case "`": {
-            value = value + "`";
-            break;
-          }
-          case "$": {
-            value = value + "$";
-            break;
-          }
-          case "0": {
-            value = value + "\0";
-            break;
-          }
-          default: {
-            value = value + "\\" + esc;
-            break;
-          }
-        }
-        continue;
-      }
-      if (this.peek() === "$" && this.peekNext() === "{") {
-        value = value + this.advance();
-        value = value + this.advance();
-        let depth = 1;
-        while (!this.isAtEnd() && depth > 0) {
-          if (this.peek() === "{") {
-            depth = depth + 1;
-          }
-          if (this.peek() === "}") {
-            depth = depth - 1;
-          }
-          if (depth > 0) {
+      readNumber(loc) {
+        let value = "";
+        if (this.peek() === "0" && !this.isAtEnd()) {
+          const next = this.peekNext();
+          if (next === "x" || next === "X") {
             value = value + this.advance();
-          } else {
+            value = value + this.advance();
+            while (!this.isAtEnd() && this.isHexDigit(this.peek())) {
+              value = value + this.advance();
+            }
+            return this.makeToken("Number", value, loc);
+          }
+          if (next === "b" || next === "B") {
+            value = value + this.advance();
+            value = value + this.advance();
+            while (!this.isAtEnd() && (this.peek() === "0" || this.peek() === "1")) {
+              value = value + this.advance();
+            }
+            return this.makeToken("Number", value, loc);
+          }
+          if (next === "o" || next === "O") {
+            value = value + this.advance();
+            value = value + this.advance();
+            while (!this.isAtEnd() && this.peek() >= "0" && this.peek() <= "7") {
+              value = value + this.advance();
+            }
+            return this.makeToken("Number", value, loc);
+          }
+        }
+        while (!this.isAtEnd() && this.isDigit(this.peek())) {
+          value = value + this.advance();
+        }
+        if (!this.isAtEnd() && this.peek() === "." && this.isDigit(this.peekNext())) {
+          value = value + this.advance();
+          while (!this.isAtEnd() && this.isDigit(this.peek())) {
+            value = value + this.advance();
+          }
+        }
+        if (!this.isAtEnd() && (this.peek() === "e" || this.peek() === "E")) {
+          value = value + this.advance();
+          if (!this.isAtEnd() && (this.peek() === "+" || this.peek() === "-")) {
+            value = value + this.advance();
+          }
+          while (!this.isAtEnd() && this.isDigit(this.peek())) {
+            value = value + this.advance();
+          }
+        }
+        if (!this.isAtEnd() && this.peek() === "n") {
+          value = value + this.advance();
+        }
+        return this.makeToken("Number", value, loc);
+      }
+      readString(loc) {
+        const quote = this.advance();
+        let value = "";
+        while (!this.isAtEnd() && this.peek() !== quote) {
+          if (this.peek() === "\\") {
+            this.advance();
+            if (this.isAtEnd()) {
+              break;
+            }
+            const esc = this.advance();
+            switch (esc) {
+              case "n": {
+                value = value + "\n";
+                break;
+              }
+              case "t": {
+                value = value + "	";
+                break;
+              }
+              case "r": {
+                value = value + "\r";
+                break;
+              }
+              case "\\": {
+                value = value + "\\";
+                break;
+              }
+              case "'": {
+                value = value + "'";
+                break;
+              }
+              case '"': {
+                value = value + '"';
+                break;
+              }
+              case "0": {
+                value = value + "\0";
+                break;
+              }
+              case "x": {
+                value = value + this.readHexEscape();
+                break;
+              }
+              case "u": {
+                value = value + this.readUnicodeEscape();
+                break;
+              }
+              default: {
+                value = value + "\\" + esc;
+                break;
+              }
+            }
+            continue;
+          }
+          value = value + this.advance();
+        }
+        if (this.isAtEnd()) {
+          throw new SyntaxError(`Unterminated string literal at ${loc.line}:${loc.column}`);
+        }
+        this.advance();
+        const tokenType = quote === "'" ? "RawString" : "String";
+        return this.makeToken(tokenType, value, loc);
+      }
+      readTemplateLiteral(loc) {
+        this.advance();
+        let value = "";
+        while (!this.isAtEnd() && this.peek() !== "`") {
+          if (this.peek() === "\\") {
+            this.advance();
+            if (this.isAtEnd()) {
+              break;
+            }
+            const esc = this.advance();
+            switch (esc) {
+              case "n": {
+                value = value + "\n";
+                break;
+              }
+              case "t": {
+                value = value + "	";
+                break;
+              }
+              case "r": {
+                value = value + "\r";
+                break;
+              }
+              case "\\": {
+                value = value + "\\";
+                break;
+              }
+              case "`": {
+                value = value + "`";
+                break;
+              }
+              case "$": {
+                value = value + "$";
+                break;
+              }
+              case "0": {
+                value = value + "\0";
+                break;
+              }
+              default: {
+                value = value + "\\" + esc;
+                break;
+              }
+            }
+            continue;
+          }
+          if (this.peek() === "$" && this.peekNext() === "{") {
+            value = value + this.advance();
+            value = value + this.advance();
+            let depth = 1;
+            while (!this.isAtEnd() && depth > 0) {
+              if (this.peek() === "{") {
+                depth = depth + 1;
+              }
+              if (this.peek() === "}") {
+                depth = depth - 1;
+              }
+              if (depth > 0) {
+                value = value + this.advance();
+              } else {
+                this.advance();
+              }
+            }
+            value = value + "}";
+            continue;
+          }
+          value = value + this.advance();
+        }
+        if (this.isAtEnd()) {
+          throw new SyntaxError(`Unterminated template literal at ${loc.line}:${loc.column}`);
+        }
+        this.advance();
+        return this.makeToken("TemplateLiteral", value, loc);
+      }
+      readHexEscape() {
+        let code2 = "";
+        let i = 0;
+        while (i < 2 && !this.isAtEnd() && this.isHexDigit(this.peek())) {
+          code2 = code2 + this.advance();
+          i = i + 1;
+        }
+        return String.fromCharCode(parseInt(code2, 16));
+      }
+      readUnicodeEscape() {
+        if (this.peek() === "{") {
+          this.advance();
+          let code2 = "";
+          while (!this.isAtEnd() && this.peek() !== "}") {
+            code2 = code2 + this.advance();
+          }
+          if (!this.isAtEnd()) {
             this.advance();
           }
+          return String.fromCodePoint(parseInt(code2, 16));
         }
-        value = value + "}";
-        continue;
+        code = "";
+        let i = 0;
+        while (i < 4 && !this.isAtEnd()) {
+          code = code + this.advance();
+          i = i + 1;
+        }
+        return String.fromCharCode(parseInt(code, 16));
       }
-      value = value + this.advance();
-    }
-    if (this.isAtEnd()) {
-      throw new SyntaxError(`Unterminated template literal at ${loc.line}:${loc.column}`);
-    }
-    this.advance();
-    return this.makeToken("TemplateLiteral", value, loc);
-  }
-  readHexEscape() {
-    let code2 = "";
-    let i = 0;
-    while (i < 2 && !this.isAtEnd() && this.isHexDigit(this.peek())) {
-      code2 = code2 + this.advance();
-      i = i + 1;
-    }
-    return String.fromCharCode(parseInt(code2, 16));
-  }
-  readUnicodeEscape() {
-    if (this.peek() === "{") {
-      this.advance();
-      let code2 = "";
-      while (!this.isAtEnd() && this.peek() !== "}") {
-        code2 = code2 + this.advance();
+      readOperatorOrDelimiter(loc) {
+        const first = this.peek();
+        const second = this.peekNext();
+        const third = this.peekAt(2);
+        const fourth = this.peekAt(3);
+        const potentialFour = first + second + third + fourth;
+        const potentialThree = first + second + third;
+        const potentialTwo = first + second;
+        if (FOUR_CHAR_OPERATORS.has(potentialFour)) {
+          this.advance();
+          this.advance();
+          this.advance();
+          this.advance();
+          return this.makeToken("Operator", potentialFour, loc);
+        }
+        if (THREE_CHAR_OPERATORS.has(potentialThree)) {
+          this.advance();
+          this.advance();
+          this.advance();
+          return this.makeToken("Operator", potentialThree, loc);
+        }
+        if (TWO_CHAR_OPERATORS.has(potentialTwo)) {
+          this.advance();
+          this.advance();
+          return this.makeToken("Operator", potentialTwo, loc);
+        }
+        if (OPERATORS.has(first)) {
+          this.advance();
+          return this.makeToken("Operator", first, loc);
+        }
+        if (DELIMITERS.has(first)) {
+          this.advance();
+          return this.makeToken("Delimiter", first, loc);
+        }
+        return null;
       }
-      if (!this.isAtEnd()) {
-        this.advance();
+      skipWhitespaceAndComments() {
+        while (!this.isAtEnd()) {
+          const ch = this.peek();
+          if (ch === " " || ch === "	" || ch === "\r") {
+            this.advance();
+            continue;
+          }
+          if (ch === "\n") {
+            this.advance();
+            continue;
+          }
+          if (ch === "/" && this.peekNext() === "/") {
+            this.skipLineComment();
+            continue;
+          }
+          if (ch === "/" && this.peekNext() === "*") {
+            this.skipBlockComment();
+            continue;
+          }
+          break;
+        }
       }
-      return String.fromCodePoint(parseInt(code2, 16));
-    }
-    code = "";
-    let i = 0;
-    while (i < 4 && !this.isAtEnd()) {
-      code = code + this.advance();
-      i = i + 1;
-    }
-    return String.fromCharCode(parseInt(code, 16));
-  }
-  readOperatorOrDelimiter(loc) {
-    const first = this.peek();
-    const second = this.peekNext();
-    const third = this.peekAt(2);
-    const fourth = this.peekAt(3);
-    const potentialFour = first + second + third + fourth;
-    const potentialThree = first + second + third;
-    const potentialTwo = first + second;
-    if (FOUR_CHAR_OPERATORS.has(potentialFour)) {
-      this.advance();
-      this.advance();
-      this.advance();
-      this.advance();
-      return this.makeToken("Operator", potentialFour, loc);
-    }
-    if (THREE_CHAR_OPERATORS.has(potentialThree)) {
-      this.advance();
-      this.advance();
-      this.advance();
-      return this.makeToken("Operator", potentialThree, loc);
-    }
-    if (TWO_CHAR_OPERATORS.has(potentialTwo)) {
-      this.advance();
-      this.advance();
-      return this.makeToken("Operator", potentialTwo, loc);
-    }
-    if (OPERATORS.has(first)) {
-      this.advance();
-      return this.makeToken("Operator", first, loc);
-    }
-    if (DELIMITERS.has(first)) {
-      this.advance();
-      return this.makeToken("Delimiter", first, loc);
-    }
-    return null;
-  }
-  skipWhitespaceAndComments() {
-    while (!this.isAtEnd()) {
-      const ch = this.peek();
-      if (ch === " " || ch === "	" || ch === "\r") {
-        this.advance();
-        continue;
+      skipLineComment() {
+        while (!this.isAtEnd() && this.peek() !== "\n") {
+          this.advance();
+        }
       }
-      if (ch === "\n") {
-        this.advance();
-        continue;
-      }
-      if (ch === "/" && this.peekNext() === "/") {
-        this.skipLineComment();
-        continue;
-      }
-      if (ch === "/" && this.peekNext() === "*") {
-        this.skipBlockComment();
-        continue;
-      }
-      break;
-    }
-  }
-  skipLineComment() {
-    while (!this.isAtEnd() && this.peek() !== "\n") {
-      this.advance();
-    }
-  }
-  skipBlockComment() {
-    const loc = this.loc();
-    this.advance();
-    this.advance();
-    while (!this.isAtEnd()) {
-      if (this.peek() === "*" && this.peekNext() === "/") {
+      skipBlockComment() {
+        const loc = this.loc();
         this.advance();
         this.advance();
-        return;
+        while (!this.isAtEnd()) {
+          if (this.peek() === "*" && this.peekNext() === "/") {
+            this.advance();
+            this.advance();
+            return;
+          }
+          this.advance();
+        }
+        throw new SyntaxError(`Unterminated block comment at ${loc.line}:${loc.column}`);
       }
-      this.advance();
-    }
-    throw new SyntaxError(`Unterminated block comment at ${loc.line}:${loc.column}`);
-  }
-  isAlpha(ch) {
-    return ch >= "a" && ch <= "z" || ch >= "A" && ch <= "Z";
-  }
-  isDigit(ch) {
-    return ch >= "0" && ch <= "9";
-  }
-  isHexDigit(ch) {
-    return this.isDigit(ch) || ch >= "a" && ch <= "f" || ch >= "A" && ch <= "F";
-  }
-  isAlphaNumeric(ch) {
-    return this.isAlpha(ch) || this.isDigit(ch);
-  }
-  peek() {
-    return this.src[this.pos] ?? "";
-  }
-  peekNext() {
-    return this.src[this.pos + 1] ?? "";
-  }
-  peekAt(offset) {
-    return this.src[this.pos + offset] ?? "";
-  }
-  advance() {
-    const ch = this.src[this.pos] ?? "";
-    this.pos = this.pos + 1;
-    if (ch === "\n") {
-      this.line = this.line + 1;
-      this.column = 1;
-    } else {
-      this.column = this.column + 1;
-    }
-    return ch;
-  }
-  isAtEnd() {
-    return this.pos >= this.src.length;
-  }
-  isRegexStart(tokens) {
-    if (tokens.length === 0) {
-      return true;
-    }
-    const prev = tokens[tokens.length - 1];
-    if (prev.type === "Identifier") {
-      return false;
-    }
-    if (prev.type === "Number") {
-      return false;
-    }
-    if (prev.type === "String" || prev.type === "RawString") {
-      return false;
-    }
-    if (prev.type === "TemplateLiteral") {
-      return false;
-    }
-    if (prev.type === "RegExp") {
-      return false;
-    }
-    if (prev.type === "Delimiter" && (prev.value === ")" || prev.value === "]")) {
-      return false;
-    }
-    if (prev.type === "Operator" && (prev.value === "++" || prev.value === "--")) {
-      return false;
-    }
-    if (prev.type === "Keyword" && (prev.value === "this" || prev.value === "super" || prev.value === "true" || prev.value === "false" || prev.value === "null" || prev.value === "undefined")) {
-      return false;
-    }
-    return true;
-  }
-  readRegExp(loc) {
-    this.advance();
-    let pattern = "";
-    let inCharClass = false;
-    while (!this.isAtEnd()) {
-      const ch = this.peek();
-      if (ch === "\\" && !this.isAtEnd()) {
-        pattern = pattern + this.advance();
-        if (!this.isAtEnd()) {
+      isAlpha(ch) {
+        return ch >= "a" && ch <= "z" || ch >= "A" && ch <= "Z";
+      }
+      isDigit(ch) {
+        return ch >= "0" && ch <= "9";
+      }
+      isHexDigit(ch) {
+        return this.isDigit(ch) || ch >= "a" && ch <= "f" || ch >= "A" && ch <= "F";
+      }
+      isAlphaNumeric(ch) {
+        return this.isAlpha(ch) || this.isDigit(ch);
+      }
+      peek() {
+        return this.src[this.pos] ?? "";
+      }
+      peekNext() {
+        return this.src[this.pos + 1] ?? "";
+      }
+      peekAt(offset) {
+        return this.src[this.pos + offset] ?? "";
+      }
+      advance() {
+        const ch = this.src[this.pos] ?? "";
+        this.pos = this.pos + 1;
+        if (ch === "\n") {
+          this.line = this.line + 1;
+          this.column = 1;
+        } else {
+          this.column = this.column + 1;
+        }
+        return ch;
+      }
+      isAtEnd() {
+        return this.pos >= this.src.length;
+      }
+      isRegexStart(tokens) {
+        if (tokens.length === 0) {
+          return true;
+        }
+        const prev = tokens[tokens.length - 1];
+        if (prev.type === "Identifier") {
+          return false;
+        }
+        if (prev.type === "Number") {
+          return false;
+        }
+        if (prev.type === "String" || prev.type === "RawString") {
+          return false;
+        }
+        if (prev.type === "TemplateLiteral") {
+          return false;
+        }
+        if (prev.type === "RegExp") {
+          return false;
+        }
+        if (prev.type === "Delimiter" && (prev.value === ")" || prev.value === "]")) {
+          return false;
+        }
+        if (prev.type === "Operator" && (prev.value === "++" || prev.value === "--")) {
+          return false;
+        }
+        if (prev.type === "Keyword" && (prev.value === "this" || prev.value === "super" || prev.value === "true" || prev.value === "false" || prev.value === "null" || prev.value === "undefined")) {
+          return false;
+        }
+        return true;
+      }
+      readRegExp(loc) {
+        this.advance();
+        let pattern = "";
+        let inCharClass = false;
+        while (!this.isAtEnd()) {
+          const ch = this.peek();
+          if (ch === "\\" && !this.isAtEnd()) {
+            pattern = pattern + this.advance();
+            if (!this.isAtEnd()) {
+              pattern = pattern + this.advance();
+            }
+            continue;
+          }
+          if (ch === "[") {
+            inCharClass = true;
+          }
+          if (ch === "]") {
+            inCharClass = false;
+          }
+          if (ch === "/" && !inCharClass) {
+            break;
+          }
+          if (ch === "\n") {
+            throw new SyntaxError(`Unterminated regex literal at ${loc.line}:${loc.column}`);
+          }
           pattern = pattern + this.advance();
         }
-        continue;
+        if (this.isAtEnd()) {
+          throw new SyntaxError(`Unterminated regex literal at ${loc.line}:${loc.column}`);
+        }
+        this.advance();
+        let flags = "";
+        while (!this.isAtEnd() && this.isRegexFlag(this.peek())) {
+          flags = flags + this.advance();
+        }
+        const value = flags ? `/${pattern}/${flags}` : `/${pattern}/`;
+        return this.makeToken("RegExp", value, loc);
       }
-      if (ch === "[") {
-        inCharClass = true;
+      isRegexFlag(ch) {
+        return ch === "g" || ch === "i" || ch === "m" || ch === "s" || ch === "u" || ch === "y" || ch === "d" || ch === "n";
       }
-      if (ch === "]") {
-        inCharClass = false;
-      }
-      if (ch === "/" && !inCharClass) {
-        break;
-      }
-      if (ch === "\n") {
-        throw new SyntaxError(`Unterminated regex literal at ${loc.line}:${loc.column}`);
-      }
-      pattern = pattern + this.advance();
-    }
-    if (this.isAtEnd()) {
-      throw new SyntaxError(`Unterminated regex literal at ${loc.line}:${loc.column}`);
-    }
-    this.advance();
-    let flags = "";
-    while (!this.isAtEnd() && this.isRegexFlag(this.peek())) {
-      flags = flags + this.advance();
-    }
-    const value = flags ? `/${pattern}/${flags}` : `/${pattern}/`;
-    return this.makeToken("RegExp", value, loc);
+    };
   }
-  isRegexFlag(ch) {
-    return ch === "g" || ch === "i" || ch === "m" || ch === "s" || ch === "u" || ch === "y" || ch === "d" || ch === "n";
-  }
-};
+});
 
 // dist/language/precedence.js
-var PRECEDENCE = { "|>": 1, "..": 1, "??": 2, "||": 3, "&&": 4, "|": 5, "^": 6, "&": 7, "==": 8, "!=": 8, "===": 8, "!==": 8, "<": 9, ">": 9, "<=": 9, ">=": 9, "instanceof": 9, "in": 9, "<<": 10, ">>": 10, ">>>": 10, "+": 11, "-": 11, "*": 12, "/": 12, "%": 12, "**": 13 };
-var COMPOUND_ASSIGN = /* @__PURE__ */ new Set(["+=", "-=", "*=", "/=", "%=", "**=", "&&=", "||=", "??=", "<<=", ">>=", ">>>=", "&=", "|=", "^="]);
+var PRECEDENCE, COMPOUND_ASSIGN;
+var init_precedence = __esm({
+  "dist/language/precedence.js"() {
+    PRECEDENCE = { "|>": 1, "..": 1, "??": 2, "||": 3, "&&": 4, "|": 5, "^": 6, "&": 7, "==": 8, "!=": 8, "===": 8, "!==": 8, "<": 9, ">": 9, "<=": 9, ">=": 9, "instanceof": 9, "in": 9, "<<": 10, ">>": 10, ">>>": 10, "+": 11, "-": 11, "*": 12, "/": 12, "%": 12, "**": 13 };
+    COMPOUND_ASSIGN = /* @__PURE__ */ new Set(["+=", "-=", "*=", "/=", "%=", "**=", "&&=", "||=", "??=", "<<=", ">>=", ">>>=", "&=", "|=", "^="]);
+  }
+});
 
 // dist/compiler/errors.js
-var ErrorCode = Object.freeze({ E0100: "E0100", E0101: "E0101", E0102: "E0102", E0103: "E0103", E0104: "E0104", E0105: "E0105", E0106: "E0106", E0107: "E0107", E0108: "E0108", E0109: "E0109", E0110: "E0110", E0200: "E0200", E0201: "E0201", E0202: "E0202", E0300: "E0300", E0301: "E0301", E0302: "E0302", E0400: "E0400", E0401: "E0401", E0402: "E0402" });
-var ERROR_SUGGESTIONS = { "Expected ')'": ["You might have forgotten a closing parenthesis.", "Check that every '(' has a matching ')'."], "Expected '}'": ["You might have forgotten a closing brace.", `Check that every '{' has a matching '}'.`], "Expected ']'": ["You might have forgotten a closing bracket.", "Check that every '[' has a matching ']'."], [`Expected '{'`]: ["Block statements require opening braces.", "Nodeon uses { } for blocks, not indentation."], "Expected '('": ["Function calls and declarations require parentheses."], "Expected '=' in assignment": ["Variables must be initialized when declared.", "Example: x = 42  or  let x = 42"], "Expected '=' after destructuring pattern": ["Destructuring requires an initializer.", "Example: { a, b } = obj  or  [x, y] = arr"], "Expected function name": ["Functions declared with 'fn' must have a name.", "Example: fn myFunction() { ... }", "For anonymous functions, use arrow syntax: (x) => x * 2"], "Expected parameter name": ["Function parameters must be identifiers.", "Example: fn add(a, b) { a + b }"], "Expected expression": ["An expression was expected here (value, variable, function call, etc.).", "Check for missing operands or extra operators."], "Expected module source string": ["Import source must be a string literal.", `Example: import { foo } from 'my-module'`], "Expected 'as' after '*'": ["Namespace imports require 'as' keyword.", "Example: import * as utils from './utils'"], "Expected variable name": ["Variable names must be valid identifiers.", "Keywords like 'fn', 'if', 'for', 'class' cannot be used as variable names."] };
 function findSuggestions(message) {
   for (const key in Object.keys(ERROR_SUGGESTIONS)) {
     if (message.includes(key)) {
@@ -545,1159 +556,902 @@ function findSuggestions(message) {
   }
   return [];
 }
-var NodeonError = class extends SyntaxError {
-  constructor(code2, message, line, column, sourceLine) {
-    super(message + " at " + line + ":" + column);
-    this.name = "NodeonError";
-    this.code = code2;
-    this.line = line;
-    this.column = column;
-    this.sourceLine = sourceLine ?? null;
-    this.help = findSuggestions(message);
+var ErrorCode, ERROR_SUGGESTIONS, NodeonError;
+var init_errors = __esm({
+  "dist/compiler/errors.js"() {
+    ErrorCode = Object.freeze({ E0100: "E0100", E0101: "E0101", E0102: "E0102", E0103: "E0103", E0104: "E0104", E0105: "E0105", E0106: "E0106", E0107: "E0107", E0108: "E0108", E0109: "E0109", E0110: "E0110", E0200: "E0200", E0201: "E0201", E0202: "E0202", E0300: "E0300", E0301: "E0301", E0302: "E0302", E0400: "E0400", E0401: "E0401", E0402: "E0402" });
+    ERROR_SUGGESTIONS = { "Expected ')'": ["You might have forgotten a closing parenthesis.", "Check that every '(' has a matching ')'."], "Expected '}'": ["You might have forgotten a closing brace.", `Check that every '{' has a matching '}'.`], "Expected ']'": ["You might have forgotten a closing bracket.", "Check that every '[' has a matching ']'."], [`Expected '{'`]: ["Block statements require opening braces.", "Nodeon uses { } for blocks, not indentation."], "Expected '('": ["Function calls and declarations require parentheses."], "Expected '=' in assignment": ["Variables must be initialized when declared.", "Example: x = 42  or  let x = 42"], "Expected '=' after destructuring pattern": ["Destructuring requires an initializer.", "Example: { a, b } = obj  or  [x, y] = arr"], "Expected function name": ["Functions declared with 'fn' must have a name.", "Example: fn myFunction() { ... }", "For anonymous functions, use arrow syntax: (x) => x * 2"], "Expected parameter name": ["Function parameters must be identifiers.", "Example: fn add(a, b) { a + b }"], "Expected expression": ["An expression was expected here (value, variable, function call, etc.).", "Check for missing operands or extra operators."], "Expected module source string": ["Import source must be a string literal.", `Example: import { foo } from 'my-module'`], "Expected 'as' after '*'": ["Namespace imports require 'as' keyword.", "Example: import * as utils from './utils'"], "Expected variable name": ["Variable names must be valid identifiers.", "Keywords like 'fn', 'if', 'for', 'class' cannot be used as variable names."] };
+    NodeonError = class extends SyntaxError {
+      constructor(code2, message, line, column, sourceLine) {
+        super(message + " at " + line + ":" + column);
+        this.name = "NodeonError";
+        this.code = code2;
+        this.line = line;
+        this.column = column;
+        this.sourceLine = sourceLine ?? null;
+        this.help = findSuggestions(message);
+      }
+    };
   }
-};
+});
 
 // dist/compiler/parser/parser-base.js
-var CONTEXTUAL_KW = ["print", "from", "async", "of", "get", "set", "static", "default", "as", "type", "enum", "interface", "implements"];
-var ParserBase = class {
-  constructor(tokens, source) {
-    this.tokens = tokens;
-    this.current = 0;
-    this.source = source ?? null;
-    this.sourceLines = source ? source.split("\n") : [];
-  }
-  advance() {
-    if (!this.isAtEnd()) {
-      this.current = this.current + 1;
-    }
-    return this.previous();
-  }
-  peek() {
-    return this.tokens[this.current];
-  }
-  peekNext() {
-    return this.tokens[this.current + 1];
-  }
-  peekAt(offset) {
-    return this.tokens[this.current + offset];
-  }
-  previous() {
-    return this.tokens[this.current - 1];
-  }
-  isAtEnd() {
-    return this.peek().type === "EOF";
-  }
-  checkKeyword(value) {
-    const tok = this.peek();
-    return tok.type === "Keyword" && tok.value === value;
-  }
-  checkContextualKeyword(value) {
-    const tok = this.peek();
-    return tok.type === "Identifier" && tok.value === value;
-  }
-  consumeContextualKeyword(value) {
-    const tok = this.peek();
-    if (tok.type === "Identifier" && tok.value === value) {
-      this.advance();
-      return;
-    }
-    this.error(tok, `Expected '${value}'`);
-  }
-  checkOperator(value) {
-    const tok = this.peek();
-    return tok.type === "Operator" && tok.value === value;
-  }
-  checkDelimiter(value) {
-    const tok = this.peek();
-    return tok.type === "Delimiter" && tok.value === value;
-  }
-  consumeKeyword(value) {
-    const tok = this.peek();
-    if (tok.type === "Keyword" && tok.value === value) {
-      this.advance();
-      return;
-    }
-    this.error(tok, `Expected keyword '${value}'`);
-  }
-  consumeIdentifier(message) {
-    const tok = this.peek();
-    if (tok.type === "Identifier") {
-      this.advance();
-      return { type: "Identifier", name: tok.value };
-    }
-    if (tok.type === "Keyword" && CONTEXTUAL_KW.includes(tok.value)) {
-      this.advance();
-      return { type: "Identifier", name: tok.value };
-    }
-    this.error(tok, message);
-  }
-  consumePropertyName(message) {
-    const tok = this.peek();
-    if (tok.type === "Identifier" || tok.type === "Keyword") {
-      this.advance();
-      return { type: "Identifier", name: tok.value };
-    }
-    this.error(tok, message);
-  }
-  consumeDelimiter(value, message) {
-    const tok = this.peek();
-    if (tok.type === "Delimiter" && tok.value === value) {
-      this.advance();
-      return;
-    }
-    this.error(tok, message);
-  }
-  consumeOperator(value, message) {
-    const tok = this.peek();
-    if (tok.type === "Operator" && tok.value === value) {
-      this.advance();
-      return;
-    }
-    this.error(tok, message);
-  }
-  matchDelimiter(value) {
-    const tok = this.peek();
-    if (tok.type === "Delimiter" && tok.value === value) {
-      this.advance();
-      return true;
-    }
-    return false;
-  }
-  isIdentifierLike(tok) {
-    if (tok.type === "Identifier") {
-      return true;
-    }
-    if (tok.type === "Keyword" && CONTEXTUAL_KW.includes(tok.value)) {
-      return true;
-    }
-    return false;
-  }
-  error(token, message, code2) {
-    const loc = token.loc;
-    let errCode = code2 ?? null;
-    if (!errCode) {
-      if (message.startsWith("Expected '") || message.startsWith('Expected "')) {
-        errCode = ErrorCode.E0101;
-      } else if (message.includes("Expected expression")) {
-        errCode = ErrorCode.E0105;
-      } else if (message.includes("Expected") && message.includes("name")) {
-        errCode = ErrorCode.E0107;
-      } else if (message.includes(`Expected '{'`)) {
-        errCode = ErrorCode.E0108;
-      } else {
-        errCode = ErrorCode.E0100;
+var CONTEXTUAL_KW, ParserBase;
+var init_parser_base = __esm({
+  "dist/compiler/parser/parser-base.js"() {
+    init_errors();
+    CONTEXTUAL_KW = ["print", "from", "async", "of", "get", "set", "static", "default", "as", "type", "enum", "interface", "implements"];
+    ParserBase = class {
+      constructor(tokens, source) {
+        this.tokens = tokens;
+        this.current = 0;
+        this.source = source ?? null;
+        this.sourceLines = source ? source.split("\n") : [];
       }
-    }
-    if (loc) {
-      const sourceLine = this.sourceLines[loc.line - 1] ?? null;
-      throw new NodeonError(errCode, message, loc.line, loc.column, sourceLine);
-    }
-    throw new NodeonError(errCode, message, 0, 0, null);
+      advance() {
+        if (!this.isAtEnd()) {
+          this.current = this.current + 1;
+        }
+        return this.previous();
+      }
+      peek() {
+        return this.tokens[this.current];
+      }
+      peekNext() {
+        return this.tokens[this.current + 1];
+      }
+      peekAt(offset) {
+        return this.tokens[this.current + offset];
+      }
+      previous() {
+        return this.tokens[this.current - 1];
+      }
+      isAtEnd() {
+        return this.peek().type === "EOF";
+      }
+      checkKeyword(value) {
+        const tok = this.peek();
+        return tok.type === "Keyword" && tok.value === value;
+      }
+      checkContextualKeyword(value) {
+        const tok = this.peek();
+        return tok.type === "Identifier" && tok.value === value;
+      }
+      consumeContextualKeyword(value) {
+        const tok = this.peek();
+        if (tok.type === "Identifier" && tok.value === value) {
+          this.advance();
+          return;
+        }
+        this.error(tok, `Expected '${value}'`);
+      }
+      checkOperator(value) {
+        const tok = this.peek();
+        return tok.type === "Operator" && tok.value === value;
+      }
+      checkDelimiter(value) {
+        const tok = this.peek();
+        return tok.type === "Delimiter" && tok.value === value;
+      }
+      consumeKeyword(value) {
+        const tok = this.peek();
+        if (tok.type === "Keyword" && tok.value === value) {
+          this.advance();
+          return;
+        }
+        this.error(tok, `Expected keyword '${value}'`);
+      }
+      consumeIdentifier(message) {
+        const tok = this.peek();
+        if (tok.type === "Identifier") {
+          this.advance();
+          return { type: "Identifier", name: tok.value };
+        }
+        if (tok.type === "Keyword" && CONTEXTUAL_KW.includes(tok.value)) {
+          this.advance();
+          return { type: "Identifier", name: tok.value };
+        }
+        this.error(tok, message);
+      }
+      consumePropertyName(message) {
+        const tok = this.peek();
+        if (tok.type === "Identifier" || tok.type === "Keyword") {
+          this.advance();
+          return { type: "Identifier", name: tok.value };
+        }
+        this.error(tok, message);
+      }
+      consumeDelimiter(value, message) {
+        const tok = this.peek();
+        if (tok.type === "Delimiter" && tok.value === value) {
+          this.advance();
+          return;
+        }
+        this.error(tok, message);
+      }
+      consumeOperator(value, message) {
+        const tok = this.peek();
+        if (tok.type === "Operator" && tok.value === value) {
+          this.advance();
+          return;
+        }
+        this.error(tok, message);
+      }
+      matchDelimiter(value) {
+        const tok = this.peek();
+        if (tok.type === "Delimiter" && tok.value === value) {
+          this.advance();
+          return true;
+        }
+        return false;
+      }
+      isIdentifierLike(tok) {
+        if (tok.type === "Identifier") {
+          return true;
+        }
+        if (tok.type === "Keyword" && CONTEXTUAL_KW.includes(tok.value)) {
+          return true;
+        }
+        return false;
+      }
+      error(token, message, code2) {
+        const loc = token.loc;
+        let errCode = code2 ?? null;
+        if (!errCode) {
+          if (message.startsWith("Expected '") || message.startsWith('Expected "')) {
+            errCode = ErrorCode.E0101;
+          } else if (message.includes("Expected expression")) {
+            errCode = ErrorCode.E0105;
+          } else if (message.includes("Expected") && message.includes("name")) {
+            errCode = ErrorCode.E0107;
+          } else if (message.includes(`Expected '{'`)) {
+            errCode = ErrorCode.E0108;
+          } else {
+            errCode = ErrorCode.E0100;
+          }
+        }
+        if (loc) {
+          const sourceLine = this.sourceLines[loc.line - 1] ?? null;
+          throw new NodeonError(errCode, message, loc.line, loc.column, sourceLine);
+        }
+        throw new NodeonError(errCode, message, 0, 0, null);
+      }
+    };
   }
-};
+});
 
 // dist/compiler/parser/parser-types.js
-var ParserTypes = class extends ParserBase {
-  constructor(tokens, source) {
-    super(tokens, source);
-  }
-  parseTypeParams() {
-    if (!this.checkOperator("<")) {
-      return void 0;
-    }
-    const next = this.peekNext();
-    if (!next || next.type !== "Identifier") {
-      return void 0;
-    }
-    this.advance();
-    const params = [];
-    do {
-      const param = this.consumeIdentifier("Expected type parameter name");
-      params.push(param.name);
-    } while (this.matchDelimiter(","));
-    if (this.checkOperator(">")) {
-      this.advance();
-    }
-    return params.length > 0 ? params : void 0;
-  }
-  parseTypeAnnotation() {
-    let type = this.parseTypePrimary();
-    while (this.checkDelimiter("[")) {
-      const next = this.peekNext();
-      if (next && next.type === "Delimiter" && next.value === "]") {
-        this.advance();
-        this.advance();
-        type = { kind: "array", elementType: type };
-      } else {
-        break;
+var ParserTypes;
+var init_parser_types = __esm({
+  "dist/compiler/parser/parser-types.js"() {
+    init_parser_base();
+    ParserTypes = class extends ParserBase {
+      constructor(tokens, source) {
+        super(tokens, source);
       }
-    }
-    if (this.checkOperator("?")) {
-      this.advance();
-      type = { kind: "nullable", inner: type };
-    }
-    if (this.checkOperator("|") && !this.checkOperator("||")) {
-      const types = [type];
-      while (this.checkOperator("|") && !this.checkOperator("||")) {
-        this.advance();
-        let next = this.parseTypePrimary();
-        while (this.checkDelimiter("[")) {
-          const n2 = this.peekNext();
-          if (n2 && n2.type === "Delimiter" && n2.value === "]") {
-            this.advance();
-            this.advance();
-            next = { kind: "array", elementType: next };
-          } else {
-            break;
-          }
+      parseTypeParams() {
+        if (!this.checkOperator("<")) {
+          return void 0;
         }
-        types.push(next);
-      }
-      type = { kind: "union", types };
-    }
-    if (this.checkOperator("&") && !this.checkOperator("&&")) {
-      const types = [type];
-      while (this.checkOperator("&") && !this.checkOperator("&&")) {
-        this.advance();
-        let next = this.parseTypePrimary();
-        while (this.checkDelimiter("[")) {
-          const n2 = this.peekNext();
-          if (n2 && n2.type === "Delimiter" && n2.value === "]") {
-            this.advance();
-            this.advance();
-            next = { kind: "array", elementType: next };
-          } else {
-            break;
-          }
+        const next = this.peekNext();
+        if (!next || next.type !== "Identifier") {
+          return void 0;
         }
-        types.push(next);
-      }
-      type = { kind: "intersection", types };
-    }
-    return type;
-  }
-  parseTypePrimary() {
-    const tok = this.peek();
-    if (tok.type === "Delimiter" && tok.value === "(") {
-      this.advance();
-      const params = [];
-      if (!this.checkDelimiter(")")) {
+        this.advance();
+        const params = [];
         do {
-          params.push(this.parseTypeAnnotation());
+          const param = this.consumeIdentifier("Expected type parameter name");
+          params.push(param.name);
         } while (this.matchDelimiter(","));
-      }
-      this.consumeDelimiter(")", "Expected ')' in function type");
-      this.consumeOperator("=>", "Expected '=>' in function type");
-      const returnType = this.parseTypeAnnotation();
-      return { kind: "function", params, returnType };
-    }
-    if (tok.type === "Identifier" || tok.type === "Keyword" && ["void", "null", "undefined"].includes(tok.value)) {
-      const name = tok.value;
-      this.advance();
-      if (this.checkOperator("<")) {
-        this.advance();
-        const args = [];
-        if (!this.checkOperator(">")) {
-          do {
-            args.push(this.parseTypeAnnotation());
-          } while (this.matchDelimiter(","));
+        if (this.checkOperator(">")) {
+          this.advance();
         }
-        this.consumeOperator(">", "Expected '>' after generic type arguments");
-        return { kind: "generic", name, args };
+        return params.length > 0 ? params : void 0;
       }
-      return { kind: "named", name };
-    }
-    this.error(tok, "Expected type annotation");
-  }
-  parseObjectPattern() {
-    this.consumeDelimiter("{", `Expected '{'`);
-    const properties = [];
-    let rest = void 0;
-    while (!this.checkDelimiter("}") && !this.isAtEnd()) {
-      if (this.checkOperator("...")) {
-        this.advance();
-        rest = this.consumeIdentifier("Expected rest identifier");
-        break;
-      }
-      const key = this.consumeIdentifier("Expected property name");
-      let value = key;
-      let shorthand = true;
-      let defaultValue = void 0;
-      if (this.checkDelimiter(":")) {
-        this.advance();
-        shorthand = false;
-        if (this.checkDelimiter("{")) {
-          value = this.parseObjectPattern();
-        } else if (this.checkDelimiter("[")) {
-          value = this.parseArrayPattern();
-        } else {
-          value = this.consumeIdentifier("Expected alias name");
+      parseTypeAnnotation() {
+        let type = this.parseTypePrimary();
+        while (this.checkDelimiter("[")) {
+          const next = this.peekNext();
+          if (next && next.type === "Delimiter" && next.value === "]") {
+            this.advance();
+            this.advance();
+            type = { kind: "array", elementType: type };
+          } else {
+            break;
+          }
         }
+        if (this.checkOperator("?")) {
+          this.advance();
+          type = { kind: "nullable", inner: type };
+        }
+        if (this.checkOperator("|") && !this.checkOperator("||")) {
+          const types = [type];
+          while (this.checkOperator("|") && !this.checkOperator("||")) {
+            this.advance();
+            let next = this.parseTypePrimary();
+            while (this.checkDelimiter("[")) {
+              const n2 = this.peekNext();
+              if (n2 && n2.type === "Delimiter" && n2.value === "]") {
+                this.advance();
+                this.advance();
+                next = { kind: "array", elementType: next };
+              } else {
+                break;
+              }
+            }
+            types.push(next);
+          }
+          type = { kind: "union", types };
+        }
+        if (this.checkOperator("&") && !this.checkOperator("&&")) {
+          const types = [type];
+          while (this.checkOperator("&") && !this.checkOperator("&&")) {
+            this.advance();
+            let next = this.parseTypePrimary();
+            while (this.checkDelimiter("[")) {
+              const n2 = this.peekNext();
+              if (n2 && n2.type === "Delimiter" && n2.value === "]") {
+                this.advance();
+                this.advance();
+                next = { kind: "array", elementType: next };
+              } else {
+                break;
+              }
+            }
+            types.push(next);
+          }
+          type = { kind: "intersection", types };
+        }
+        return type;
       }
-      if (this.checkOperator("=")) {
-        this.advance();
-        defaultValue = this.parseExpression();
+      parseTypePrimary() {
+        const tok = this.peek();
+        if (tok.type === "Delimiter" && tok.value === "(") {
+          this.advance();
+          const params = [];
+          if (!this.checkDelimiter(")")) {
+            do {
+              params.push(this.parseTypeAnnotation());
+            } while (this.matchDelimiter(","));
+          }
+          this.consumeDelimiter(")", "Expected ')' in function type");
+          this.consumeOperator("=>", "Expected '=>' in function type");
+          const returnType = this.parseTypeAnnotation();
+          return { kind: "function", params, returnType };
+        }
+        if (tok.type === "Identifier" || tok.type === "Keyword" && ["void", "null", "undefined"].includes(tok.value)) {
+          const name = tok.value;
+          this.advance();
+          if (this.checkOperator("<")) {
+            this.advance();
+            const args = [];
+            if (!this.checkOperator(">")) {
+              do {
+                args.push(this.parseTypeAnnotation());
+              } while (this.matchDelimiter(","));
+            }
+            this.consumeOperator(">", "Expected '>' after generic type arguments");
+            return { kind: "generic", name, args };
+          }
+          return { kind: "named", name };
+        }
+        this.error(tok, "Expected type annotation");
       }
-      properties.push({ type: "ObjectPatternProperty", key, value, shorthand, defaultValue });
-      if (!this.matchDelimiter(",")) {
-        break;
+      parseObjectPattern() {
+        this.consumeDelimiter("{", `Expected '{'`);
+        const properties = [];
+        let rest = void 0;
+        while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+          if (this.checkOperator("...")) {
+            this.advance();
+            rest = this.consumeIdentifier("Expected rest identifier");
+            break;
+          }
+          const key = this.consumeIdentifier("Expected property name");
+          let value = key;
+          let shorthand = true;
+          let defaultValue = void 0;
+          if (this.checkDelimiter(":")) {
+            this.advance();
+            shorthand = false;
+            if (this.checkDelimiter("{")) {
+              value = this.parseObjectPattern();
+            } else if (this.checkDelimiter("[")) {
+              value = this.parseArrayPattern();
+            } else {
+              value = this.consumeIdentifier("Expected alias name");
+            }
+          }
+          if (this.checkOperator("=")) {
+            this.advance();
+            defaultValue = this.parseExpression();
+          }
+          properties.push({ type: "ObjectPatternProperty", key, value, shorthand, defaultValue });
+          if (!this.matchDelimiter(",")) {
+            break;
+          }
+        }
+        this.consumeDelimiter("}", "Expected '}'");
+        return { type: "ObjectPattern", properties, rest };
       }
-    }
-    this.consumeDelimiter("}", "Expected '}'");
-    return { type: "ObjectPattern", properties, rest };
+      parseArrayPattern() {
+        this.consumeDelimiter("[", "Expected '['");
+        const elements = [];
+        let rest = void 0;
+        while (!this.checkDelimiter("]") && !this.isAtEnd()) {
+          if (this.checkOperator("...")) {
+            this.advance();
+            rest = this.consumeIdentifier("Expected rest identifier");
+            break;
+          }
+          if (this.checkDelimiter(",")) {
+            elements.push(null);
+            this.advance();
+            continue;
+          }
+          if (this.checkDelimiter("{")) {
+            elements.push(this.parseObjectPattern());
+          } else if (this.checkDelimiter("[")) {
+            elements.push(this.parseArrayPattern());
+          } else {
+            elements.push(this.consumeIdentifier("Expected element name"));
+          }
+          if (!this.matchDelimiter(",")) {
+            break;
+          }
+        }
+        this.consumeDelimiter("]", "Expected ']'");
+        return { type: "ArrayPattern", elements, rest };
+      }
+    };
   }
-  parseArrayPattern() {
-    this.consumeDelimiter("[", "Expected '['");
-    const elements = [];
-    let rest = void 0;
-    while (!this.checkDelimiter("]") && !this.isAtEnd()) {
-      if (this.checkOperator("...")) {
-        this.advance();
-        rest = this.consumeIdentifier("Expected rest identifier");
-        break;
-      }
-      if (this.checkDelimiter(",")) {
-        elements.push(null);
-        this.advance();
-        continue;
-      }
-      if (this.checkDelimiter("{")) {
-        elements.push(this.parseObjectPattern());
-      } else if (this.checkDelimiter("[")) {
-        elements.push(this.parseArrayPattern());
-      } else {
-        elements.push(this.consumeIdentifier("Expected element name"));
-      }
-      if (!this.matchDelimiter(",")) {
-        break;
-      }
-    }
-    this.consumeDelimiter("]", "Expected ']'");
-    return { type: "ArrayPattern", elements, rest };
-  }
-};
+});
 
 // dist/compiler/parser/parser-expressions.js
-var ParserExpressions = class _ParserExpressions extends ParserTypes {
-  constructor(tokens, source) {
-    super(tokens, source);
-  }
-  parseExpressionStatement() {
-    const expression = this.parseExpression();
-    return { type: "ExpressionStatement", expression };
-  }
-  parseExpression(precedence) {
-    const prec = precedence ?? 0;
-    let left = this.parseUnary();
-    while (true) {
-      const tok = this.peek();
-      if (tok.type === "Operator" && COMPOUND_ASSIGN.has(tok.value) && prec === 0) {
-        if (left.type === "Identifier" || left.type === "MemberExpression") {
+var ParserExpressions;
+var init_parser_expressions = __esm({
+  "dist/compiler/parser/parser-expressions.js"() {
+    init_precedence();
+    init_parser_types();
+    init_lexer();
+    ParserExpressions = class _ParserExpressions extends ParserTypes {
+      constructor(tokens, source) {
+        super(tokens, source);
+      }
+      parseExpressionStatement() {
+        const expression = this.parseExpression();
+        return { type: "ExpressionStatement", expression };
+      }
+      parseExpression(precedence) {
+        const prec = precedence ?? 0;
+        let left = this.parseUnary();
+        while (true) {
+          const tok = this.peek();
+          if (tok.type === "Operator" && COMPOUND_ASSIGN.has(tok.value) && prec === 0) {
+            if (left.type === "Identifier" || left.type === "MemberExpression") {
+              this.advance();
+              const right = this.parseExpression(0);
+              left = { type: "CompoundAssignmentExpression", operator: tok.value, left, right };
+              continue;
+            }
+          }
+          if (tok.type === "Operator" && tok.value === "=" && prec === 0) {
+            if (left.type === "Identifier" || left.type === "MemberExpression") {
+              this.advance();
+              const right = this.parseExpression(0);
+              left = { type: "AssignmentExpression", left, right };
+              continue;
+            }
+          }
+          if (tok.type === "Operator" && PRECEDENCE[tok.value] !== void 0) {
+            const opPrec = PRECEDENCE[tok.value];
+            if (opPrec <= prec) {
+              break;
+            }
+            this.advance();
+            const right = this.parseExpression(tok.value === "**" ? opPrec - 1 : opPrec);
+            left = { type: "BinaryExpression", operator: tok.value, left, right };
+            continue;
+          }
+          if (tok.type === "Keyword" && (tok.value === "instanceof" || tok.value === "in")) {
+            const opPrec = PRECEDENCE[tok.value];
+            if (opPrec <= prec) {
+              break;
+            }
+            this.advance();
+            const right = this.parseExpression(opPrec);
+            left = { type: "BinaryExpression", operator: tok.value, left, right };
+            continue;
+          }
+          if ((tok.type === "Identifier" || tok.type === "Keyword") && tok.value === "as") {
+            this.advance();
+            const typeAnnotation = this.parseTypeAnnotation();
+            left = { type: "AsExpression", expression: left, typeAnnotation };
+            continue;
+          }
+          if (tok.type === "Operator" && tok.value === "?" && prec === 0) {
+            const next = this.peekNext();
+            if (next && next.type === "Operator" && next.value === ".") {
+              break;
+            }
+            this.advance();
+            const consequent = this.parseExpression();
+            this.consumeDelimiter(":", "Expected ':' in ternary");
+            const alternate = this.parseExpression();
+            left = { type: "TernaryExpression", condition: left, consequent, alternate };
+            continue;
+          }
+          break;
+        }
+        return left;
+      }
+      parseUnary() {
+        const tok = this.peek();
+        if (tok.type === "Keyword" && tok.value === "await") {
           this.advance();
-          const right = this.parseExpression(0);
-          left = { type: "CompoundAssignmentExpression", operator: tok.value, left, right };
-          continue;
+          return { type: "AwaitExpression", argument: this.parseUnary() };
         }
-      }
-      if (tok.type === "Operator" && tok.value === "=" && prec === 0) {
-        if (left.type === "Identifier" || left.type === "MemberExpression") {
+        if (tok.type === "Keyword" && tok.value === "typeof") {
           this.advance();
-          const right = this.parseExpression(0);
-          left = { type: "AssignmentExpression", left, right };
-          continue;
+          return { type: "TypeofExpression", argument: this.parseUnary() };
         }
+        if (tok.type === "Keyword" && tok.value === "void") {
+          this.advance();
+          return { type: "VoidExpression", argument: this.parseUnary() };
+        }
+        if (tok.type === "Keyword" && tok.value === "delete") {
+          this.advance();
+          return { type: "DeleteExpression", argument: this.parseUnary() };
+        }
+        if (tok.type === "Keyword" && tok.value === "yield") {
+          this.advance();
+          let delegate = false;
+          if (this.checkOperator("*")) {
+            this.advance();
+            delegate = true;
+          }
+          if (this.isAtEnd() || this.checkDelimiter("}") || this.checkDelimiter(")")) {
+            return { type: "YieldExpression", argument: null, delegate };
+          }
+          return { type: "YieldExpression", argument: this.parseExpression(), delegate };
+        }
+        if (tok.type === "Keyword" && tok.value === "new") {
+          this.advance();
+          let callee = this.consumeIdentifier("Expected constructor name");
+          while (this.checkOperator(".")) {
+            this.advance();
+            const prop = this.consumePropertyName("Expected property name");
+            callee = { type: "MemberExpression", object: callee, property: prop, computed: false, optional: false };
+          }
+          const args = [];
+          if (this.checkDelimiter("(")) {
+            this.advance();
+            if (!this.checkDelimiter(")")) {
+              do {
+                args.push(this.parseExpression());
+              } while (this.matchDelimiter(","));
+            }
+            this.consumeDelimiter(")", "Expected ')'");
+          }
+          const newExpr = { type: "NewExpression", callee, arguments: args };
+          return this.parsePostfix(newExpr);
+        }
+        if (tok.type === "Operator" && tok.value === "...") {
+          this.advance();
+          return { type: "SpreadExpression", argument: this.parseUnary() };
+        }
+        if (tok.type === "Operator" && (tok.value === "++" || tok.value === "--")) {
+          this.advance();
+          return { type: "UpdateExpression", operator: tok.value, argument: this.parseUnary(), prefix: true };
+        }
+        if (tok.type === "Operator" && (tok.value === "!" || tok.value === "-" || tok.value === "~" || tok.value === "+")) {
+          this.advance();
+          return { type: "UnaryExpression", operator: tok.value, argument: this.parseUnary() };
+        }
+        return this.parsePostfix();
       }
-      if (tok.type === "Operator" && PRECEDENCE[tok.value] !== void 0) {
-        const opPrec = PRECEDENCE[tok.value];
-        if (opPrec <= prec) {
+      parsePostfix(initial) {
+        let left = initial ?? this.parsePrimary();
+        while (!this.isAtEnd()) {
+          const tok = this.peek();
+          if (tok.type === "Operator" && (tok.value === "++" || tok.value === "--")) {
+            if (left.type === "Identifier" || left.type === "MemberExpression") {
+              this.advance();
+              left = { type: "UpdateExpression", operator: tok.value, argument: left, prefix: false };
+              continue;
+            }
+          }
+          if (tok.type === "Operator" && (tok.value === "." || tok.value === "?.")) {
+            const optional = tok.value === "?.";
+            this.advance();
+            if (optional && this.checkDelimiter("(")) {
+              left = this.parseCallArguments(left, true);
+              continue;
+            }
+            if (optional && this.checkDelimiter("[")) {
+              this.advance();
+              const prop2 = this.parseExpression();
+              this.consumeDelimiter("]", "Expected ']'");
+              left = { type: "MemberExpression", object: left, property: prop2, computed: true, optional: true };
+              continue;
+            }
+            const prop = this.consumePropertyName("Expected property name");
+            left = { type: "MemberExpression", object: left, property: prop, computed: false, optional };
+            if (this.checkDelimiter("(")) {
+              left = this.parseCallArguments(left, false);
+            }
+            continue;
+          }
+          if (tok.type === "Delimiter" && tok.value === "[") {
+            this.advance();
+            const prop = this.parseExpression();
+            this.consumeDelimiter("]", "Expected ']'");
+            left = { type: "MemberExpression", object: left, property: prop, computed: true, optional: false };
+            continue;
+          }
+          if (tok.type === "Delimiter" && tok.value === "(") {
+            if (left.type === "Identifier" || left.type === "MemberExpression" || left.type === "CallExpression") {
+              left = this.parseCallArguments(left, false);
+              continue;
+            }
+          }
           break;
         }
-        this.advance();
-        const right = this.parseExpression(tok.value === "**" ? opPrec - 1 : opPrec);
-        left = { type: "BinaryExpression", operator: tok.value, left, right };
-        continue;
+        return left;
       }
-      if (tok.type === "Keyword" && (tok.value === "instanceof" || tok.value === "in")) {
-        const opPrec = PRECEDENCE[tok.value];
-        if (opPrec <= prec) {
-          break;
+      parsePrimary() {
+        const token = this.peek();
+        if (token.type === "Delimiter" && token.value === "(") {
+          if (this.isArrowFunction()) {
+            return this.parseArrowFunction(false);
+          }
+          this.advance();
+          const expr = this.parseExpression();
+          this.consumeDelimiter(")", "Expected ')'");
+          return expr;
         }
-        this.advance();
-        const right = this.parseExpression(opPrec);
-        left = { type: "BinaryExpression", operator: tok.value, left, right };
-        continue;
-      }
-      if ((tok.type === "Identifier" || tok.type === "Keyword") && tok.value === "as") {
-        this.advance();
-        const typeAnnotation = this.parseTypeAnnotation();
-        left = { type: "AsExpression", expression: left, typeAnnotation };
-        continue;
-      }
-      if (tok.type === "Operator" && tok.value === "?" && prec === 0) {
-        const next = this.peekNext();
-        if (next && next.type === "Operator" && next.value === ".") {
-          break;
+        if (token.type === "Delimiter" && token.value === "[") {
+          return this.parseArrayExpression();
         }
-        this.advance();
-        const consequent = this.parseExpression();
-        this.consumeDelimiter(":", "Expected ':' in ternary");
-        const alternate = this.parseExpression();
-        left = { type: "TernaryExpression", condition: left, consequent, alternate };
-        continue;
+        if (token.type === "Delimiter" && token.value === "{") {
+          return this.parseObjectExpression();
+        }
+        if (token.type === "Keyword" && (token.value === "true" || token.value === "false")) {
+          this.advance();
+          return { type: "Literal", value: token.value === "true", literalType: "boolean" };
+        }
+        if (token.type === "Keyword" && token.value === "null") {
+          this.advance();
+          return { type: "Literal", value: null, literalType: "null" };
+        }
+        if (token.type === "Keyword" && token.value === "undefined") {
+          this.advance();
+          return { type: "Literal", value: void 0, literalType: "undefined" };
+        }
+        if (token.type === "Keyword" && token.value === "this") {
+          this.advance();
+          return { type: "Identifier", name: "this" };
+        }
+        if (token.type === "Keyword" && token.value === "super") {
+          this.advance();
+          return { type: "Identifier", name: "super" };
+        }
+        if (token.type === "Keyword" && token.value === "if") {
+          this.advance();
+          const condition = this.parseExpression();
+          const consequent = this.parseBlock();
+          this.consumeKeyword("else");
+          const alternate = this.parseBlock();
+          return { type: "IfExpression", condition, consequent, alternate };
+        }
+        if (token.type === "Keyword" && token.value === "import" && this.peekNext()?.type === "Delimiter" && this.peekNext()?.value === "(") {
+          this.advance();
+          return this.parseCallArguments({ type: "Identifier", name: "import" }, false);
+        }
+        if (token.type === "Identifier" && token.value === "comptime") {
+          this.advance();
+          if (this.checkDelimiter(`{`)) {
+            const body = this.parseBlock();
+            return { type: "ComptimeExpression", expression: null, body };
+          }
+          const expression = this.parseExpression();
+          return { type: "ComptimeExpression", expression, body: null };
+        }
+        if (this.isIdentifierLike(token)) {
+          this.advance();
+          return { type: "Identifier", name: token.value };
+        }
+        if (token.type === "Number") {
+          this.advance();
+          return { type: "Literal", value: Number(token.value), literalType: "number" };
+        }
+        if (token.type === "RawString") {
+          this.advance();
+          return { type: "Literal", value: token.value, literalType: "string" };
+        }
+        if (token.type === "String") {
+          this.advance();
+          return this.parseStringLiteral(token.value, token.loc);
+        }
+        if (token.type === "TemplateLiteral") {
+          this.advance();
+          return this.parseTemplateLiteral(token.value, token.loc);
+        }
+        if (token.type === "RegExp") {
+          this.advance();
+          const regexStr = token.value;
+          const lastSlash = regexStr.lastIndexOf("/");
+          const pattern = regexStr.slice(1, lastSlash);
+          const flags = regexStr.slice(lastSlash + 1);
+          return { type: "RegExpLiteral", pattern, flags };
+        }
+        this.error(token, "Expected expression");
       }
-      break;
-    }
-    return left;
-  }
-  parseUnary() {
-    const tok = this.peek();
-    if (tok.type === "Keyword" && tok.value === "await") {
-      this.advance();
-      return { type: "AwaitExpression", argument: this.parseUnary() };
-    }
-    if (tok.type === "Keyword" && tok.value === "typeof") {
-      this.advance();
-      return { type: "TypeofExpression", argument: this.parseUnary() };
-    }
-    if (tok.type === "Keyword" && tok.value === "void") {
-      this.advance();
-      return { type: "VoidExpression", argument: this.parseUnary() };
-    }
-    if (tok.type === "Keyword" && tok.value === "delete") {
-      this.advance();
-      return { type: "DeleteExpression", argument: this.parseUnary() };
-    }
-    if (tok.type === "Keyword" && tok.value === "yield") {
-      this.advance();
-      let delegate = false;
-      if (this.checkOperator("*")) {
-        this.advance();
-        delegate = true;
-      }
-      if (this.isAtEnd() || this.checkDelimiter("}") || this.checkDelimiter(")")) {
-        return { type: "YieldExpression", argument: null, delegate };
-      }
-      return { type: "YieldExpression", argument: this.parseExpression(), delegate };
-    }
-    if (tok.type === "Keyword" && tok.value === "new") {
-      this.advance();
-      let callee = this.consumeIdentifier("Expected constructor name");
-      while (this.checkOperator(".")) {
-        this.advance();
-        const prop = this.consumePropertyName("Expected property name");
-        callee = { type: "MemberExpression", object: callee, property: prop, computed: false, optional: false };
-      }
-      const args = [];
-      if (this.checkDelimiter("(")) {
-        this.advance();
+      parseCallArguments(callee, optional) {
+        const opt = optional ?? false;
+        this.consumeDelimiter("(", "Expected '('");
+        const args = [];
+        const namedArgs = [];
         if (!this.checkDelimiter(")")) {
           do {
-            args.push(this.parseExpression());
+            if (this.checkDelimiter(")")) {
+              break;
+            }
+            if (this.isNamedArgument()) {
+              const name = this.consumeIdentifier("Expected argument name");
+              this.consumeDelimiter(":", "Expected ':'");
+              const value = this.parseExpression();
+              namedArgs.push({ type: "NamedArgument", name, value });
+            } else {
+              args.push(this.parseExpression());
+            }
           } while (this.matchDelimiter(","));
         }
         this.consumeDelimiter(")", "Expected ')'");
+        const call = { type: "CallExpression", callee, arguments: args, optional: opt };
+        if (namedArgs.length > 0) {
+          call.namedArgs = namedArgs;
+        }
+        return call;
       }
-      const newExpr = { type: "NewExpression", callee, arguments: args };
-      return this.parsePostfix(newExpr);
-    }
-    if (tok.type === "Operator" && tok.value === "...") {
-      this.advance();
-      return { type: "SpreadExpression", argument: this.parseUnary() };
-    }
-    if (tok.type === "Operator" && (tok.value === "++" || tok.value === "--")) {
-      this.advance();
-      return { type: "UpdateExpression", operator: tok.value, argument: this.parseUnary(), prefix: true };
-    }
-    if (tok.type === "Operator" && (tok.value === "!" || tok.value === "-" || tok.value === "~" || tok.value === "+")) {
-      this.advance();
-      return { type: "UnaryExpression", operator: tok.value, argument: this.parseUnary() };
-    }
-    return this.parsePostfix();
-  }
-  parsePostfix(initial) {
-    let left = initial ?? this.parsePrimary();
-    while (!this.isAtEnd()) {
-      const tok = this.peek();
-      if (tok.type === "Operator" && (tok.value === "++" || tok.value === "--")) {
-        if (left.type === "Identifier" || left.type === "MemberExpression") {
-          this.advance();
-          left = { type: "UpdateExpression", operator: tok.value, argument: left, prefix: false };
-          continue;
+      isNamedArgument() {
+        const cur = this.peek();
+        const next = this.peekNext();
+        if ((cur.type === "Identifier" || this.isIdentifierLike(cur)) && next && next.type === "Delimiter" && next.value === ":") {
+          return true;
         }
+        return false;
       }
-      if (tok.type === "Operator" && (tok.value === "." || tok.value === "?.")) {
-        const optional = tok.value === "?.";
-        this.advance();
-        if (optional && this.checkDelimiter("(")) {
-          left = this.parseCallArguments(left, true);
-          continue;
+      parseArrayExpression() {
+        this.consumeDelimiter("[", "Expected '['");
+        const elements = [];
+        if (!this.checkDelimiter("]")) {
+          do {
+            if (this.checkDelimiter("]")) {
+              break;
+            }
+            elements.push(this.parseExpression());
+          } while (this.matchDelimiter(","));
         }
-        if (optional && this.checkDelimiter("[")) {
-          this.advance();
-          const prop2 = this.parseExpression();
-          this.consumeDelimiter("]", "Expected ']'");
-          left = { type: "MemberExpression", object: left, property: prop2, computed: true, optional: true };
-          continue;
-        }
-        const prop = this.consumePropertyName("Expected property name");
-        left = { type: "MemberExpression", object: left, property: prop, computed: false, optional };
-        if (this.checkDelimiter("(")) {
-          left = this.parseCallArguments(left, false);
-        }
-        continue;
-      }
-      if (tok.type === "Delimiter" && tok.value === "[") {
-        this.advance();
-        const prop = this.parseExpression();
         this.consumeDelimiter("]", "Expected ']'");
-        left = { type: "MemberExpression", object: left, property: prop, computed: true, optional: false };
-        continue;
+        return { type: "ArrayExpression", elements };
       }
-      if (tok.type === "Delimiter" && tok.value === "(") {
-        if (left.type === "Identifier" || left.type === "MemberExpression" || left.type === "CallExpression") {
-          left = this.parseCallArguments(left, false);
-          continue;
-        }
-      }
-      break;
-    }
-    return left;
-  }
-  parsePrimary() {
-    const token = this.peek();
-    if (token.type === "Delimiter" && token.value === "(") {
-      if (this.isArrowFunction()) {
-        return this.parseArrowFunction(false);
-      }
-      this.advance();
-      const expr = this.parseExpression();
-      this.consumeDelimiter(")", "Expected ')'");
-      return expr;
-    }
-    if (token.type === "Delimiter" && token.value === "[") {
-      return this.parseArrayExpression();
-    }
-    if (token.type === "Delimiter" && token.value === "{") {
-      return this.parseObjectExpression();
-    }
-    if (token.type === "Keyword" && (token.value === "true" || token.value === "false")) {
-      this.advance();
-      return { type: "Literal", value: token.value === "true", literalType: "boolean" };
-    }
-    if (token.type === "Keyword" && token.value === "null") {
-      this.advance();
-      return { type: "Literal", value: null, literalType: "null" };
-    }
-    if (token.type === "Keyword" && token.value === "undefined") {
-      this.advance();
-      return { type: "Literal", value: void 0, literalType: "undefined" };
-    }
-    if (token.type === "Keyword" && token.value === "this") {
-      this.advance();
-      return { type: "Identifier", name: "this" };
-    }
-    if (token.type === "Keyword" && token.value === "super") {
-      this.advance();
-      return { type: "Identifier", name: "super" };
-    }
-    if (token.type === "Keyword" && token.value === "if") {
-      this.advance();
-      const condition = this.parseExpression();
-      const consequent = this.parseBlock();
-      this.consumeKeyword("else");
-      const alternate = this.parseBlock();
-      return { type: "IfExpression", condition, consequent, alternate };
-    }
-    if (token.type === "Keyword" && token.value === "import" && this.peekNext()?.type === "Delimiter" && this.peekNext()?.value === "(") {
-      this.advance();
-      return this.parseCallArguments({ type: "Identifier", name: "import" }, false);
-    }
-    if (token.type === "Identifier" && token.value === "comptime") {
-      this.advance();
-      if (this.checkDelimiter(`{`)) {
-        const body = this.parseBlock();
-        return { type: "ComptimeExpression", expression: null, body };
-      }
-      const expression = this.parseExpression();
-      return { type: "ComptimeExpression", expression, body: null };
-    }
-    if (this.isIdentifierLike(token)) {
-      this.advance();
-      return { type: "Identifier", name: token.value };
-    }
-    if (token.type === "Number") {
-      this.advance();
-      return { type: "Literal", value: Number(token.value), literalType: "number" };
-    }
-    if (token.type === "RawString") {
-      this.advance();
-      return { type: "Literal", value: token.value, literalType: "string" };
-    }
-    if (token.type === "String") {
-      this.advance();
-      return this.parseStringLiteral(token.value, token.loc);
-    }
-    if (token.type === "TemplateLiteral") {
-      this.advance();
-      return this.parseTemplateLiteral(token.value, token.loc);
-    }
-    if (token.type === "RegExp") {
-      this.advance();
-      const regexStr = token.value;
-      const lastSlash = regexStr.lastIndexOf("/");
-      const pattern = regexStr.slice(1, lastSlash);
-      const flags = regexStr.slice(lastSlash + 1);
-      return { type: "RegExpLiteral", pattern, flags };
-    }
-    this.error(token, "Expected expression");
-  }
-  parseCallArguments(callee, optional) {
-    const opt = optional ?? false;
-    this.consumeDelimiter("(", "Expected '('");
-    const args = [];
-    const namedArgs = [];
-    if (!this.checkDelimiter(")")) {
-      do {
-        if (this.checkDelimiter(")")) {
-          break;
-        }
-        if (this.isNamedArgument()) {
-          const name = this.consumeIdentifier("Expected argument name");
-          this.consumeDelimiter(":", "Expected ':'");
-          const value = this.parseExpression();
-          namedArgs.push({ type: "NamedArgument", name, value });
-        } else {
-          args.push(this.parseExpression());
-        }
-      } while (this.matchDelimiter(","));
-    }
-    this.consumeDelimiter(")", "Expected ')'");
-    const call = { type: "CallExpression", callee, arguments: args, optional: opt };
-    if (namedArgs.length > 0) {
-      call.namedArgs = namedArgs;
-    }
-    return call;
-  }
-  isNamedArgument() {
-    const cur = this.peek();
-    const next = this.peekNext();
-    if ((cur.type === "Identifier" || this.isIdentifierLike(cur)) && next && next.type === "Delimiter" && next.value === ":") {
-      return true;
-    }
-    return false;
-  }
-  parseArrayExpression() {
-    this.consumeDelimiter("[", "Expected '['");
-    const elements = [];
-    if (!this.checkDelimiter("]")) {
-      do {
-        if (this.checkDelimiter("]")) {
-          break;
-        }
-        elements.push(this.parseExpression());
-      } while (this.matchDelimiter(","));
-    }
-    this.consumeDelimiter("]", "Expected ']'");
-    return { type: "ArrayExpression", elements };
-  }
-  parseObjectExpression() {
-    this.consumeDelimiter("{", `Expected '{'`);
-    const properties = [];
-    if (!this.checkDelimiter("}")) {
-      do {
-        if (this.checkDelimiter("}")) {
-          break;
-        }
-        const keyTok = this.peek();
-        let key = null;
-        let computed = false;
-        if (keyTok.type === "Delimiter" && keyTok.value === "[") {
-          computed = true;
-          this.advance();
-          key = this.parseExpression();
-          this.consumeDelimiter("]", "Expected ']'");
-        } else if (keyTok.type === "Identifier" || keyTok.type === "Keyword") {
-          key = { type: "Identifier", name: keyTok.value };
-          this.advance();
-        } else if (keyTok.type === "String" || keyTok.type === "RawString") {
-          key = { type: "Literal", value: keyTok.value, literalType: "string" };
-          this.advance();
-        } else if (keyTok.type === "Number") {
-          key = { type: "Literal", value: Number(keyTok.value), literalType: "number" };
-          this.advance();
-        } else {
-          this.error(keyTok, "Expected property key");
-        }
-        if (!computed && !this.checkDelimiter(":")) {
-          properties.push({ type: "ObjectProperty", key, value: { type: "Identifier", name: key.name }, shorthand: true, computed: false });
-        } else {
-          if (this.checkDelimiter(":")) {
-            this.advance();
-          }
-          const value = this.parseExpression();
-          properties.push({ type: "ObjectProperty", key, value, shorthand: false, computed });
-        }
-      } while (this.matchDelimiter(","));
-    }
-    this.consumeDelimiter("}", "Expected '}'");
-    return { type: "ObjectExpression", properties };
-  }
-  isArrowFunction() {
-    const saved = this.current;
-    try {
-      this.advance();
-      let depth = 1;
-      while (depth > 0 && !this.isAtEnd()) {
-        const t = this.advance();
-        if (t.type === "Delimiter" && t.value === "(") {
-          depth = depth + 1;
-        }
-        if (t.type === "Delimiter" && t.value === ")") {
-          depth = depth - 1;
-        }
-      }
-      const next = this.peek();
-      return next.type === "Operator" && next.value === "=>";
-    } catch (e) {
-      return false;
-    } finally {
-      this.current = saved;
-    }
-  }
-  parseArrowFunction(isAsync) {
-    this.consumeDelimiter("(", "Expected '('");
-    const params = this.parseParamList();
-    this.consumeDelimiter(")", "Expected ')'");
-    this.consumeOperator("=>", "Expected '=>'");
-    if (this.checkDelimiter("{")) {
-      const body = this.parseBlock();
-      return { type: "ArrowFunction", params, body, async: isAsync };
-    }
-    const expr = this.parseExpression();
-    return { type: "ArrowFunction", params, body: expr, async: isAsync };
-  }
-  parseStringLiteral(raw, loc) {
-    if (!raw.includes("{")) {
-      return { type: "Literal", value: raw, literalType: "string" };
-    }
-    const parts = [];
-    let buffer = "";
-    let i = 0;
-    while (i < raw.length) {
-      if (raw[i] === "\\") {
-        if (i + 1 < raw.length && raw[i + 1] === "{") {
-          buffer = buffer + "{";
-          i = i + 2;
-          continue;
-        }
-      }
-      if (raw[i] === "{") {
-        if (buffer) {
-          parts.push({ kind: "Text", value: buffer });
-          buffer = "";
-        }
-        let j = i + 1;
-        let inner = "";
-        let braceDepth = 1;
-        while (j < raw.length && braceDepth > 0) {
-          if (raw[j] === "{") {
-            braceDepth = braceDepth + 1;
-          } else if (raw[j] === "}") {
-            braceDepth = braceDepth - 1;
-            if (braceDepth === 0) {
+      parseObjectExpression() {
+        this.consumeDelimiter("{", `Expected '{'`);
+        const properties = [];
+        if (!this.checkDelimiter("}")) {
+          do {
+            if (this.checkDelimiter("}")) {
               break;
             }
-          }
-          inner = inner + raw[j];
-          j = j + 1;
+            const keyTok = this.peek();
+            let key = null;
+            let computed = false;
+            if (keyTok.type === "Delimiter" && keyTok.value === "[") {
+              computed = true;
+              this.advance();
+              key = this.parseExpression();
+              this.consumeDelimiter("]", "Expected ']'");
+            } else if (keyTok.type === "Identifier" || keyTok.type === "Keyword") {
+              key = { type: "Identifier", name: keyTok.value };
+              this.advance();
+            } else if (keyTok.type === "String" || keyTok.type === "RawString") {
+              key = { type: "Literal", value: keyTok.value, literalType: "string" };
+              this.advance();
+            } else if (keyTok.type === "Number") {
+              key = { type: "Literal", value: Number(keyTok.value), literalType: "number" };
+              this.advance();
+            } else {
+              this.error(keyTok, "Expected property key");
+            }
+            if (!computed && !this.checkDelimiter(":")) {
+              properties.push({ type: "ObjectProperty", key, value: { type: "Identifier", name: key.name }, shorthand: true, computed: false });
+            } else {
+              if (this.checkDelimiter(":")) {
+                this.advance();
+              }
+              const value = this.parseExpression();
+              properties.push({ type: "ObjectProperty", key, value, shorthand: false, computed });
+            }
+          } while (this.matchDelimiter(","));
         }
-        if (j >= raw.length) {
-          const where = loc ? " at " + loc.line + ":" + loc.column + i : "";
-          throw new SyntaxError("Unterminated interpolation in string literal" + where);
-        }
-        const innerTokens = new Lexer(inner).tokenize();
-        const innerParser = new _ParserExpressions(innerTokens);
-        const expr = innerParser.parseExpression();
-        parts.push({ kind: "Expression", expression: expr });
-        i = j + 1;
-        continue;
+        this.consumeDelimiter("}", "Expected '}'");
+        return { type: "ObjectExpression", properties };
       }
-      buffer = buffer + raw[i];
-      i = i + 1;
-    }
-    if (buffer) {
-      parts.push({ kind: "Text", value: buffer });
-    }
-    return { type: "TemplateLiteral", parts };
-  }
-  parseTemplateLiteral(raw, loc) {
-    const parts = [];
-    let buffer = "";
-    let i = 0;
-    while (i < raw.length) {
-      if (raw[i] === "$" && i + 1 < raw.length && raw[i + 1] === "{") {
-        if (buffer) {
-          parts.push({ kind: "Text", value: buffer });
-          buffer = "";
+      isArrowFunction() {
+        const saved = this.current;
+        try {
+          this.advance();
+          let depth = 1;
+          while (depth > 0 && !this.isAtEnd()) {
+            const t = this.advance();
+            if (t.type === "Delimiter" && t.value === "(") {
+              depth = depth + 1;
+            }
+            if (t.type === "Delimiter" && t.value === ")") {
+              depth = depth - 1;
+            }
+          }
+          const next = this.peek();
+          return next.type === "Operator" && next.value === "=>";
+        } catch (e) {
+          return false;
+        } finally {
+          this.current = saved;
         }
-        i = i + 2;
-        let inner = "";
-        let braceDepth = 1;
-        while (i < raw.length && braceDepth > 0) {
+      }
+      parseArrowFunction(isAsync) {
+        this.consumeDelimiter("(", "Expected '('");
+        const params = this.parseParamList();
+        this.consumeDelimiter(")", "Expected ')'");
+        this.consumeOperator("=>", "Expected '=>'");
+        if (this.checkDelimiter("{")) {
+          const body = this.parseBlock();
+          return { type: "ArrowFunction", params, body, async: isAsync };
+        }
+        const expr = this.parseExpression();
+        return { type: "ArrowFunction", params, body: expr, async: isAsync };
+      }
+      parseStringLiteral(raw, loc) {
+        if (!raw.includes("{")) {
+          return { type: "Literal", value: raw, literalType: "string" };
+        }
+        const parts = [];
+        let buffer = "";
+        let i = 0;
+        while (i < raw.length) {
+          if (raw[i] === "\\") {
+            if (i + 1 < raw.length && raw[i + 1] === "{") {
+              buffer = buffer + "{";
+              i = i + 2;
+              continue;
+            }
+          }
           if (raw[i] === "{") {
-            braceDepth = braceDepth + 1;
-          } else if (raw[i] === "}") {
-            braceDepth = braceDepth - 1;
-            if (braceDepth === 0) {
-              break;
+            if (buffer) {
+              parts.push({ kind: "Text", value: buffer });
+              buffer = "";
             }
+            let j = i + 1;
+            let inner = "";
+            let braceDepth = 1;
+            while (j < raw.length && braceDepth > 0) {
+              if (raw[j] === "{") {
+                braceDepth = braceDepth + 1;
+              } else if (raw[j] === "}") {
+                braceDepth = braceDepth - 1;
+                if (braceDepth === 0) {
+                  break;
+                }
+              }
+              inner = inner + raw[j];
+              j = j + 1;
+            }
+            if (j >= raw.length) {
+              const where = loc ? " at " + loc.line + ":" + loc.column + i : "";
+              throw new SyntaxError("Unterminated interpolation in string literal" + where);
+            }
+            const innerTokens = new Lexer(inner).tokenize();
+            const innerParser = new _ParserExpressions(innerTokens);
+            const expr = innerParser.parseExpression();
+            parts.push({ kind: "Expression", expression: expr });
+            i = j + 1;
+            continue;
           }
-          inner = inner + raw[i];
+          buffer = buffer + raw[i];
           i = i + 1;
         }
-        if (braceDepth !== 0) {
-          const where = loc ? " at " + loc.line + ":" + loc.column + i : "";
-          throw new SyntaxError("Unterminated interpolation in template literal" + where);
+        if (buffer) {
+          parts.push({ kind: "Text", value: buffer });
         }
-        i = i + 1;
-        const innerTokens = new Lexer(inner).tokenize();
-        const innerParser = new _ParserExpressions(innerTokens);
-        const expr = innerParser.parseExpression();
-        parts.push({ kind: "Expression", expression: expr });
-        continue;
+        return { type: "TemplateLiteral", parts };
       }
-      buffer = buffer + raw[i];
-      i = i + 1;
-    }
-    if (buffer) {
-      parts.push({ kind: "Text", value: buffer });
-    }
-    if (parts.length === 0) {
-      parts.push({ kind: "Text", value: "" });
-    }
-    return { type: "TemplateLiteral", parts };
+      parseTemplateLiteral(raw, loc) {
+        const parts = [];
+        let buffer = "";
+        let i = 0;
+        while (i < raw.length) {
+          if (raw[i] === "$" && i + 1 < raw.length && raw[i + 1] === "{") {
+            if (buffer) {
+              parts.push({ kind: "Text", value: buffer });
+              buffer = "";
+            }
+            i = i + 2;
+            let inner = "";
+            let braceDepth = 1;
+            while (i < raw.length && braceDepth > 0) {
+              if (raw[i] === "{") {
+                braceDepth = braceDepth + 1;
+              } else if (raw[i] === "}") {
+                braceDepth = braceDepth - 1;
+                if (braceDepth === 0) {
+                  break;
+                }
+              }
+              inner = inner + raw[i];
+              i = i + 1;
+            }
+            if (braceDepth !== 0) {
+              const where = loc ? " at " + loc.line + ":" + loc.column + i : "";
+              throw new SyntaxError("Unterminated interpolation in template literal" + where);
+            }
+            i = i + 1;
+            const innerTokens = new Lexer(inner).tokenize();
+            const innerParser = new _ParserExpressions(innerTokens);
+            const expr = innerParser.parseExpression();
+            parts.push({ kind: "Expression", expression: expr });
+            continue;
+          }
+          buffer = buffer + raw[i];
+          i = i + 1;
+        }
+        if (buffer) {
+          parts.push({ kind: "Text", value: buffer });
+        }
+        if (parts.length === 0) {
+          parts.push({ kind: "Text", value: "" });
+        }
+        return { type: "TemplateLiteral", parts };
+      }
+    };
   }
-};
+});
 
 // dist/compiler/parser/parser-statements.js
-var ParserStatements = class extends ParserExpressions {
-  constructor(tokens, source) {
-    super(tokens, source);
-  }
-  parseBlock() {
-    this.consumeDelimiter("{", `Expected '{'`);
-    const statements = [];
-    while (!this.checkDelimiter("}") && !this.isAtEnd()) {
-      statements.push(this.parseStatement());
-    }
-    this.consumeDelimiter("}", "Expected '}'");
-    return statements;
-  }
-  parseAsync() {
-    this.consumeKeyword("async");
-    const tok = this.peek();
-    if (tok.type === "Keyword" && tok.value === "fn") {
-      const next = this.peekNext();
-      return this.parseFunctionDeclaration(true, next?.type === "Operator" && next?.value === "*");
-    }
-    this.error(tok, "Expected 'fn' after 'async'");
-  }
-  parseFunctionDeclaration(isAsync, isGenerator) {
-    const isGen = isGenerator ?? false;
-    this.consumeKeyword("fn");
-    if (isGen && this.checkOperator("*")) {
-      this.advance();
-    }
-    const name = this.consumeIdentifier("Expected function name");
-    const typeParams = this.parseTypeParams();
-    this.consumeDelimiter("(", "Expected '('");
-    const params = this.parseParamList();
-    this.consumeDelimiter(")", "Expected ')'");
-    let returnType = void 0;
-    if (this.checkDelimiter(":")) {
-      this.advance();
-      returnType = this.parseTypeAnnotation();
-    }
-    if (this.checkOperator("=")) {
-      this.advance();
-      const expr = this.parseExpression();
-      return { type: "FunctionDeclaration", name, params, body: [{ type: "ExpressionStatement", expression: expr }], async: isAsync, generator: isGen, returnType, typeParams };
-    }
-    const body = this.parseBlock();
-    return { type: "FunctionDeclaration", name, params, body, async: isAsync, generator: isGen, returnType, typeParams };
-  }
-  parseParamList() {
-    const params = [];
-    if (this.checkDelimiter(")")) {
-      return params;
-    }
-    do {
-      if (this.checkDelimiter(")")) {
-        break;
+var ParserStatements;
+var init_parser_statements = __esm({
+  "dist/compiler/parser/parser-statements.js"() {
+    init_parser_expressions();
+    ParserStatements = class extends ParserExpressions {
+      constructor(tokens, source) {
+        super(tokens, source);
       }
-      let rest = false;
-      let dv = void 0;
-      if (this.checkOperator("...")) {
-        this.advance();
-        rest = true;
-      }
-      if (this.checkDelimiter("{")) {
-        const pattern = this.parseObjectPattern();
-        if (this.checkOperator("=")) {
-          this.advance();
-          dv = this.parseExpression();
+      parseBlock() {
+        this.consumeDelimiter("{", `Expected '{'`);
+        const statements = [];
+        while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+          statements.push(this.parseStatement());
         }
-        params.push({ type: "Param", name: "__destructured", pattern, defaultValue: dv, rest });
-        continue;
+        this.consumeDelimiter("}", "Expected '}'");
+        return statements;
       }
-      if (this.checkDelimiter("[")) {
-        const pattern = this.parseArrayPattern();
-        if (this.checkOperator("=")) {
-          this.advance();
-          dv = this.parseExpression();
+      parseAsync() {
+        this.consumeKeyword("async");
+        const tok = this.peek();
+        if (tok.type === "Keyword" && tok.value === "fn") {
+          const next = this.peekNext();
+          return this.parseFunctionDeclaration(true, next?.type === "Operator" && next?.value === "*");
         }
-        params.push({ type: "Param", name: "__destructured", pattern, defaultValue: dv, rest });
-        continue;
+        this.error(tok, "Expected 'fn' after 'async'");
       }
-      const tok = this.peek();
-      if (!this.isIdentifierLike(tok)) {
-        this.error(tok, "Expected parameter name");
-      }
-      this.advance();
-      let typeAnnotation = void 0;
-      if (this.checkDelimiter(":")) {
-        this.advance();
-        typeAnnotation = this.parseTypeAnnotation();
-      }
-      if (this.checkOperator("=")) {
-        this.advance();
-        dv = this.parseExpression();
-      }
-      params.push({ type: "Param", name: tok.value, typeAnnotation, defaultValue: dv, rest });
-    } while (this.matchDelimiter(","));
-    return params;
-  }
-  parseIfStatement() {
-    this.consumeKeyword("if");
-    const condition = this.parseExpression();
-    const consequent = this.parseBlock();
-    let alternate = null;
-    if (this.checkKeyword("else")) {
-      this.advance();
-      if (this.checkKeyword("if")) {
-        alternate = [this.parseIfStatement()];
-      } else {
-        alternate = this.parseBlock();
-      }
-    }
-    return { type: "IfStatement", condition, consequent, alternate };
-  }
-  parseForStatement() {
-    this.consumeKeyword("for");
-    let variable = null;
-    if (this.checkDelimiter("{")) {
-      variable = this.parseObjectPattern();
-    } else if (this.checkDelimiter("[")) {
-      variable = this.parseArrayPattern();
-    } else {
-      variable = this.consumeIdentifier("Expected loop variable");
-    }
-    let kind = "in";
-    if (this.checkKeyword("of")) {
-      kind = "of";
-      this.advance();
-    } else {
-      this.consumeKeyword("in");
-    }
-    const iterable = this.parseExpression();
-    const body = this.parseBlock();
-    return { type: "ForStatement", variable, iterable, body, kind };
-  }
-  parseWhileStatement() {
-    this.consumeKeyword("while");
-    const condition = this.parseExpression();
-    const body = this.parseBlock();
-    return { type: "WhileStatement", condition, body };
-  }
-  parseDoWhileStatement() {
-    this.consumeKeyword("do");
-    const body = this.parseBlock();
-    this.consumeKeyword("while");
-    const condition = this.parseExpression();
-    return { type: "DoWhileStatement", condition, body };
-  }
-  parseReturnStatement() {
-    this.consumeKeyword("return");
-    if (this.isAtEnd() || this.checkDelimiter("}")) {
-      return { type: "ReturnStatement", value: null };
-    }
-    const value = this.parseExpression();
-    return { type: "ReturnStatement", value };
-  }
-  parseImportDeclaration() {
-    this.consumeKeyword("import");
-    let defaultImport = null;
-    const namedImports = [];
-    if (this.checkDelimiter("{")) {
-      this.advance();
-      if (!this.checkDelimiter("}")) {
-        do {
-          const tok = this.peek();
-          if (!this.isIdentifierLike(tok)) {
-            this.error(tok, "Expected import name");
-          }
-          const name = tok.value;
-          this.advance();
-          let alias = void 0;
-          if (this.checkContextualKeyword("as") || this.checkKeyword("as")) {
-            this.advance();
-            const aliasTok = this.peek();
-            if (!this.isIdentifierLike(aliasTok)) {
-              this.error(aliasTok, "Expected alias name");
-            }
-            alias = aliasTok.value;
-            this.advance();
-          }
-          namedImports.push({ type: "ImportSpecifier", name, alias });
-        } while (this.matchDelimiter(","));
-      }
-      this.consumeDelimiter("}", "Expected '}'");
-    } else if (this.checkOperator("*")) {
-      this.advance();
-      const asTok = this.peek();
-      if ((asTok.type === "Identifier" || asTok.type === "Keyword") && asTok.value === "as") {
-        this.advance();
-      } else {
-        this.error(asTok, "Expected 'as' after '*'");
-      }
-      const tok = this.peek();
-      if (!this.isIdentifierLike(tok)) {
-        this.error(tok, "Expected module name");
-      }
-      defaultImport = "* as " + tok.value;
-      this.advance();
-    } else {
-      const tok = this.peek();
-      if (!this.isIdentifierLike(tok)) {
-        this.error(tok, "Expected module name");
-      }
-      defaultImport = tok.value;
-      this.advance();
-    }
-    this.consumeKeyword("from");
-    const srcTok = this.peek();
-    if (srcTok.type !== "String" && srcTok.type !== "RawString") {
-      this.error(srcTok, "Expected module source string");
-    }
-    this.advance();
-    return { type: "ImportDeclaration", defaultImport, namedImports, source: srcTok.value };
-  }
-  parseExportDeclaration() {
-    this.consumeKeyword("export");
-    if (this.checkKeyword("default")) {
-      this.advance();
-      const declaration2 = this.parseStatement();
-      return { type: "ExportDeclaration", declaration: declaration2, isDefault: true };
-    }
-    if (this.checkOperator("*")) {
-      this.advance();
-      let exportAllAlias = void 0;
-      if (this.checkContextualKeyword("as")) {
-        this.advance();
-        exportAllAlias = this.consumeIdentifier("Expected alias name").name;
-      }
-      this.consumeKeyword("from");
-      const allSource = this.peek().value;
-      this.advance();
-      return { type: "ExportDeclaration", isDefault: false, exportAll: true, source: allSource, exportAllAlias };
-    }
-    if (this.checkDelimiter("{")) {
-      this.advance();
-      const namedExports = [];
-      while (!this.checkDelimiter("}") && !this.isAtEnd()) {
-        const name = this.consumeIdentifier("Expected export name").name;
-        let alias = void 0;
-        if (this.checkContextualKeyword("as")) {
-          this.advance();
-          alias = this.consumeIdentifier("Expected alias name").name;
-        }
-        namedExports.push({ type: "ExportSpecifier", name, alias });
-        if (!this.matchDelimiter(",")) {
-          break;
-        }
-      }
-      this.consumeDelimiter("}", "Expected '}'");
-      let source = void 0;
-      if (this.checkKeyword("from")) {
-        this.advance();
-        source = this.peek().value;
-        this.advance();
-      }
-      return { type: "ExportDeclaration", isDefault: false, namedExports, source };
-    }
-    const declaration = this.parseStatement();
-    return { type: "ExportDeclaration", declaration, isDefault: false };
-  }
-  parseClassDeclaration() {
-    this.consumeKeyword("class");
-    const name = this.consumeIdentifier("Expected class name");
-    const typeParams = this.parseTypeParams();
-    let superClass = null;
-    if (this.checkKeyword("extends")) {
-      this.advance();
-      superClass = this.consumeIdentifier("Expected superclass name");
-    }
-    let implementsList = void 0;
-    if (this.checkContextualKeyword("implements")) {
-      this.advance();
-      implementsList = [];
-      do {
-        implementsList.push(this.consumeIdentifier("Expected interface name after 'implements'"));
-      } while (this.checkDelimiter(",") && this.advance());
-    }
-    this.consumeDelimiter("{", `Expected '{'`);
-    const body = [];
-    while (!this.checkDelimiter("}") && !this.isAtEnd()) {
-      let isStatic = false;
-      let isAsync = false;
-      let kind = "method";
-      if (this.checkKeyword("static")) {
-        isStatic = true;
-        this.advance();
-      }
-      if (this.checkKeyword("async")) {
-        isAsync = true;
-        this.advance();
-      }
-      if (this.peek().type === "Identifier" && (this.peek().value === "get" || this.peek().value === "set")) {
-        const next = this.peekNext();
-        if (next && (next.type === "Identifier" || next.type === "Delimiter" && next.value === "[")) {
-          kind = this.peek().value;
+      parseFunctionDeclaration(isAsync, isGenerator) {
+        const isGen = isGenerator ?? false;
+        this.consumeKeyword("fn");
+        if (isGen && this.checkOperator("*")) {
           this.advance();
         }
-      }
-      let isGenerator = false;
-      if (this.checkKeyword("fn")) {
-        this.advance();
-        if (this.checkOperator("*")) {
-          isGenerator = true;
-          this.advance();
-        }
-      }
-      let memberName = null;
-      let computed = false;
-      if (this.checkDelimiter("[")) {
-        computed = true;
-        this.advance();
-        memberName = this.parseExpression();
-        this.consumeDelimiter("]", "Expected ']'");
-      } else {
-        memberName = this.consumeIdentifier("Expected member name");
-      }
-      if (!computed && memberName.name === "constructor") {
-        kind = "constructor";
-      }
-      if (this.checkDelimiter("(")) {
+        const name = this.consumeIdentifier("Expected function name");
+        const typeParams = this.parseTypeParams();
         this.consumeDelimiter("(", "Expected '('");
         const params = this.parseParamList();
         this.consumeDelimiter(")", "Expected ')'");
@@ -1706,551 +1460,866 @@ var ParserStatements = class extends ParserExpressions {
           this.advance();
           returnType = this.parseTypeAnnotation();
         }
-        const methodBody = this.parseBlock();
-        body.push({ type: "ClassMethod", name: memberName, params, body: methodBody, async: isAsync, generator: isGenerator, static: isStatic, kind, computed, returnType });
-      } else {
-        let value = null;
         if (this.checkOperator("=")) {
           this.advance();
-          value = this.parseExpression();
-        }
-        body.push({ type: "ClassField", name: memberName, value, static: isStatic, computed });
-      }
-    }
-    this.consumeDelimiter("}", "Expected '}'");
-    return { type: "ClassDeclaration", name, superClass, implements: implementsList, body, typeParams };
-  }
-  parseTryCatch() {
-    this.consumeKeyword("try");
-    const tryBlock = this.parseBlock();
-    let catchParam = null;
-    let catchBlock = [];
-    let finallyBlock = null;
-    if (this.checkKeyword("catch")) {
-      this.consumeKeyword("catch");
-      if (this.checkDelimiter("(")) {
-        this.advance();
-        catchParam = this.consumeIdentifier("Expected catch parameter");
-        this.consumeDelimiter(")", "Expected ')'");
-      } else if (this.peek().type === "Identifier") {
-        catchParam = this.consumeIdentifier("Expected catch parameter");
-      }
-      catchBlock = this.parseBlock();
-    }
-    if (this.checkKeyword("finally")) {
-      this.advance();
-      finallyBlock = this.parseBlock();
-    }
-    return { type: "TryCatchStatement", tryBlock, catchParam, catchBlock, finallyBlock };
-  }
-  parseThrowStatement() {
-    this.consumeKeyword("throw");
-    const value = this.parseExpression();
-    return { type: "ThrowStatement", value };
-  }
-  parseConstDeclaration() {
-    this.consumeKeyword("const");
-    return this.parseVariableOrDestructuring("const");
-  }
-  parseLetDeclaration() {
-    this.consumeKeyword("let");
-    return this.parseVariableOrDestructuring("let");
-  }
-  parseVarDeclaration() {
-    this.consumeKeyword("var");
-    return this.parseVariableOrDestructuring("var");
-  }
-  parseVariableOrDestructuring(kind) {
-    if (this.checkDelimiter("{")) {
-      const pattern = this.parseObjectPattern();
-      this.consumeOperator("=", "Expected '=' after destructuring pattern");
-      const value = this.parseExpression();
-      return { type: "DestructuringDeclaration", pattern, value, kind };
-    }
-    if (this.checkDelimiter("[")) {
-      const pattern = this.parseArrayPattern();
-      this.consumeOperator("=", "Expected '=' after destructuring pattern");
-      const value = this.parseExpression();
-      return { type: "DestructuringDeclaration", pattern, value, kind };
-    }
-    return this.parseVariableDeclaration(kind);
-  }
-  parseVariableDeclaration(kind) {
-    const name = this.consumeIdentifier("Expected variable name");
-    let typeAnnotation = void 0;
-    if (this.checkDelimiter(":")) {
-      this.advance();
-      typeAnnotation = this.parseTypeAnnotation();
-    }
-    this.consumeOperator("=", "Expected '=' in assignment");
-    const value = this.parseExpression();
-    return { type: "VariableDeclaration", name, value, kind, typeAnnotation };
-  }
-  parseSwitchStatement() {
-    this.consumeKeyword("switch");
-    const discriminant = this.parseExpression();
-    this.consumeDelimiter("{", `Expected '{'`);
-    const cases = [];
-    while (!this.checkDelimiter("}") && !this.isAtEnd()) {
-      if (this.checkKeyword("case")) {
-        this.advance();
-        const test = this.parseExpression();
-        this.consumeDelimiter("{", `Expected '{'`);
-        const consequent = [];
-        while (!this.checkDelimiter("}") && !this.isAtEnd()) {
-          consequent.push(this.parseStatement());
-        }
-        this.consumeDelimiter("}", "Expected '}'");
-        cases.push({ type: "SwitchCase", test, consequent });
-      } else if (this.checkKeyword("default")) {
-        this.advance();
-        this.consumeDelimiter("{", `Expected '{'`);
-        const consequent = [];
-        while (!this.checkDelimiter("}") && !this.isAtEnd()) {
-          consequent.push(this.parseStatement());
-        }
-        this.consumeDelimiter("}", "Expected '}'");
-        cases.push({ type: "SwitchCase", test: null, consequent });
-      } else {
-        this.error(this.peek(), "Expected 'case' or 'default'");
-      }
-    }
-    this.consumeDelimiter("}", "Expected '}'");
-    return { type: "SwitchStatement", discriminant, cases };
-  }
-  parseMatchStatement() {
-    this.consumeKeyword("match");
-    const discriminant = this.parseExpression();
-    this.consumeDelimiter("{", `Expected '{'`);
-    const cases = [];
-    while (!this.checkDelimiter("}") && !this.isAtEnd()) {
-      if (this.checkKeyword("case")) {
-        this.advance();
-        const pattern = this.parseExpression();
-        let guard = void 0;
-        if (this.checkKeyword("if")) {
-          this.advance();
-          guard = this.parseExpression();
+          const expr = this.parseExpression();
+          return { type: "FunctionDeclaration", name, params, body: [{ type: "ExpressionStatement", expression: expr }], async: isAsync, generator: isGen, returnType, typeParams };
         }
         const body = this.parseBlock();
-        cases.push({ type: "MatchCase", pattern, guard, body });
-      } else if (this.checkKeyword("default")) {
-        this.advance();
-        const body = this.parseBlock();
-        cases.push({ type: "MatchCase", pattern: null, body });
-      } else {
-        this.error(this.peek(), "Expected 'case' or 'default' in match");
+        return { type: "FunctionDeclaration", name, params, body, async: isAsync, generator: isGen, returnType, typeParams };
       }
-    }
-    this.consumeDelimiter("}", "Expected '}'");
-    return { type: "MatchStatement", discriminant, cases };
-  }
-  parseEnumDeclaration() {
-    this.consumeKeyword("enum");
-    const nameTok = this.advance();
-    if (nameTok.type !== "Identifier") {
-      this.error(nameTok, "Expected enum name");
-    }
-    const name = { type: "Identifier", name: nameTok.value };
-    this.consumeDelimiter("{", `Expected '{' after enum name`);
-    const members = [];
-    while (!this.checkDelimiter("}") && !this.isAtEnd()) {
-      const memberTok = this.advance();
-      if (memberTok.type !== "Identifier" && memberTok.type !== "Keyword") {
-        this.error(memberTok, "Expected enum member name");
-      }
-      const memberName = { type: "Identifier", name: memberTok.value };
-      let value = null;
-      if (this.checkOperator("=")) {
-        this.advance();
-        value = this.parseExpression();
-      }
-      members.push({ type: "EnumMember", name: memberName, value });
-      if (this.checkDelimiter(",")) {
-        this.advance();
-      }
-    }
-    this.consumeDelimiter("}", "Expected '}' after enum body");
-    return { type: "EnumDeclaration", name, members };
-  }
-  parseInterfaceDeclaration() {
-    this.consumeKeyword("interface");
-    const nameTok = this.advance();
-    if (nameTok.type !== "Identifier") {
-      this.error(nameTok, "Expected interface name");
-    }
-    const name = { type: "Identifier", name: nameTok.value };
-    let extendsIds = void 0;
-    if (this.checkKeyword("extends")) {
-      this.advance();
-      extendsIds = [];
-      do {
-        const extTok = this.advance();
-        if (extTok.type !== "Identifier") {
-          this.error(extTok, "Expected interface name after 'extends'");
-        }
-        extendsIds.push({ type: "Identifier", name: extTok.value });
-      } while (this.matchDelimiter(","));
-    }
-    this.consumeDelimiter("{", `Expected '{' after interface name`);
-    const properties = [];
-    while (!this.checkDelimiter("}") && !this.isAtEnd()) {
-      const propTok = this.advance();
-      if (propTok.type !== "Identifier") {
-        this.error(propTok, "Expected property name in interface");
-      }
-      const propName = { type: "Identifier", name: propTok.value };
-      let optional = false;
-      if (this.checkOperator("?")) {
-        this.advance();
-        optional = true;
-      }
-      if (this.checkDelimiter("(")) {
-        this.advance();
+      parseParamList() {
         const params = [];
-        while (!this.checkDelimiter(")") && !this.isAtEnd()) {
-          this.advance();
-          if (this.checkDelimiter(":")) {
-            this.advance();
-            params.push(this.parseTypeAnnotation());
-          }
-          if (this.checkDelimiter(",")) {
-            this.advance();
-          }
+        if (this.checkDelimiter(")")) {
+          return params;
         }
-        this.consumeDelimiter(")", "Expected ')' in method signature");
-        let returnType = { kind: "named", name: "void" };
-        if (this.checkDelimiter(":")) {
-          this.advance();
-          returnType = this.parseTypeAnnotation();
-        }
-        properties.push({ type: "InterfaceProperty", name: propName, valueType: returnType, optional, method: true, params });
-      } else {
-        this.consumeDelimiter(":", "Expected ':' after property name");
-        const valueType = this.parseTypeAnnotation();
-        properties.push({ type: "InterfaceProperty", name: propName, valueType, optional, method: false });
-      }
-      if (this.checkDelimiter(",") || this.checkDelimiter(";")) {
-        this.advance();
-      }
-    }
-    this.consumeDelimiter("}", "Expected '}' after interface body");
-    return { type: "InterfaceDeclaration", name, properties, extends: extendsIds };
-  }
-  parseTypeOrADT() {
-    this.consumeContextualKeyword("type");
-    const name = this.consumeIdentifier("Expected type alias name");
-    const typeParams = this.parseTypeParams();
-    this.consumeOperator("=", "Expected '=' after type alias name");
-    const cur = this.peek();
-    const next = this.peekNext();
-    if (cur.type === "Identifier" && /^[A-Z]/.test(cur.value)) {
-      if (next?.type === "Delimiter" && (next.value === "(" || next.value === "|") || next?.type === "Operator" && next.value === "|") {
-        return this.parseADTVariants(name, typeParams);
-      }
-    }
-    const value = this.parseTypeAnnotation();
-    return { type: "TypeAliasDeclaration", name, typeParams, value };
-  }
-  parseADTVariants(name, typeParams) {
-    const variants = [];
-    variants.push(this.parseOneVariant());
-    while ((this.checkOperator("|") || this.checkDelimiter("|")) && !this.isAtEnd()) {
-      this.advance();
-      variants.push(this.parseOneVariant());
-    }
-    return { type: "ADTDeclaration", name, typeParams, variants };
-  }
-  parseOneVariant() {
-    const vName = this.consumeIdentifier("Expected variant name");
-    const fields = [];
-    if (this.checkDelimiter("(")) {
-      this.advance();
-      if (!this.checkDelimiter(")")) {
         do {
           if (this.checkDelimiter(")")) {
             break;
           }
-          let fieldName = null;
+          let rest = false;
+          let dv = void 0;
+          if (this.checkOperator("...")) {
+            this.advance();
+            rest = true;
+          }
+          if (this.checkDelimiter("{")) {
+            const pattern = this.parseObjectPattern();
+            if (this.checkOperator("=")) {
+              this.advance();
+              dv = this.parseExpression();
+            }
+            params.push({ type: "Param", name: "__destructured", pattern, defaultValue: dv, rest });
+            continue;
+          }
+          if (this.checkDelimiter("[")) {
+            const pattern = this.parseArrayPattern();
+            if (this.checkOperator("=")) {
+              this.advance();
+              dv = this.parseExpression();
+            }
+            params.push({ type: "Param", name: "__destructured", pattern, defaultValue: dv, rest });
+            continue;
+          }
+          const tok = this.peek();
+          if (!this.isIdentifierLike(tok)) {
+            this.error(tok, "Expected parameter name");
+          }
+          this.advance();
           let typeAnnotation = void 0;
-          const cur = this.peek();
-          const next = this.peekNext();
-          if ((cur.type === "Identifier" || this.isIdentifierLike(cur)) && next && next.type === "Delimiter" && next.value === ":") {
-            fieldName = { type: "Identifier", name: cur.value };
+          if (this.checkDelimiter(":")) {
             this.advance();
-            this.advance();
-            typeAnnotation = this.parseTypeAnnotation();
-          } else {
             typeAnnotation = this.parseTypeAnnotation();
           }
-          fields.push({ type: "ADTField", name: fieldName, typeAnnotation });
+          if (this.checkOperator("=")) {
+            this.advance();
+            dv = this.parseExpression();
+          }
+          params.push({ type: "Param", name: tok.value, typeAnnotation, defaultValue: dv, rest });
         } while (this.matchDelimiter(","));
+        return params;
       }
-      this.consumeDelimiter(")", "Expected ')'");
-    }
-    return { type: "ADTVariant", name: vName, fields };
-  }
-  parseGoStatement() {
-    this.consumeKeyword("go");
-    if (this.checkDelimiter(`{`)) {
-      const body = this.parseBlock();
-      return { type: "GoStatement", expression: null, body };
-    }
-    const expression = this.parseExpression();
-    return { type: "GoStatement", expression, body: null };
-  }
-};
-
-// dist/compiler/parser/parser.js
-var Parser = class extends ParserStatements {
-  constructor(tokens, source) {
-    super(tokens, source);
-    this.errors = [];
-  }
-  parseProgram() {
-    const body = [];
-    while (!this.isAtEnd()) {
-      try {
-        body.push(this.parseStatement());
-      } catch (err) {
-        if (err instanceof SyntaxError) {
-          this.errors.push(err);
-          this.recover();
-        } else {
-          throw err;
-        }
-      }
-    }
-    return { type: "Program", body, errors: this.errors };
-  }
-  recover() {
-    let braceDepth = 0;
-    while (!this.isAtEnd()) {
-      const tok = this.peek();
-      if (tok.type === "Delimiter" && tok.value === "{") {
-        braceDepth = braceDepth + 1;
-        this.advance();
-        continue;
-      }
-      if (tok.type === "Delimiter" && tok.value === "}") {
-        if (braceDepth > 0) {
-          braceDepth = braceDepth - 1;
+      parseIfStatement() {
+        this.consumeKeyword("if");
+        const condition = this.parseExpression();
+        const consequent = this.parseBlock();
+        let alternate = null;
+        if (this.checkKeyword("else")) {
           this.advance();
-          continue;
+          if (this.checkKeyword("if")) {
+            alternate = [this.parseIfStatement()];
+          } else {
+            alternate = this.parseBlock();
+          }
+        }
+        return { type: "IfStatement", condition, consequent, alternate };
+      }
+      parseForStatement() {
+        this.consumeKeyword("for");
+        let variable = null;
+        if (this.checkDelimiter("{")) {
+          variable = this.parseObjectPattern();
+        } else if (this.checkDelimiter("[")) {
+          variable = this.parseArrayPattern();
+        } else {
+          variable = this.consumeIdentifier("Expected loop variable");
+        }
+        let kind = "in";
+        if (this.checkKeyword("of")) {
+          kind = "of";
+          this.advance();
+        } else {
+          this.consumeKeyword("in");
+        }
+        const iterable = this.parseExpression();
+        const body = this.parseBlock();
+        return { type: "ForStatement", variable, iterable, body, kind };
+      }
+      parseWhileStatement() {
+        this.consumeKeyword("while");
+        const condition = this.parseExpression();
+        const body = this.parseBlock();
+        return { type: "WhileStatement", condition, body };
+      }
+      parseDoWhileStatement() {
+        this.consumeKeyword("do");
+        const body = this.parseBlock();
+        this.consumeKeyword("while");
+        const condition = this.parseExpression();
+        return { type: "DoWhileStatement", condition, body };
+      }
+      parseReturnStatement() {
+        this.consumeKeyword("return");
+        if (this.isAtEnd() || this.checkDelimiter("}")) {
+          return { type: "ReturnStatement", value: null };
+        }
+        const value = this.parseExpression();
+        return { type: "ReturnStatement", value };
+      }
+      parseImportDeclaration() {
+        this.consumeKeyword("import");
+        let defaultImport = null;
+        const namedImports = [];
+        if (this.checkDelimiter("{")) {
+          this.advance();
+          if (!this.checkDelimiter("}")) {
+            do {
+              const tok = this.peek();
+              if (!this.isIdentifierLike(tok)) {
+                this.error(tok, "Expected import name");
+              }
+              const name = tok.value;
+              this.advance();
+              let alias = void 0;
+              if (this.checkContextualKeyword("as") || this.checkKeyword("as")) {
+                this.advance();
+                const aliasTok = this.peek();
+                if (!this.isIdentifierLike(aliasTok)) {
+                  this.error(aliasTok, "Expected alias name");
+                }
+                alias = aliasTok.value;
+                this.advance();
+              }
+              namedImports.push({ type: "ImportSpecifier", name, alias });
+            } while (this.matchDelimiter(","));
+          }
+          this.consumeDelimiter("}", "Expected '}'");
+        } else if (this.checkOperator("*")) {
+          this.advance();
+          const asTok = this.peek();
+          if ((asTok.type === "Identifier" || asTok.type === "Keyword") && asTok.value === "as") {
+            this.advance();
+          } else {
+            this.error(asTok, "Expected 'as' after '*'");
+          }
+          const tok = this.peek();
+          if (!this.isIdentifierLike(tok)) {
+            this.error(tok, "Expected module name");
+          }
+          defaultImport = "* as " + tok.value;
+          this.advance();
+        } else {
+          const tok = this.peek();
+          if (!this.isIdentifierLike(tok)) {
+            this.error(tok, "Expected module name");
+          }
+          defaultImport = tok.value;
+          this.advance();
+        }
+        this.consumeKeyword("from");
+        const srcTok = this.peek();
+        if (srcTok.type !== "String" && srcTok.type !== "RawString") {
+          this.error(srcTok, "Expected module source string");
         }
         this.advance();
-        return;
+        return { type: "ImportDeclaration", defaultImport, namedImports, source: srcTok.value };
       }
-      if (tok.type === "Delimiter" && tok.value === ";" && braceDepth === 0) {
-        this.advance();
-        return;
+      parseExportDeclaration() {
+        this.consumeKeyword("export");
+        if (this.checkKeyword("default")) {
+          this.advance();
+          const declaration2 = this.parseStatement();
+          return { type: "ExportDeclaration", declaration: declaration2, isDefault: true };
+        }
+        if (this.checkOperator("*")) {
+          this.advance();
+          let exportAllAlias = void 0;
+          if (this.checkContextualKeyword("as")) {
+            this.advance();
+            exportAllAlias = this.consumeIdentifier("Expected alias name").name;
+          }
+          this.consumeKeyword("from");
+          const allSource = this.peek().value;
+          this.advance();
+          return { type: "ExportDeclaration", isDefault: false, exportAll: true, source: allSource, exportAllAlias };
+        }
+        if (this.checkDelimiter("{")) {
+          this.advance();
+          const namedExports = [];
+          while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+            const name = this.consumeIdentifier("Expected export name").name;
+            let alias = void 0;
+            if (this.checkContextualKeyword("as")) {
+              this.advance();
+              alias = this.consumeIdentifier("Expected alias name").name;
+            }
+            namedExports.push({ type: "ExportSpecifier", name, alias });
+            if (!this.matchDelimiter(",")) {
+              break;
+            }
+          }
+          this.consumeDelimiter("}", "Expected '}'");
+          let source = void 0;
+          if (this.checkKeyword("from")) {
+            this.advance();
+            source = this.peek().value;
+            this.advance();
+          }
+          return { type: "ExportDeclaration", isDefault: false, namedExports, source };
+        }
+        const declaration = this.parseStatement();
+        return { type: "ExportDeclaration", declaration, isDefault: false };
       }
-      if (braceDepth === 0 && tok.type === "Keyword" && ["fn", "if", "for", "while", "do", "return", "import", "export", "class", "try", "throw", "const", "let", "var", "switch", "match", "enum", "interface", "break", "continue"].includes(tok.value)) {
-        return;
-      }
-      this.advance();
-    }
-  }
-  parseDecorators() {
-    const decorators = [];
-    while (this.peek().type === "Decorator") {
-      const tok = this.advance();
-      const name = tok.value.slice(1);
-      let args = void 0;
-      if (this.checkDelimiter("(")) {
-        this.advance();
-        args = [];
-        if (!this.checkDelimiter(")")) {
+      parseClassDeclaration() {
+        this.consumeKeyword("class");
+        const name = this.consumeIdentifier("Expected class name");
+        const typeParams = this.parseTypeParams();
+        let superClass = null;
+        if (this.checkKeyword("extends")) {
+          this.advance();
+          superClass = this.consumeIdentifier("Expected superclass name");
+        }
+        let implementsList = void 0;
+        if (this.checkContextualKeyword("implements")) {
+          this.advance();
+          implementsList = [];
           do {
-            args.push(this.parseExpression());
+            implementsList.push(this.consumeIdentifier("Expected interface name after 'implements'"));
+          } while (this.checkDelimiter(",") && this.advance());
+        }
+        this.consumeDelimiter("{", `Expected '{'`);
+        const body = [];
+        while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+          let isStatic = false;
+          let isAsync = false;
+          let kind = "method";
+          if (this.checkKeyword("static")) {
+            isStatic = true;
+            this.advance();
+          }
+          if (this.checkKeyword("async")) {
+            isAsync = true;
+            this.advance();
+          }
+          if (this.peek().type === "Identifier" && (this.peek().value === "get" || this.peek().value === "set")) {
+            const next = this.peekNext();
+            if (next && (next.type === "Identifier" || next.type === "Delimiter" && next.value === "[")) {
+              kind = this.peek().value;
+              this.advance();
+            }
+          }
+          let isGenerator = false;
+          if (this.checkKeyword("fn")) {
+            this.advance();
+            if (this.checkOperator("*")) {
+              isGenerator = true;
+              this.advance();
+            }
+          }
+          let memberName = null;
+          let computed = false;
+          if (this.checkDelimiter("[")) {
+            computed = true;
+            this.advance();
+            memberName = this.parseExpression();
+            this.consumeDelimiter("]", "Expected ']'");
+          } else {
+            memberName = this.consumeIdentifier("Expected member name");
+          }
+          if (!computed && memberName.name === "constructor") {
+            kind = "constructor";
+          }
+          if (this.checkDelimiter("(")) {
+            this.consumeDelimiter("(", "Expected '('");
+            const params = this.parseParamList();
+            this.consumeDelimiter(")", "Expected ')'");
+            let returnType = void 0;
+            if (this.checkDelimiter(":")) {
+              this.advance();
+              returnType = this.parseTypeAnnotation();
+            }
+            const methodBody = this.parseBlock();
+            body.push({ type: "ClassMethod", name: memberName, params, body: methodBody, async: isAsync, generator: isGenerator, static: isStatic, kind, computed, returnType });
+          } else {
+            let value = null;
+            if (this.checkOperator("=")) {
+              this.advance();
+              value = this.parseExpression();
+            }
+            body.push({ type: "ClassField", name: memberName, value, static: isStatic, computed });
+          }
+        }
+        this.consumeDelimiter("}", "Expected '}'");
+        return { type: "ClassDeclaration", name, superClass, implements: implementsList, body, typeParams };
+      }
+      parseTryCatch() {
+        this.consumeKeyword("try");
+        const tryBlock = this.parseBlock();
+        let catchParam = null;
+        let catchBlock = [];
+        let finallyBlock = null;
+        if (this.checkKeyword("catch")) {
+          this.consumeKeyword("catch");
+          if (this.checkDelimiter("(")) {
+            this.advance();
+            catchParam = this.consumeIdentifier("Expected catch parameter");
+            this.consumeDelimiter(")", "Expected ')'");
+          } else if (this.peek().type === "Identifier") {
+            catchParam = this.consumeIdentifier("Expected catch parameter");
+          }
+          catchBlock = this.parseBlock();
+        }
+        if (this.checkKeyword("finally")) {
+          this.advance();
+          finallyBlock = this.parseBlock();
+        }
+        return { type: "TryCatchStatement", tryBlock, catchParam, catchBlock, finallyBlock };
+      }
+      parseThrowStatement() {
+        this.consumeKeyword("throw");
+        const value = this.parseExpression();
+        return { type: "ThrowStatement", value };
+      }
+      parseConstDeclaration() {
+        this.consumeKeyword("const");
+        return this.parseVariableOrDestructuring("const");
+      }
+      parseLetDeclaration() {
+        this.consumeKeyword("let");
+        return this.parseVariableOrDestructuring("let");
+      }
+      parseVarDeclaration() {
+        this.consumeKeyword("var");
+        return this.parseVariableOrDestructuring("var");
+      }
+      parseVariableOrDestructuring(kind) {
+        if (this.checkDelimiter("{")) {
+          const pattern = this.parseObjectPattern();
+          this.consumeOperator("=", "Expected '=' after destructuring pattern");
+          const value = this.parseExpression();
+          return { type: "DestructuringDeclaration", pattern, value, kind };
+        }
+        if (this.checkDelimiter("[")) {
+          const pattern = this.parseArrayPattern();
+          this.consumeOperator("=", "Expected '=' after destructuring pattern");
+          const value = this.parseExpression();
+          return { type: "DestructuringDeclaration", pattern, value, kind };
+        }
+        return this.parseVariableDeclaration(kind);
+      }
+      parseVariableDeclaration(kind) {
+        const name = this.consumeIdentifier("Expected variable name");
+        let typeAnnotation = void 0;
+        if (this.checkDelimiter(":")) {
+          this.advance();
+          typeAnnotation = this.parseTypeAnnotation();
+        }
+        this.consumeOperator("=", "Expected '=' in assignment");
+        const value = this.parseExpression();
+        return { type: "VariableDeclaration", name, value, kind, typeAnnotation };
+      }
+      parseSwitchStatement() {
+        this.consumeKeyword("switch");
+        const discriminant = this.parseExpression();
+        this.consumeDelimiter("{", `Expected '{'`);
+        const cases = [];
+        while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+          if (this.checkKeyword("case")) {
+            this.advance();
+            const test = this.parseExpression();
+            this.consumeDelimiter("{", `Expected '{'`);
+            const consequent = [];
+            while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+              consequent.push(this.parseStatement());
+            }
+            this.consumeDelimiter("}", "Expected '}'");
+            cases.push({ type: "SwitchCase", test, consequent });
+          } else if (this.checkKeyword("default")) {
+            this.advance();
+            this.consumeDelimiter("{", `Expected '{'`);
+            const consequent = [];
+            while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+              consequent.push(this.parseStatement());
+            }
+            this.consumeDelimiter("}", "Expected '}'");
+            cases.push({ type: "SwitchCase", test: null, consequent });
+          } else {
+            this.error(this.peek(), "Expected 'case' or 'default'");
+          }
+        }
+        this.consumeDelimiter("}", "Expected '}'");
+        return { type: "SwitchStatement", discriminant, cases };
+      }
+      parseMatchStatement() {
+        this.consumeKeyword("match");
+        const discriminant = this.parseExpression();
+        this.consumeDelimiter("{", `Expected '{'`);
+        const cases = [];
+        while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+          if (this.checkKeyword("case")) {
+            this.advance();
+            const pattern = this.parseExpression();
+            let guard = void 0;
+            if (this.checkKeyword("if")) {
+              this.advance();
+              guard = this.parseExpression();
+            }
+            const body = this.parseBlock();
+            cases.push({ type: "MatchCase", pattern, guard, body });
+          } else if (this.checkKeyword("default")) {
+            this.advance();
+            const body = this.parseBlock();
+            cases.push({ type: "MatchCase", pattern: null, body });
+          } else {
+            this.error(this.peek(), "Expected 'case' or 'default' in match");
+          }
+        }
+        this.consumeDelimiter("}", "Expected '}'");
+        return { type: "MatchStatement", discriminant, cases };
+      }
+      parseEnumDeclaration() {
+        this.consumeKeyword("enum");
+        const nameTok = this.advance();
+        if (nameTok.type !== "Identifier") {
+          this.error(nameTok, "Expected enum name");
+        }
+        const name = { type: "Identifier", name: nameTok.value };
+        this.consumeDelimiter("{", `Expected '{' after enum name`);
+        const members = [];
+        while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+          const memberTok = this.advance();
+          if (memberTok.type !== "Identifier" && memberTok.type !== "Keyword") {
+            this.error(memberTok, "Expected enum member name");
+          }
+          const memberName = { type: "Identifier", name: memberTok.value };
+          let value = null;
+          if (this.checkOperator("=")) {
+            this.advance();
+            value = this.parseExpression();
+          }
+          members.push({ type: "EnumMember", name: memberName, value });
+          if (this.checkDelimiter(",")) {
+            this.advance();
+          }
+        }
+        this.consumeDelimiter("}", "Expected '}' after enum body");
+        return { type: "EnumDeclaration", name, members };
+      }
+      parseInterfaceDeclaration() {
+        this.consumeKeyword("interface");
+        const nameTok = this.advance();
+        if (nameTok.type !== "Identifier") {
+          this.error(nameTok, "Expected interface name");
+        }
+        const name = { type: "Identifier", name: nameTok.value };
+        let extendsIds = void 0;
+        if (this.checkKeyword("extends")) {
+          this.advance();
+          extendsIds = [];
+          do {
+            const extTok = this.advance();
+            if (extTok.type !== "Identifier") {
+              this.error(extTok, "Expected interface name after 'extends'");
+            }
+            extendsIds.push({ type: "Identifier", name: extTok.value });
           } while (this.matchDelimiter(","));
         }
-        this.consumeDelimiter(")", "Expected ')' after decorator arguments");
+        this.consumeDelimiter("{", `Expected '{' after interface name`);
+        const properties = [];
+        while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+          const propTok = this.advance();
+          if (propTok.type !== "Identifier") {
+            this.error(propTok, "Expected property name in interface");
+          }
+          const propName = { type: "Identifier", name: propTok.value };
+          let optional = false;
+          if (this.checkOperator("?")) {
+            this.advance();
+            optional = true;
+          }
+          if (this.checkDelimiter("(")) {
+            this.advance();
+            const params = [];
+            while (!this.checkDelimiter(")") && !this.isAtEnd()) {
+              this.advance();
+              if (this.checkDelimiter(":")) {
+                this.advance();
+                params.push(this.parseTypeAnnotation());
+              }
+              if (this.checkDelimiter(",")) {
+                this.advance();
+              }
+            }
+            this.consumeDelimiter(")", "Expected ')' in method signature");
+            let returnType = { kind: "named", name: "void" };
+            if (this.checkDelimiter(":")) {
+              this.advance();
+              returnType = this.parseTypeAnnotation();
+            }
+            properties.push({ type: "InterfaceProperty", name: propName, valueType: returnType, optional, method: true, params });
+          } else {
+            this.consumeDelimiter(":", "Expected ':' after property name");
+            const valueType = this.parseTypeAnnotation();
+            properties.push({ type: "InterfaceProperty", name: propName, valueType, optional, method: false });
+          }
+          if (this.checkDelimiter(",") || this.checkDelimiter(";")) {
+            this.advance();
+          }
+        }
+        this.consumeDelimiter("}", "Expected '}' after interface body");
+        return { type: "InterfaceDeclaration", name, properties, extends: extendsIds };
       }
-      decorators.push({ type: "Decorator", name, arguments: args });
-    }
-    return decorators;
+      parseTypeOrADT() {
+        this.consumeContextualKeyword("type");
+        const name = this.consumeIdentifier("Expected type alias name");
+        const typeParams = this.parseTypeParams();
+        this.consumeOperator("=", "Expected '=' after type alias name");
+        const cur = this.peek();
+        const next = this.peekNext();
+        if (cur.type === "Identifier" && /^[A-Z]/.test(cur.value)) {
+          if (next?.type === "Delimiter" && (next.value === "(" || next.value === "|") || next?.type === "Operator" && next.value === "|") {
+            return this.parseADTVariants(name, typeParams);
+          }
+        }
+        const value = this.parseTypeAnnotation();
+        return { type: "TypeAliasDeclaration", name, typeParams, value };
+      }
+      parseADTVariants(name, typeParams) {
+        const variants = [];
+        variants.push(this.parseOneVariant());
+        while ((this.checkOperator("|") || this.checkDelimiter("|")) && !this.isAtEnd()) {
+          this.advance();
+          variants.push(this.parseOneVariant());
+        }
+        return { type: "ADTDeclaration", name, typeParams, variants };
+      }
+      parseOneVariant() {
+        const vName = this.consumeIdentifier("Expected variant name");
+        const fields = [];
+        if (this.checkDelimiter("(")) {
+          this.advance();
+          if (!this.checkDelimiter(")")) {
+            do {
+              if (this.checkDelimiter(")")) {
+                break;
+              }
+              let fieldName = null;
+              let typeAnnotation = void 0;
+              const cur = this.peek();
+              const next = this.peekNext();
+              if ((cur.type === "Identifier" || this.isIdentifierLike(cur)) && next && next.type === "Delimiter" && next.value === ":") {
+                fieldName = { type: "Identifier", name: cur.value };
+                this.advance();
+                this.advance();
+                typeAnnotation = this.parseTypeAnnotation();
+              } else {
+                typeAnnotation = this.parseTypeAnnotation();
+              }
+              fields.push({ type: "ADTField", name: fieldName, typeAnnotation });
+            } while (this.matchDelimiter(","));
+          }
+          this.consumeDelimiter(")", "Expected ')'");
+        }
+        return { type: "ADTVariant", name: vName, fields };
+      }
+      parseGoStatement() {
+        this.consumeKeyword("go");
+        if (this.checkDelimiter(`{`)) {
+          const body = this.parseBlock();
+          return { type: "GoStatement", expression: null, body };
+        }
+        const expression = this.parseExpression();
+        return { type: "GoStatement", expression, body: null };
+      }
+    };
   }
-  parseStatement() {
-    const decorators = this.parseDecorators();
-    const tok = this.peek();
-    const loc = tok.loc ? { line: tok.loc.line, column: tok.loc.column } : void 0;
-    let stmt = null;
-    if (tok.type === "Keyword") {
-      switch (tok.value) {
-        case "fn": {
-          const next = this.peekNext();
-          stmt = this.parseFunctionDeclaration(false, next?.type === "Operator" && next?.value === "*");
-          break;
-        }
-        case "async": {
-          stmt = this.parseAsync();
-          break;
-        }
-        case "if": {
-          stmt = this.parseIfStatement();
-          break;
-        }
-        case "for": {
-          stmt = this.parseForStatement();
-          break;
-        }
-        case "while": {
-          stmt = this.parseWhileStatement();
-          break;
-        }
-        case "do": {
-          stmt = this.parseDoWhileStatement();
-          break;
-        }
-        case "return": {
-          stmt = this.parseReturnStatement();
-          break;
-        }
-        case "import": {
-          stmt = this.parseImportDeclaration();
-          break;
-        }
-        case "export": {
-          stmt = this.parseExportDeclaration();
-          break;
-        }
-        case "class": {
-          stmt = this.parseClassDeclaration();
-          break;
-        }
-        case "try": {
-          stmt = this.parseTryCatch();
-          break;
-        }
-        case "throw": {
-          stmt = this.parseThrowStatement();
-          break;
-        }
-        case "const": {
-          stmt = this.parseConstDeclaration();
-          break;
-        }
-        case "let": {
-          stmt = this.parseLetDeclaration();
-          break;
-        }
-        case "var": {
-          stmt = this.parseVarDeclaration();
-          break;
-        }
-        case "switch": {
-          stmt = this.parseSwitchStatement();
-          break;
-        }
-        case "match": {
-          stmt = this.parseMatchStatement();
-          break;
-        }
-        case "enum": {
-          stmt = this.parseEnumDeclaration();
-          break;
-        }
-        case "interface": {
-          stmt = this.parseInterfaceDeclaration();
-          break;
-        }
-        case "break": {
-          this.advance();
-          let breakLabel = void 0;
-          if (this.peek().type === "Identifier") {
-            breakLabel = this.peek().value;
-            this.advance();
+});
+
+// dist/compiler/parser/parser.js
+var Parser;
+var init_parser = __esm({
+  "dist/compiler/parser/parser.js"() {
+    init_parser_statements();
+    Parser = class extends ParserStatements {
+      constructor(tokens, source) {
+        super(tokens, source);
+        this.errors = [];
+      }
+      parseProgram() {
+        const body = [];
+        while (!this.isAtEnd()) {
+          try {
+            body.push(this.parseStatement());
+          } catch (err) {
+            if (err instanceof SyntaxError) {
+              this.errors.push(err);
+              this.recover();
+            } else {
+              throw err;
+            }
           }
-          stmt = { type: "BreakStatement", label: breakLabel };
-          break;
         }
-        case "continue": {
-          this.advance();
-          let contLabel = void 0;
-          if (this.peek().type === "Identifier") {
-            contLabel = this.peek().value;
+        return { type: "Program", body, errors: this.errors };
+      }
+      recover() {
+        let braceDepth = 0;
+        while (!this.isAtEnd()) {
+          const tok = this.peek();
+          if (tok.type === "Delimiter" && tok.value === "{") {
+            braceDepth = braceDepth + 1;
             this.advance();
+            continue;
           }
-          stmt = { type: "ContinueStatement", label: contLabel };
-          break;
-        }
-        case "debugger": {
+          if (tok.type === "Delimiter" && tok.value === "}") {
+            if (braceDepth > 0) {
+              braceDepth = braceDepth - 1;
+              this.advance();
+              continue;
+            }
+            this.advance();
+            return;
+          }
+          if (tok.type === "Delimiter" && tok.value === ";" && braceDepth === 0) {
+            this.advance();
+            return;
+          }
+          if (braceDepth === 0 && tok.type === "Keyword" && ["fn", "if", "for", "while", "do", "return", "import", "export", "class", "try", "throw", "const", "let", "var", "switch", "match", "enum", "interface", "break", "continue"].includes(tok.value)) {
+            return;
+          }
           this.advance();
-          stmt = { type: "DebuggerStatement" };
-          break;
-        }
-        case "go": {
-          stmt = this.parseGoStatement();
-          break;
-        }
-        default: {
-          stmt = this.parseExpressionStatement();
-          break;
         }
       }
-    } else if (tok.type === "Identifier") {
-      if (tok.value === "type" && this.peekNext()?.type === "Identifier") {
-        stmt = this.parseTypeOrADT();
+      parseDecorators() {
+        const decorators = [];
+        while (this.peek().type === "Decorator") {
+          const tok = this.advance();
+          const name = tok.value.slice(1);
+          let args = void 0;
+          if (this.checkDelimiter("(")) {
+            this.advance();
+            args = [];
+            if (!this.checkDelimiter(")")) {
+              do {
+                args.push(this.parseExpression());
+              } while (this.matchDelimiter(","));
+            }
+            this.consumeDelimiter(")", "Expected ')' after decorator arguments");
+          }
+          decorators.push({ type: "Decorator", name, arguments: args });
+        }
+        return decorators;
+      }
+      parseStatement() {
+        const decorators = this.parseDecorators();
+        const tok = this.peek();
+        const loc = tok.loc ? { line: tok.loc.line, column: tok.loc.column } : void 0;
+        let stmt = null;
+        if (tok.type === "Keyword") {
+          switch (tok.value) {
+            case "fn": {
+              const next = this.peekNext();
+              stmt = this.parseFunctionDeclaration(false, next?.type === "Operator" && next?.value === "*");
+              break;
+            }
+            case "async": {
+              stmt = this.parseAsync();
+              break;
+            }
+            case "if": {
+              stmt = this.parseIfStatement();
+              break;
+            }
+            case "for": {
+              stmt = this.parseForStatement();
+              break;
+            }
+            case "while": {
+              stmt = this.parseWhileStatement();
+              break;
+            }
+            case "do": {
+              stmt = this.parseDoWhileStatement();
+              break;
+            }
+            case "return": {
+              stmt = this.parseReturnStatement();
+              break;
+            }
+            case "import": {
+              stmt = this.parseImportDeclaration();
+              break;
+            }
+            case "export": {
+              stmt = this.parseExportDeclaration();
+              break;
+            }
+            case "class": {
+              stmt = this.parseClassDeclaration();
+              break;
+            }
+            case "try": {
+              stmt = this.parseTryCatch();
+              break;
+            }
+            case "throw": {
+              stmt = this.parseThrowStatement();
+              break;
+            }
+            case "const": {
+              stmt = this.parseConstDeclaration();
+              break;
+            }
+            case "let": {
+              stmt = this.parseLetDeclaration();
+              break;
+            }
+            case "var": {
+              stmt = this.parseVarDeclaration();
+              break;
+            }
+            case "switch": {
+              stmt = this.parseSwitchStatement();
+              break;
+            }
+            case "match": {
+              stmt = this.parseMatchStatement();
+              break;
+            }
+            case "enum": {
+              stmt = this.parseEnumDeclaration();
+              break;
+            }
+            case "interface": {
+              stmt = this.parseInterfaceDeclaration();
+              break;
+            }
+            case "break": {
+              this.advance();
+              let breakLabel = void 0;
+              if (this.peek().type === "Identifier") {
+                breakLabel = this.peek().value;
+                this.advance();
+              }
+              stmt = { type: "BreakStatement", label: breakLabel };
+              break;
+            }
+            case "continue": {
+              this.advance();
+              let contLabel = void 0;
+              if (this.peek().type === "Identifier") {
+                contLabel = this.peek().value;
+                this.advance();
+              }
+              stmt = { type: "ContinueStatement", label: contLabel };
+              break;
+            }
+            case "debugger": {
+              this.advance();
+              stmt = { type: "DebuggerStatement" };
+              break;
+            }
+            case "go": {
+              stmt = this.parseGoStatement();
+              break;
+            }
+            default: {
+              stmt = this.parseExpressionStatement();
+              break;
+            }
+          }
+        } else if (tok.type === "Identifier") {
+          if (tok.value === "type" && this.peekNext()?.type === "Identifier") {
+            stmt = this.parseTypeOrADT();
+            if (loc) {
+              stmt.loc = loc;
+            }
+            return stmt;
+          }
+          const next = this.peekNext();
+          if (next?.type === "Delimiter" && next.value === ":") {
+            const after = this.peekAt(2);
+            if (after?.type === "Keyword" && (after.value === "for" || after.value === "while" || after.value === "do")) {
+              const label = tok.value;
+              this.advance();
+              this.advance();
+              const body = this.parseStatement();
+              stmt = { type: "LabeledStatement", label, body };
+            } else {
+              stmt = this.parseIdentifierStatement(tok, next);
+            }
+          } else {
+            stmt = this.parseIdentifierStatement(tok, next);
+          }
+        } else {
+          stmt = this.parseExpressionStatement();
+        }
+        if (decorators.length > 0) {
+          if (stmt.type === "FunctionDeclaration") {
+            stmt.decorators = decorators;
+          }
+          if (stmt.type === "ClassDeclaration") {
+            stmt.decorators = decorators;
+          }
+          if (stmt.type === "ExportDeclaration" && stmt.declaration) {
+            if (stmt.declaration.type === "FunctionDeclaration") {
+              stmt.declaration.decorators = decorators;
+            }
+            if (stmt.declaration.type === "ClassDeclaration") {
+              stmt.declaration.decorators = decorators;
+            }
+          }
+        }
         if (loc) {
           stmt.loc = loc;
         }
         return stmt;
       }
-      const next = this.peekNext();
-      if (next?.type === "Delimiter" && next.value === ":") {
-        const after = this.peekAt(2);
-        if (after?.type === "Keyword" && (after.value === "for" || after.value === "while" || after.value === "do")) {
-          const label = tok.value;
-          this.advance();
-          this.advance();
-          const body = this.parseStatement();
-          stmt = { type: "LabeledStatement", label, body };
-        } else {
-          stmt = this.parseIdentifierStatement(tok, next);
+      parseIdentifierStatement(tok, next) {
+        if (next?.type === "Operator" && next.value === "=") {
+          const afterEq = this.peekAt(2);
+          if (afterEq?.type !== "Operator" || afterEq.value !== "=" && afterEq.value !== ">") {
+            return this.parseVariableDeclaration("let");
+          }
         }
-      } else {
-        stmt = this.parseIdentifierStatement(tok, next);
-      }
-    } else {
-      stmt = this.parseExpressionStatement();
-    }
-    if (decorators.length > 0) {
-      if (stmt.type === "FunctionDeclaration") {
-        stmt.decorators = decorators;
-      }
-      if (stmt.type === "ClassDeclaration") {
-        stmt.decorators = decorators;
-      }
-      if (stmt.type === "ExportDeclaration" && stmt.declaration) {
-        if (stmt.declaration.type === "FunctionDeclaration") {
-          stmt.declaration.decorators = decorators;
+        if (next?.type === "Delimiter" && next.value === ":") {
+          return this.parseVariableDeclaration("let");
         }
-        if (stmt.declaration.type === "ClassDeclaration") {
-          stmt.declaration.decorators = decorators;
-        }
+        return this.parseExpressionStatement();
       }
-    }
-    if (loc) {
-      stmt.loc = loc;
-    }
-    return stmt;
+    };
   }
-  parseIdentifierStatement(tok, next) {
-    if (next?.type === "Operator" && next.value === "=") {
-      const afterEq = this.peekAt(2);
-      if (afterEq?.type !== "Operator" || afterEq.value !== "=" && afterEq.value !== ">") {
-        return this.parseVariableDeclaration("let");
-      }
-    }
-    if (next?.type === "Delimiter" && next.value === ":") {
-      return this.parseVariableDeclaration("let");
-    }
-    return this.parseExpressionStatement();
-  }
-};
+});
 
 // dist/compiler/resolver.js
+var resolver_exports = {};
+__export(resolver_exports, {
+  resolveImport: () => resolveImport,
+  rewriteImportSource: () => rewriteImportSource
+});
+function resolveImport(source, fromFile) {
+  if (!source.startsWith(".") && !source.startsWith("/")) {
+    return null;
+  }
+  const dir = (0, import_path.dirname)(fromFile);
+  const candidates = [(0, import_path.join)(dir, source.endsWith(".no") ? source : source + ".no"), (0, import_path.join)(dir, source, "index.no")];
+  for (const candidate of candidates) {
+    const abs = (0, import_path.resolve)(candidate);
+    if ((0, import_fs.existsSync)(abs)) {
+      return abs;
+    }
+  }
+  return null;
+}
 function rewriteImportSource(source) {
   if (!source.startsWith(".") && !source.startsWith("/")) {
     return source;
@@ -2263,13 +2332,15 @@ function rewriteImportSource(source) {
   }
   return source + ".js";
 }
+var import_fs, import_path;
+var init_resolver = __esm({
+  "dist/compiler/resolver.js"() {
+    import_fs = require("fs");
+    import_path = require("path");
+  }
+});
 
 // dist/compiler/generator/source-map.js
-var VLQ_BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-var VLQ_BASE_SHIFT = 5;
-var VLQ_BASE = 1 << VLQ_BASE_SHIFT;
-var VLQ_BASE_MASK = VLQ_BASE - 1;
-var VLQ_CONTINUATION_BIT = VLQ_BASE;
 function vlqEncode(value) {
   let vlq = value < 0 ? (-value << 1) + 1 : value << 1;
   let encoded = "";
@@ -2283,64 +2354,74 @@ function vlqEncode(value) {
   } while (vlq > 0);
   return encoded;
 }
-var SourceMapBuilder = class {
-  constructor() {
-    this.mappings = [];
-    this.sources = [];
-    this.sourcesContent = [];
-    this.names = [];
-  }
-  addSource(filename, content) {
-    const idx = this.sources.indexOf(filename);
-    if (idx >= 0) {
-      return idx;
-    }
-    this.sources.push(filename);
-    this.sourcesContent.push(content ?? null);
-    return this.sources.length - 1;
-  }
-  addMapping(mapping) {
-    return this.mappings.push(mapping);
-  }
-  addLineMapping(sourceLine, generatedLine, sourceIndex) {
-    return this.mappings.push({ generatedLine, generatedColumn: 0, sourceLine, sourceColumn: 0, sourceIndex: sourceIndex ?? 0 });
-  }
-  toJSON(outputFile) {
-    return { version: 3, file: outputFile, sourceRoot: "", sources: this.sources, sourcesContent: this.sourcesContent, names: this.names, mappings: this.encodeMappings() };
-  }
-  toString(outputFile) {
-    return JSON.stringify(this.toJSON(outputFile));
-  }
-  encodeMappings() {
-    const sorted = [...this.mappings].sort((a, b) => a.generatedLine - b.generatedLine || a.generatedColumn - b.generatedColumn);
-    if (sorted.length === 0) {
-      return "";
-    }
-    const lines = [];
-    let prevGenLine = 1;
-    let prevGenCol = 0;
-    let prevSourceIndex = 0;
-    let prevSourceLine = 0;
-    let prevSourceCol = 0;
-    for (const m of sorted) {
-      while (prevGenLine < m.generatedLine) {
-        lines.push([]);
-        prevGenLine = prevGenLine + 1;
-        prevGenCol = 0;
+var VLQ_BASE64, VLQ_BASE_SHIFT, VLQ_BASE, VLQ_BASE_MASK, VLQ_CONTINUATION_BIT, SourceMapBuilder;
+var init_source_map = __esm({
+  "dist/compiler/generator/source-map.js"() {
+    VLQ_BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    VLQ_BASE_SHIFT = 5;
+    VLQ_BASE = 1 << VLQ_BASE_SHIFT;
+    VLQ_BASE_MASK = VLQ_BASE - 1;
+    VLQ_CONTINUATION_BIT = VLQ_BASE;
+    SourceMapBuilder = class {
+      constructor() {
+        this.mappings = [];
+        this.sources = [];
+        this.sourcesContent = [];
+        this.names = [];
       }
-      if (!lines[lines.length - 1]) {
-        lines.push([]);
+      addSource(filename, content) {
+        const idx = this.sources.indexOf(filename);
+        if (idx >= 0) {
+          return idx;
+        }
+        this.sources.push(filename);
+        this.sourcesContent.push(content ?? null);
+        return this.sources.length - 1;
       }
-      const segment = vlqEncode(m.generatedColumn - prevGenCol) + vlqEncode(m.sourceIndex - prevSourceIndex) + vlqEncode(m.sourceLine - 1 - prevSourceLine) + vlqEncode(m.sourceColumn - prevSourceCol);
-      lines[lines.length - 1].push(segment);
-      prevGenCol = m.generatedColumn;
-      prevSourceIndex = m.sourceIndex;
-      prevSourceLine = m.sourceLine - 1;
-      prevSourceCol = m.sourceColumn;
-    }
-    return lines.map((segs) => segs.join(",")).join(";");
+      addMapping(mapping) {
+        return this.mappings.push(mapping);
+      }
+      addLineMapping(sourceLine, generatedLine, sourceIndex) {
+        return this.mappings.push({ generatedLine, generatedColumn: 0, sourceLine, sourceColumn: 0, sourceIndex: sourceIndex ?? 0 });
+      }
+      toJSON(outputFile) {
+        return { version: 3, file: outputFile, sourceRoot: "", sources: this.sources, sourcesContent: this.sourcesContent, names: this.names, mappings: this.encodeMappings() };
+      }
+      toString(outputFile) {
+        return JSON.stringify(this.toJSON(outputFile));
+      }
+      encodeMappings() {
+        const sorted = [...this.mappings].sort((a, b) => a.generatedLine - b.generatedLine || a.generatedColumn - b.generatedColumn);
+        if (sorted.length === 0) {
+          return "";
+        }
+        const lines = [];
+        let prevGenLine = 1;
+        let prevGenCol = 0;
+        let prevSourceIndex = 0;
+        let prevSourceLine = 0;
+        let prevSourceCol = 0;
+        for (const m of sorted) {
+          while (prevGenLine < m.generatedLine) {
+            lines.push([]);
+            prevGenLine = prevGenLine + 1;
+            prevGenCol = 0;
+          }
+          if (!lines[lines.length - 1]) {
+            lines.push([]);
+          }
+          const segment = vlqEncode(m.generatedColumn - prevGenCol) + vlqEncode(m.sourceIndex - prevSourceIndex) + vlqEncode(m.sourceLine - 1 - prevSourceLine) + vlqEncode(m.sourceColumn - prevSourceCol);
+          lines[lines.length - 1].push(segment);
+          prevGenCol = m.generatedColumn;
+          prevSourceIndex = m.sourceIndex;
+          prevSourceLine = m.sourceLine - 1;
+          prevSourceCol = m.sourceColumn;
+        }
+        return lines.map((segs) => segs.join(",")).join(";");
+      }
+    };
   }
-};
+});
 
 // dist/compiler/generator/js-generator.js
 function generateJS(program, minify) {
@@ -3212,57 +3293,15 @@ function emitNew(n, ctx) {
   const args = n.arguments.map((a) => emitExpression(a, ctx)).join("," + ctx.sp);
   return "new " + callee + "(" + args + ")";
 }
+var init_js_generator = __esm({
+  "dist/compiler/generator/js-generator.js"() {
+    init_precedence();
+    init_resolver();
+    init_source_map();
+  }
+});
 
 // dist/compiler/type-checker.js
-var ANY = { kind: "any" };
-var VOID = { kind: "primitive", name: "void" };
-var STRING = { kind: "primitive", name: "string" };
-var NUMBER = { kind: "primitive", name: "number" };
-var BOOLEAN = { kind: "primitive", name: "boolean" };
-var NULL_TYPE = { kind: "primitive", name: "null" };
-var UNDEFINED = { kind: "primitive", name: "undefined" };
-var TypeEnv = class {
-  constructor() {
-    this.scopes = [{ bindings: /* @__PURE__ */ new Map(), typeParams: /* @__PURE__ */ new Map() }];
-    this.interfaces = /* @__PURE__ */ new Map();
-  }
-  push() {
-    return this.scopes.push({ bindings: /* @__PURE__ */ new Map(), typeParams: /* @__PURE__ */ new Map() });
-  }
-  pop() {
-    return this.scopes.pop();
-  }
-  define(name, type) {
-    return this.scopes[this.scopes.length - 1].bindings.set(name, type);
-  }
-  defineTypeParam(name, constraint) {
-    const tp = { kind: "typeParam", name, constraint };
-    this.scopes[this.scopes.length - 1].typeParams.set(name, tp);
-    this.scopes[this.scopes.length - 1].bindings.set(name, tp);
-  }
-  lookupTypeParam(name) {
-    let i = this.scopes.length - 1;
-    while (i >= 0) {
-      const t = this.scopes[i].typeParams.get(name);
-      if (t) {
-        return t;
-      }
-      i = i - 1;
-    }
-    return null;
-  }
-  lookup(name) {
-    let i = this.scopes.length - 1;
-    while (i >= 0) {
-      const t = this.scopes[i].bindings.get(name);
-      if (t) {
-        return t;
-      }
-      i = i - 1;
-    }
-    return null;
-  }
-};
 function annotationToType(ann) {
   if (!ann) {
     return ANY;
@@ -3578,27 +3617,155 @@ function getLine(stmt) {
 function getCol(stmt) {
   return stmt?.loc?.column ? stmt.loc.column - 1 : 0;
 }
-var TYPEOF_MAP = { "string": STRING, "number": NUMBER, "boolean": BOOLEAN, "undefined": UNDEFINED, "object": { kind: "named", name: "object" }, "function": { kind: "function", params: [], returnType: ANY } };
 function extractTypeGuard(cond2) {
+  if (cond2.type === "Identifier") {
+    return { name: cond2.name, narrowedType: { kind: "union", types: [NULL_TYPE, UNDEFINED] }, guardKind: "negative" };
+  }
+  if (cond2.type === "UnaryExpression" && cond2.operator === "!") {
+    if (cond2.argument && cond2.argument.type === "Identifier") {
+      return { name: cond2.argument.name, narrowedType: { kind: "union", types: [NULL_TYPE, UNDEFINED] }, guardKind: "positive" };
+    }
+  }
   if (cond2.type !== "BinaryExpression") {
     return null;
   }
-  if (cond2.operator !== "===" && cond2.operator !== "==") {
-    return null;
-  }
-  if (cond2.left.type === "UnaryExpression" && cond2.left.operator === "typeof" && cond2.left.argument.type === "Identifier" && cond2.right.type === "Literal" && typeof cond2.right.value === "string") {
-    const mapped = TYPEOF_MAP[cond2.right.value];
-    if (mapped) {
-      return { name: cond2.left.argument.name, narrowedType: mapped };
+  if (cond2.operator === "===" || cond2.operator === "==") {
+    if (cond2.left.type === "UnaryExpression" && cond2.left.operator === "typeof" && cond2.left.argument && cond2.left.argument.type === "Identifier" && cond2.right.type === "Literal" && typeof cond2.right.value === "string") {
+      const mapped = TYPEOF_MAP[cond2.right.value];
+      if (mapped) {
+        return { name: cond2.left.argument.name, narrowedType: mapped, guardKind: "positive" };
+      }
+    }
+    if (cond2.right.type === "UnaryExpression" && cond2.right.operator === "typeof" && cond2.right.argument && cond2.right.argument.type === "Identifier" && cond2.left.type === "Literal" && typeof cond2.left.value === "string") {
+      const mapped = TYPEOF_MAP[cond2.left.value];
+      if (mapped) {
+        return { name: cond2.right.argument.name, narrowedType: mapped, guardKind: "positive" };
+      }
+    }
+    if (cond2.left.type === "Identifier" && cond2.right.type === "Literal" && cond2.right.value === null) {
+      return { name: cond2.left.name, narrowedType: NULL_TYPE, guardKind: "positive" };
+    }
+    if (cond2.left.type === "Identifier" && cond2.right.type === "Identifier" && cond2.right.name === "undefined") {
+      return { name: cond2.left.name, narrowedType: UNDEFINED, guardKind: "positive" };
     }
   }
-  if (cond2.right.type === "UnaryExpression" && cond2.right.operator === "typeof" && cond2.right.argument.type === "Identifier" && cond2.left.type === "Literal" && typeof cond2.left.value === "string") {
-    const mapped = TYPEOF_MAP[cond2.left.value];
-    if (mapped) {
-      return { name: cond2.right.argument.name, narrowedType: mapped };
+  if (cond2.operator === "!==" || cond2.operator === "!=") {
+    if (cond2.left.type === "UnaryExpression" && cond2.left.operator === "typeof" && cond2.left.argument && cond2.left.argument.type === "Identifier" && cond2.right.type === "Literal" && typeof cond2.right.value === "string") {
+      const mapped = TYPEOF_MAP[cond2.right.value];
+      if (mapped) {
+        return { name: cond2.left.argument.name, narrowedType: mapped, guardKind: "negative" };
+      }
     }
+    if (cond2.left.type === "Identifier" && cond2.right.type === "Literal" && cond2.right.value === null) {
+      return { name: cond2.left.name, narrowedType: NULL_TYPE, guardKind: "negative" };
+    }
+    if (cond2.left.type === "Identifier" && cond2.right.type === "Identifier" && cond2.right.name === "undefined") {
+      return { name: cond2.left.name, narrowedType: UNDEFINED, guardKind: "negative" };
+    }
+  }
+  if (cond2.operator === "instanceof" && cond2.left.type === "Identifier" && cond2.right.type === "Identifier") {
+    return { name: cond2.left.name, narrowedType: { kind: "named", name: cond2.right.name }, guardKind: "positive" };
   }
   return null;
+}
+function applyGuard(guard, env) {
+  if (guard.guardKind === "positive") {
+    env.define(guard.name, guard.narrowedType);
+  } else {
+    const current = env.lookup(guard.name);
+    if (!current || current.kind === "any") {
+      return;
+    }
+    if (current.kind === "union") {
+      const remaining = current.types.filter((t) => !isAssignableTo(t, guard.narrowedType));
+      if (remaining.length === 1) {
+        env.define(guard.name, remaining[0]);
+      } else if (remaining.length > 1) {
+        env.define(guard.name, { kind: "union", types: remaining });
+      }
+    }
+  }
+}
+function applyInverseGuard(guard, env) {
+  if (guard.guardKind === "positive") {
+    const current = env.lookup(guard.name);
+    if (!current || current.kind === "any") {
+      return;
+    }
+    if (current.kind === "union") {
+      const remaining = current.types.filter((t) => !isAssignableTo(t, guard.narrowedType));
+      if (remaining.length === 1) {
+        env.define(guard.name, remaining[0]);
+      } else if (remaining.length > 1) {
+        env.define(guard.name, { kind: "union", types: remaining });
+      }
+    }
+  } else {
+    env.define(guard.name, guard.narrowedType);
+  }
+}
+function extractExportedTypes(stmts) {
+  const exports2 = /* @__PURE__ */ new Map();
+  for (const stmt of stmts) {
+    if (stmt.type === "ExportDeclaration") {
+      const decl = stmt.declaration;
+      if (!decl) {
+        continue;
+      }
+      if (decl.type === "FunctionDeclaration") {
+        const paramTypes = decl.params.map((p) => annotationToType(p.typeAnnotation));
+        const retType = annotationToType(decl.returnType);
+        exports2.set(decl.name.name, { kind: "function", params: paramTypes, returnType: retType });
+      } else if (decl.type === "VariableDeclaration") {
+        if (decl.name) {
+          const t = decl.typeAnnotation ? annotationToType(decl.typeAnnotation) : ANY;
+          exports2.set(decl.name.name, t);
+        }
+      } else if (decl.type === "ClassDeclaration") {
+        exports2.set(decl.name.name, { kind: "named", name: decl.name.name });
+      } else if (decl.type === "InterfaceDeclaration") {
+        exports2.set(decl.name.name, { kind: "named", name: decl.name.name });
+      }
+    }
+    if (stmt.type === "FunctionDeclaration" && stmt.exported) {
+      const paramTypes = stmt.params.map((p) => annotationToType(p.typeAnnotation));
+      exports2.set(stmt.name.name, { kind: "function", params: paramTypes, returnType: annotationToType(stmt.returnType) });
+    }
+    if (stmt.type === "ClassDeclaration" && stmt.exported) {
+      exports2.set(stmt.name.name, { kind: "named", name: stmt.name.name });
+    }
+  }
+  return exports2;
+}
+function resolveModuleTypes(source, env) {
+  if (!source || !source.startsWith("./") && !source.startsWith("../")) {
+    return /* @__PURE__ */ new Map();
+  }
+  if (moduleTypeCache.has(source)) {
+    return moduleTypeCache.get(source);
+  }
+  try {
+    const fs = require("fs");
+    const resolver = (init_resolver(), __toCommonJS(resolver_exports));
+    const compiler = (init_compile(), __toCommonJS(compile_exports));
+    if (!env.filePath) {
+      moduleTypeCache.set(source, /* @__PURE__ */ new Map());
+      return /* @__PURE__ */ new Map();
+    }
+    const resolved = resolver.resolveImport(source, env.filePath);
+    if (!resolved || !fs.existsSync(resolved)) {
+      moduleTypeCache.set(source, /* @__PURE__ */ new Map());
+      return /* @__PURE__ */ new Map();
+    }
+    const fileSource = fs.readFileSync(resolved, "utf8");
+    const ast = compiler.compileToAST(fileSource);
+    const types = extractExportedTypes(ast.body);
+    moduleTypeCache.set(source, types);
+    return types;
+  } catch (e) {
+    moduleTypeCache.set(source, /* @__PURE__ */ new Map());
+    return /* @__PURE__ */ new Map();
+  }
 }
 function checkStatements(stmts, env, diags) {
   for (const stmt of stmts) {
@@ -3672,16 +3839,51 @@ function checkStatement(stmt, env, diags) {
     }
     case "IfStatement": {
       inferExpression(stmt.condition, env);
-      env.push();
       const guard = extractTypeGuard(stmt.condition);
+      env.push();
       if (guard) {
-        env.define(guard.name, guard.narrowedType);
+        applyGuard(guard, env);
       }
       checkStatements(stmt.consequent, env, diags);
       env.pop();
       if (stmt.alternate) {
         env.push();
+        if (guard) {
+          applyInverseGuard(guard, env);
+        }
         checkStatements(stmt.alternate, env, diags);
+        env.pop();
+      }
+      break;
+    }
+    case "MatchStatement": {
+      const matchExpr = stmt.expression;
+      if (matchExpr) {
+        const exprType = inferExpression(matchExpr, env);
+        const cases = stmt.cases || [];
+        let hasDefault = false;
+        for (const c of cases) {
+          if (c.isDefault) {
+            hasDefault = true;
+          }
+          env.push();
+          checkStatements(c.body || [], env, diags);
+          env.pop();
+        }
+        if (!hasDefault && exprType.kind === "union") {
+          diags.push({ line: getLine(stmt), column: getCol(stmt), message: "Match may not be exhaustive. Consider adding a default case.", severity: "warning" });
+        }
+      }
+      break;
+    }
+    case "SwitchStatement": {
+      if (stmt.discriminant) {
+        inferExpression(stmt.discriminant, env);
+      }
+      const cases = stmt.cases || [];
+      for (const c of cases) {
+        env.push();
+        checkStatements(c.body || c.consequent || [], env, diags);
         env.pop();
       }
       break;
@@ -3716,11 +3918,13 @@ function checkStatement(stmt, env, diags) {
       break;
     }
     case "ImportDeclaration": {
+      const exportedTypes = resolveModuleTypes(stmt.source, env);
       if (stmt.defaultImport) {
-        env.define(stmt.defaultImport, ANY);
+        env.define(stmt.defaultImport, exportedTypes.get("default") ?? ANY);
       }
       for (const spec of stmt.namedImports) {
-        env.define(spec.alias ?? spec.name, ANY);
+        const resolved = exportedTypes.get(spec.name) ?? ANY;
+        env.define(spec.alias ?? spec.name, resolved);
       }
       break;
     }
@@ -3843,12 +4047,71 @@ function checkReturnTypes(body, expected, env, diags) {
     }
   }
 }
-function typeCheck(ast) {
+function typeCheck(ast, filePath) {
   const diags = [];
   const env = new TypeEnv();
+  if (filePath) {
+    env.filePath = filePath;
+  }
   checkStatements(ast.body, env, diags);
   return diags;
 }
+var ANY, VOID, STRING, NUMBER, BOOLEAN, NULL_TYPE, UNDEFINED, TypeEnv, TYPEOF_MAP, moduleTypeCache;
+var init_type_checker = __esm({
+  "dist/compiler/type-checker.js"() {
+    ANY = { kind: "any" };
+    VOID = { kind: "primitive", name: "void" };
+    STRING = { kind: "primitive", name: "string" };
+    NUMBER = { kind: "primitive", name: "number" };
+    BOOLEAN = { kind: "primitive", name: "boolean" };
+    NULL_TYPE = { kind: "primitive", name: "null" };
+    UNDEFINED = { kind: "primitive", name: "undefined" };
+    TypeEnv = class {
+      constructor() {
+        this.scopes = [{ bindings: /* @__PURE__ */ new Map(), typeParams: /* @__PURE__ */ new Map() }];
+        this.interfaces = /* @__PURE__ */ new Map();
+      }
+      push() {
+        return this.scopes.push({ bindings: /* @__PURE__ */ new Map(), typeParams: /* @__PURE__ */ new Map() });
+      }
+      pop() {
+        return this.scopes.pop();
+      }
+      define(name, type) {
+        return this.scopes[this.scopes.length - 1].bindings.set(name, type);
+      }
+      defineTypeParam(name, constraint) {
+        const tp = { kind: "typeParam", name, constraint };
+        this.scopes[this.scopes.length - 1].typeParams.set(name, tp);
+        this.scopes[this.scopes.length - 1].bindings.set(name, tp);
+      }
+      lookupTypeParam(name) {
+        let i = this.scopes.length - 1;
+        while (i >= 0) {
+          const t = this.scopes[i].typeParams.get(name);
+          if (t) {
+            return t;
+          }
+          i = i - 1;
+        }
+        return null;
+      }
+      lookup(name) {
+        let i = this.scopes.length - 1;
+        while (i >= 0) {
+          const t = this.scopes[i].bindings.get(name);
+          if (t) {
+            return t;
+          }
+          i = i - 1;
+        }
+        return null;
+      }
+    };
+    TYPEOF_MAP = { "string": STRING, "number": NUMBER, "boolean": BOOLEAN, "undefined": UNDEFINED, "object": { kind: "named", name: "object" }, "function": { kind: "function", params: [], returnType: ANY } };
+    moduleTypeCache = /* @__PURE__ */ new Map();
+  }
+});
 
 // dist/compiler/formatter/formatter.js
 function format(program, opts) {
@@ -4483,73 +4746,98 @@ function fmtType(t) {
     }
   }
 }
+var init_formatter = __esm({
+  "dist/compiler/formatter/formatter.js"() {
+  }
+});
 
 // dist/compiler/plugin.js
-var PluginRegistry = class {
-  #plugins = [];
-  register(plugin) {
-    return this.#plugins.push(plugin);
-  }
-  unregister(name) {
-    return this.#plugins = this.#plugins.filter((p) => p.name !== name);
-  }
-  getPlugins() {
-    return this.#plugins;
-  }
-  clear() {
-    return this.#plugins = [];
-  }
-  runBeforeParse(source, ctx) {
-    let result = source;
-    for (const plugin of this.#plugins) {
-      if (plugin.beforeParse) {
-        result = plugin.beforeParse(result, ctx);
+var PluginRegistry, defaultRegistry;
+var init_plugin = __esm({
+  "dist/compiler/plugin.js"() {
+    PluginRegistry = class {
+      #plugins = [];
+      register(plugin) {
+        return this.#plugins.push(plugin);
       }
-    }
-    return result;
-  }
-  runAfterParse(ast, ctx) {
-    let result = ast;
-    for (const plugin of this.#plugins) {
-      if (plugin.afterParse) {
-        result = plugin.afterParse(result, ctx);
+      unregister(name) {
+        return this.#plugins = this.#plugins.filter((p) => p.name !== name);
       }
-    }
-    return result;
-  }
-  runBeforeGenerate(ast, ctx) {
-    let result = ast;
-    for (const plugin of this.#plugins) {
-      if (plugin.beforeGenerate) {
-        result = plugin.beforeGenerate(result, ctx);
+      getPlugins() {
+        return this.#plugins;
       }
-    }
-    return result;
-  }
-  runAfterGenerate(js, ctx) {
-    let result = js;
-    for (const plugin of this.#plugins) {
-      if (plugin.afterGenerate) {
-        result = plugin.afterGenerate(result, ctx);
+      clear() {
+        return this.#plugins = [];
       }
-    }
-    return result;
-  }
-  runResolveImport(specifier, fromFile) {
-    for (const plugin of this.#plugins) {
-      if (plugin.resolveImport) {
-        const resolved = plugin.resolveImport(specifier, fromFile);
-        if (resolved !== null) {
-          return resolved;
+      runBeforeParse(source, ctx) {
+        let result = source;
+        for (const plugin of this.#plugins) {
+          if (plugin.beforeParse) {
+            result = plugin.beforeParse(result, ctx);
+          }
         }
+        return result;
       }
-    }
-    return null;
+      runAfterParse(ast, ctx) {
+        let result = ast;
+        for (const plugin of this.#plugins) {
+          if (plugin.afterParse) {
+            result = plugin.afterParse(result, ctx);
+          }
+        }
+        return result;
+      }
+      runBeforeGenerate(ast, ctx) {
+        let result = ast;
+        for (const plugin of this.#plugins) {
+          if (plugin.beforeGenerate) {
+            result = plugin.beforeGenerate(result, ctx);
+          }
+        }
+        return result;
+      }
+      runAfterGenerate(js, ctx) {
+        let result = js;
+        for (const plugin of this.#plugins) {
+          if (plugin.afterGenerate) {
+            result = plugin.afterGenerate(result, ctx);
+          }
+        }
+        return result;
+      }
+      runResolveImport(specifier, fromFile) {
+        for (const plugin of this.#plugins) {
+          if (plugin.resolveImport) {
+            const resolved = plugin.resolveImport(specifier, fromFile);
+            if (resolved !== null) {
+              return resolved;
+            }
+          }
+        }
+        return null;
+      }
+    };
+    defaultRegistry = new PluginRegistry();
   }
-};
-var defaultRegistry = new PluginRegistry();
+});
 
 // dist/compiler/compile.js
+var compile_exports = {};
+__export(compile_exports, {
+  Lexer: () => Lexer,
+  Parser: () => Parser,
+  PluginRegistry: () => PluginRegistry,
+  SourceMapBuilder: () => SourceMapBuilder,
+  compile: () => compile,
+  compileToAST: () => compileToAST,
+  compileWithSourceMap: () => compileWithSourceMap,
+  defaultRegistry: () => defaultRegistry,
+  format: () => format,
+  generateJS: () => generateJS,
+  generateJSWithSourceMap: () => generateJSWithSourceMap,
+  typeCheck: () => typeCheck
+});
+module.exports = __toCommonJS(compile_exports);
 function compile(source, options) {
   const opts = options ?? {};
   const registry = opts.plugins ?? defaultRegistry;
@@ -4585,6 +4873,25 @@ function compileToAST(source) {
   const tokens = new Lexer(source).tokenize();
   return new Parser(tokens, source).parseProgram();
 }
+var init_compile = __esm({
+  "dist/compiler/compile.js"() {
+    init_lexer();
+    init_parser();
+    init_js_generator();
+    init_type_checker();
+    init_source_map();
+    init_formatter();
+    init_plugin();
+    init_lexer();
+    init_parser();
+    init_js_generator();
+    init_source_map();
+    init_type_checker();
+    init_formatter();
+    init_plugin();
+  }
+});
+init_compile();
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   Lexer,

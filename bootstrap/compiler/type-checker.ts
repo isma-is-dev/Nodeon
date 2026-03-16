@@ -1,5 +1,6 @@
 /**
  * Nodeon Type Checker — validates type annotations, infers types, reports errors.
+ * Supports cross-file type resolution for .no imports.
  */
 
 import {
@@ -328,35 +329,223 @@ const TYPEOF_MAP: Record<string, NType> = {
   function: { kind: "function", params: [], returnType: ANY },
 };
 
-function extractTypeGuard(cond: Expression): { name: string; narrowedType: NType } | null {
-  if (cond.type !== "BinaryExpression") return null;
-  if (cond.operator !== "===" && cond.operator !== "==") return null;
+interface TypeGuard {
+  name: string;
+  narrowedType: NType;
+  kind: "positive" | "negative";
+}
 
-  // typeof x === "string" (UnaryExpression or TypeofExpression)
-  const leftIsTypeof = (cond.left.type === "TypeofExpression") ||
-    (cond.left.type === "UnaryExpression" && (cond.left as any).operator === "typeof");
-  if (leftIsTypeof && cond.right.type === "Literal" && typeof cond.right.value === "string") {
-    const arg = (cond.left as any).argument;
-    if (arg && arg.type === "Identifier") {
-      const mapped = TYPEOF_MAP[cond.right.value as string];
-      if (mapped) return { name: arg.name, narrowedType: mapped };
+function extractTypeGuard(cond: Expression): TypeGuard | null {
+  // Truthiness check: if (x) → narrows out null/undefined
+  if (cond.type === "Identifier") {
+    return { name: cond.name, narrowedType: { kind: "union", types: [NULL_TYPE, UNDEFINED] }, kind: "negative" };
+  }
+
+  // Negation: if (!x) → x is falsy in consequent
+  if (cond.type === "UnaryExpression" && (cond as any).operator === "!") {
+    const inner = (cond as any).argument;
+    if (inner && inner.type === "Identifier") {
+      return { name: inner.name, narrowedType: { kind: "union", types: [NULL_TYPE, UNDEFINED] }, kind: "positive" };
     }
   }
-  // "string" === typeof x (reversed)
-  const rightIsTypeof = (cond.right.type === "TypeofExpression") ||
-    (cond.right.type === "UnaryExpression" && (cond.right as any).operator === "typeof");
-  if (rightIsTypeof && cond.left.type === "Literal" && typeof cond.left.value === "string") {
-    const arg = (cond.right as any).argument;
-    if (arg && arg.type === "Identifier") {
-      const mapped = TYPEOF_MAP[cond.left.value as string];
-      if (mapped) return { name: arg.name, narrowedType: mapped };
+
+  if (cond.type !== "BinaryExpression") return null;
+
+  // typeof x === "string"
+  if (cond.operator === "===" || cond.operator === "==") {
+    const leftIsTypeof = (cond.left.type === "TypeofExpression") ||
+      (cond.left.type === "UnaryExpression" && (cond.left as any).operator === "typeof");
+    if (leftIsTypeof && cond.right.type === "Literal" && typeof cond.right.value === "string") {
+      const arg = (cond.left as any).argument;
+      if (arg && arg.type === "Identifier") {
+        const mapped = TYPEOF_MAP[cond.right.value as string];
+        if (mapped) return { name: arg.name, narrowedType: mapped, kind: "positive" };
+      }
+    }
+    // "string" === typeof x (reversed)
+    const rightIsTypeof = (cond.right.type === "TypeofExpression") ||
+      (cond.right.type === "UnaryExpression" && (cond.right as any).operator === "typeof");
+    if (rightIsTypeof && cond.left.type === "Literal" && typeof cond.left.value === "string") {
+      const arg = (cond.right as any).argument;
+      if (arg && arg.type === "Identifier") {
+        const mapped = TYPEOF_MAP[cond.left.value as string];
+        if (mapped) return { name: arg.name, narrowedType: mapped, kind: "positive" };
+      }
+    }
+    // x === null / x === undefined
+    if (cond.left.type === "Identifier" && cond.right.type === "Literal") {
+      if (cond.right.value === null) return { name: cond.left.name, narrowedType: NULL_TYPE, kind: "positive" };
+    }
+    if (cond.left.type === "Identifier" && cond.right.type === "Identifier" && cond.right.name === "undefined") {
+      return { name: cond.left.name, narrowedType: UNDEFINED, kind: "positive" };
     }
   }
+
+  // typeof x !== "string" → narrow negatively
+  if (cond.operator === "!==" || cond.operator === "!=") {
+    const leftIsTypeof = (cond.left.type === "TypeofExpression") ||
+      (cond.left.type === "UnaryExpression" && (cond.left as any).operator === "typeof");
+    if (leftIsTypeof && cond.right.type === "Literal" && typeof cond.right.value === "string") {
+      const arg = (cond.left as any).argument;
+      if (arg && arg.type === "Identifier") {
+        const mapped = TYPEOF_MAP[cond.right.value as string];
+        if (mapped) return { name: arg.name, narrowedType: mapped, kind: "negative" };
+      }
+    }
+    // x !== null → narrow out null
+    if (cond.left.type === "Identifier" && cond.right.type === "Literal") {
+      if (cond.right.value === null) return { name: cond.left.name, narrowedType: NULL_TYPE, kind: "negative" };
+    }
+    if (cond.left.type === "Identifier" && cond.right.type === "Identifier" && cond.right.name === "undefined") {
+      return { name: cond.left.name, narrowedType: UNDEFINED, kind: "negative" };
+    }
+  }
+
   // x instanceof MyClass
   if (cond.operator === "instanceof" as any && cond.left.type === "Identifier" && cond.right.type === "Identifier") {
-    return { name: cond.left.name, narrowedType: { kind: "named", name: cond.right.name } };
+    return { name: cond.left.name, narrowedType: { kind: "named", name: cond.right.name }, kind: "positive" };
   }
   return null;
+}
+
+/**
+ * Apply a positive type guard: narrow the variable to the given type.
+ */
+function applyPositiveNarrowing(name: string, narrowedType: NType, env: TypeEnv): void {
+  env.define(name, narrowedType);
+}
+
+/**
+ * Apply a negative type guard: remove the given type from the variable's current type.
+ * e.g., x: string | number, narrowedType: string → x becomes number
+ */
+function applyNegativeNarrowing(name: string, excludeType: NType, env: TypeEnv): void {
+  const current = env.lookup(name);
+  if (!current || current.kind === "any") return;
+
+  if (current.kind === "union") {
+    const remaining = current.types.filter(t => !isAssignableTo(t, excludeType));
+    if (remaining.length === 0) return;
+    if (remaining.length === 1) {
+      env.define(name, remaining[0]);
+    } else {
+      env.define(name, { kind: "union", types: remaining });
+    }
+  }
+}
+
+/**
+ * Apply a type guard to the environment.
+ */
+function applyGuard(guard: TypeGuard, env: TypeEnv): void {
+  if (guard.kind === "positive") {
+    applyPositiveNarrowing(guard.name, guard.narrowedType, env);
+  } else {
+    applyNegativeNarrowing(guard.name, guard.narrowedType, env);
+  }
+}
+
+/**
+ * Apply the inverse of a type guard (for else branches).
+ */
+function applyInverseGuard(guard: TypeGuard, env: TypeEnv): void {
+  if (guard.kind === "positive") {
+    applyNegativeNarrowing(guard.name, guard.narrowedType, env);
+  } else {
+    applyPositiveNarrowing(guard.name, guard.narrowedType, env);
+  }
+}
+
+// ── Cross-File Type Resolution ──────────────────────────────────
+
+const moduleTypeCache = new Map<string, Map<string, NType>>();
+
+/**
+ * Extract exported type information from a module's AST statements.
+ */
+function extractExportedTypes(stmts: Statement[]): Map<string, NType> {
+  const exports = new Map<string, NType>();
+  for (const stmt of stmts) {
+    if (stmt.type === "ExportDeclaration") {
+      const decl = (stmt as ExportDeclaration).declaration;
+      if (!decl) continue;
+      if (decl.type === "FunctionDeclaration") {
+        const fn = decl as FunctionDeclaration;
+        const paramTypes = fn.params.map((p: Param) => annotationToType(p.typeAnnotation));
+        const retType = annotationToType(fn.returnType);
+        exports.set(fn.name.name, { kind: "function", params: paramTypes, returnType: retType });
+      } else if (decl.type === "VariableDeclaration") {
+        const v = decl as VariableDeclaration;
+        if (v.name) {
+          const t = v.typeAnnotation ? annotationToType(v.typeAnnotation) : ANY;
+          exports.set(v.name.name, t);
+        }
+      } else if (decl.type === "ClassDeclaration") {
+        const cls = decl as ClassDeclaration;
+        exports.set(cls.name.name, { kind: "named", name: cls.name.name });
+      } else if (decl.type === "InterfaceDeclaration") {
+        const iface = decl as InterfaceDeclaration;
+        exports.set(iface.name.name, { kind: "named", name: iface.name.name });
+      }
+    }
+    // Top-level exported function/class/variable (export fn foo, export class Bar)
+    if (stmt.type === "FunctionDeclaration" && (stmt as any).exported) {
+      const fn = stmt as FunctionDeclaration;
+      const paramTypes = fn.params.map((p: Param) => annotationToType(p.typeAnnotation));
+      exports.set(fn.name.name, { kind: "function", params: paramTypes, returnType: annotationToType(fn.returnType) });
+    }
+    if (stmt.type === "ClassDeclaration" && (stmt as any).exported) {
+      exports.set((stmt as ClassDeclaration).name.name, { kind: "named", name: (stmt as ClassDeclaration).name.name });
+    }
+  }
+  return exports;
+}
+
+/**
+ * Resolve types from an imported module.
+ * For .no relative imports, parse the source file and extract exported types.
+ * For npm/builtin imports, returns empty map (all types default to any).
+ */
+function resolveModuleTypes(source: string, env: TypeEnv): Map<string, NType> {
+  // Only resolve relative .no imports
+  if (!source || (!source.startsWith("./") && !source.startsWith("../"))) {
+    return new Map();
+  }
+
+  // Check cache
+  if (moduleTypeCache.has(source)) {
+    return moduleTypeCache.get(source)!;
+  }
+
+  // Try to resolve and parse the file
+  try {
+    const fs = require("fs");
+    const path = require("path");
+    const resolver = require("./resolver.js");
+    const { compileToAST } = require("./compile.js");
+
+    // If we don't have env.filePath, we can't resolve relative imports
+    if (!(env as any).filePath) {
+      moduleTypeCache.set(source, new Map());
+      return new Map();
+    }
+
+    const resolved = resolver.resolveImport(source, (env as any).filePath);
+    if (!resolved || !fs.existsSync(resolved)) {
+      moduleTypeCache.set(source, new Map());
+      return new Map();
+    }
+
+    const fileSource = fs.readFileSync(resolved, "utf8");
+    const ast = compileToAST(fileSource);
+    const types = extractExportedTypes(ast.body);
+    moduleTypeCache.set(source, types);
+    return types;
+  } catch (e) {
+    // If resolution fails, fall back to any
+    moduleTypeCache.set(source, new Map());
+    return new Map();
+  }
 }
 
 function checkStatements(stmts: Statement[], env: TypeEnv, diags: TypeDiagnostic[]): void {
@@ -427,13 +616,56 @@ function checkStatement(stmt: Statement, env: TypeEnv, diags: TypeDiagnostic[]):
     }
     case "IfStatement": {
       inferExpression(stmt.condition, env);
-      env.push();
-      // Type narrowing: if (typeof x === "string") → narrow x to string in consequent
       const guard = extractTypeGuard(stmt.condition);
-      if (guard) env.define(guard.name, guard.narrowedType);
+      // Consequent: apply guard
+      env.push();
+      if (guard) applyGuard(guard, env);
       checkStatements(stmt.consequent, env, diags);
       env.pop();
-      if (stmt.alternate) { env.push(); checkStatements(stmt.alternate, env, diags); env.pop(); }
+      // Alternate: apply inverse guard
+      if (stmt.alternate) {
+        env.push();
+        if (guard) applyInverseGuard(guard, env);
+        checkStatements(stmt.alternate, env, diags);
+        env.pop();
+      }
+      break;
+    }
+    case "MatchStatement": {
+      // Exhaustiveness: check that all union members are covered
+      const matchExpr = (stmt as any).expression;
+      if (matchExpr) {
+        const exprType = inferExpression(matchExpr, env);
+        const cases = (stmt as any).cases || [];
+        let hasDefault = false;
+        for (const c of cases) {
+          if (c.isDefault) hasDefault = true;
+          env.push();
+          checkStatements(c.body || [], env, diags);
+          env.pop();
+        }
+        // Warn if union type is not exhaustively matched and no default
+        if (!hasDefault && exprType.kind === "union") {
+          diags.push({
+            line: getLine(stmt), column: getCol(stmt),
+            message: `Match may not be exhaustive. Consider adding a default case.`,
+            severity: "warning",
+          });
+        }
+      }
+      break;
+    }
+    case "SwitchStatement": {
+      const switchExpr = (stmt as any).discriminant;
+      if (switchExpr) inferExpression(switchExpr, env);
+      const cases = (stmt as any).cases || [];
+      let hasDefault = false;
+      for (const c of cases) {
+        if (c.isDefault) hasDefault = true;
+        env.push();
+        checkStatements(c.body || c.consequent || [], env, diags);
+        env.pop();
+      }
       break;
     }
     case "ReturnStatement": {
@@ -456,9 +688,16 @@ function checkStatement(stmt: Statement, env: TypeEnv, diags: TypeDiagnostic[]):
     }
     case "ImportDeclaration": {
       const imp = stmt as ImportDeclaration;
-      if (imp.defaultImport) env.define(imp.defaultImport, ANY);
+      // Try cross-file type resolution
+      const exportedTypes = resolveModuleTypes(imp.source, env);
+      if (imp.defaultImport) {
+        env.define(imp.defaultImport, exportedTypes.get("default") ?? ANY);
+      }
       if (imp.namespaceImport) env.define(imp.namespaceImport, ANY);
-      for (const spec of imp.namedImports) env.define(spec.alias ?? spec.name, ANY);
+      for (const spec of imp.namedImports) {
+        const resolved = exportedTypes.get(spec.name) ?? ANY;
+        env.define(spec.alias ?? spec.name, resolved);
+      }
       break;
     }
     case "ExportDeclaration": {
@@ -593,9 +832,10 @@ function checkReturnTypes(body: Statement[], expected: NType, env: TypeEnv, diag
 
 // ── Public API ───────────────────────────────────────────────────
 
-export function typeCheck(ast: Program): TypeDiagnostic[] {
+export function typeCheck(ast: Program, filePath?: string): TypeDiagnostic[] {
   const diags: TypeDiagnostic[] = [];
   const env = new TypeEnv();
+  if (filePath) (env as any).filePath = filePath;
   checkStatements(ast.body, env, diags);
   return diags;
 }

@@ -11,6 +11,9 @@ import { runTest } from "./commands/test.js";
 import { runNew } from "./commands/new.js";
 import { runGenerate } from "./commands/generate.js";
 import { runDev } from "./commands/dev.js";
+import { runBuildProd } from "./commands/build-prod.js";
+import { runDeploy } from "./commands/deploy.js";
+import { runLint } from "./commands/lint.js";
 export async function main(argv) {
   const args = argv ?? process.argv.slice(2);
   const cmd = args[0];
@@ -35,7 +38,16 @@ export async function main(argv) {
     return;
   }
   if (cmd === "build") {
-    runBuild(args.slice(1));
+    const buildArgs = args.slice(1);
+    if (buildArgs.includes("--prod") || buildArgs.includes("--production")) {
+      await runBuildProd(buildArgs);
+    } else {
+      runBuild(buildArgs);
+    }
+    return;
+  }
+  if (cmd === "deploy") {
+    await runDeploy(args.slice(1));
     return;
   }
   if (cmd === "run") {
@@ -58,6 +70,10 @@ export async function main(argv) {
     runFmt(args.slice(1));
     return;
   }
+  if (cmd === "lint") {
+    runLint(args.slice(1));
+    return;
+  }
   if (cmd === "generate" || cmd === "g") {
     runGenerate(args.slice(1));
     return;
@@ -69,7 +85,7 @@ export async function main(argv) {
   } catch (e) {
 
   }
-  const knownCommands = ["build", "run", "repl", "check", "fmt", "help", "version", "init", "new", "test", "generate", "dev"];
+  const knownCommands = ["build", "run", "repl", "check", "fmt", "help", "version", "init", "new", "test", "generate", "dev", "deploy", "lint"];
   const suggestion = suggestClosest(cmd, knownCommands);
   console.error("Unknown command '" + cmd + "'");
   console.error("See " + CYAN + "'nodeon help'" + RESET + ".");

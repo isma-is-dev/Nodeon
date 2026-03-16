@@ -406,25 +406,155 @@ function getCol(stmt) {
 }
 const TYPEOF_MAP = { "string": STRING, "number": NUMBER, "boolean": BOOLEAN, "undefined": UNDEFINED, "object": { kind: "named", name: "object" }, "function": { kind: "function", params: [], returnType: ANY } };
 function extractTypeGuard(cond) {
+  if (cond.type === "Identifier") {
+    return { name: cond.name, narrowedType: { kind: "union", types: [NULL_TYPE, UNDEFINED] }, guardKind: "negative" };
+  }
+  if (cond.type === "UnaryExpression" && cond.operator === "!") {
+    if (cond.argument && cond.argument.type === "Identifier") {
+      return { name: cond.argument.name, narrowedType: { kind: "union", types: [NULL_TYPE, UNDEFINED] }, guardKind: "positive" };
+    }
+  }
   if (cond.type !== "BinaryExpression") {
     return null;
   }
-  if (cond.operator !== "===" && cond.operator !== "==") {
-    return null;
-  }
-  if (cond.left.type === "UnaryExpression" && cond.left.operator === "typeof" && cond.left.argument.type === "Identifier" && cond.right.type === "Literal" && typeof cond.right.value === "string") {
-    const mapped = TYPEOF_MAP[cond.right.value];
-    if (mapped) {
-      return { name: cond.left.argument.name, narrowedType: mapped };
+  if (cond.operator === "===" || cond.operator === "==") {
+    if (cond.left.type === "UnaryExpression" && cond.left.operator === "typeof" && cond.left.argument && cond.left.argument.type === "Identifier" && cond.right.type === "Literal" && typeof cond.right.value === "string") {
+      const mapped = TYPEOF_MAP[cond.right.value];
+      if (mapped) {
+        return { name: cond.left.argument.name, narrowedType: mapped, guardKind: "positive" };
+      }
+    }
+    if (cond.right.type === "UnaryExpression" && cond.right.operator === "typeof" && cond.right.argument && cond.right.argument.type === "Identifier" && cond.left.type === "Literal" && typeof cond.left.value === "string") {
+      const mapped = TYPEOF_MAP[cond.left.value];
+      if (mapped) {
+        return { name: cond.right.argument.name, narrowedType: mapped, guardKind: "positive" };
+      }
+    }
+    if (cond.left.type === "Identifier" && cond.right.type === "Literal" && cond.right.value === null) {
+      return { name: cond.left.name, narrowedType: NULL_TYPE, guardKind: "positive" };
+    }
+    if (cond.left.type === "Identifier" && cond.right.type === "Identifier" && cond.right.name === "undefined") {
+      return { name: cond.left.name, narrowedType: UNDEFINED, guardKind: "positive" };
     }
   }
-  if (cond.right.type === "UnaryExpression" && cond.right.operator === "typeof" && cond.right.argument.type === "Identifier" && cond.left.type === "Literal" && typeof cond.left.value === "string") {
-    const mapped = TYPEOF_MAP[cond.left.value];
-    if (mapped) {
-      return { name: cond.right.argument.name, narrowedType: mapped };
+  if (cond.operator === "!==" || cond.operator === "!=") {
+    if (cond.left.type === "UnaryExpression" && cond.left.operator === "typeof" && cond.left.argument && cond.left.argument.type === "Identifier" && cond.right.type === "Literal" && typeof cond.right.value === "string") {
+      const mapped = TYPEOF_MAP[cond.right.value];
+      if (mapped) {
+        return { name: cond.left.argument.name, narrowedType: mapped, guardKind: "negative" };
+      }
     }
+    if (cond.left.type === "Identifier" && cond.right.type === "Literal" && cond.right.value === null) {
+      return { name: cond.left.name, narrowedType: NULL_TYPE, guardKind: "negative" };
+    }
+    if (cond.left.type === "Identifier" && cond.right.type === "Identifier" && cond.right.name === "undefined") {
+      return { name: cond.left.name, narrowedType: UNDEFINED, guardKind: "negative" };
+    }
+  }
+  if (cond.operator === "instanceof" && cond.left.type === "Identifier" && cond.right.type === "Identifier") {
+    return { name: cond.left.name, narrowedType: { kind: "named", name: cond.right.name }, guardKind: "positive" };
   }
   return null;
+}
+function applyGuard(guard, env) {
+  if (guard.guardKind === "positive") {
+    env.define(guard.name, guard.narrowedType);
+  } else {
+    const current = env.lookup(guard.name);
+    if (!current || current.kind === "any") {
+      return;
+    }
+    if (current.kind === "union") {
+      const remaining = current.types.filter(t => !isAssignableTo(t, guard.narrowedType));
+      if (remaining.length === 1) {
+        env.define(guard.name, remaining[0]);
+      } else if (remaining.length > 1) {
+        env.define(guard.name, { kind: "union", types: remaining });
+      }
+    }
+  }
+}
+function applyInverseGuard(guard, env) {
+  if (guard.guardKind === "positive") {
+    const current = env.lookup(guard.name);
+    if (!current || current.kind === "any") {
+      return;
+    }
+    if (current.kind === "union") {
+      const remaining = current.types.filter(t => !isAssignableTo(t, guard.narrowedType));
+      if (remaining.length === 1) {
+        env.define(guard.name, remaining[0]);
+      } else if (remaining.length > 1) {
+        env.define(guard.name, { kind: "union", types: remaining });
+      }
+    }
+  } else {
+    env.define(guard.name, guard.narrowedType);
+  }
+}
+const moduleTypeCache = new Map();
+function extractExportedTypes(stmts) {
+  const exports = new Map();
+  for (const stmt of stmts) {
+    if (stmt.type === "ExportDeclaration") {
+      const decl = stmt.declaration;
+      if (!decl) {
+        continue;
+      }
+      if (decl.type === "FunctionDeclaration") {
+        const paramTypes = decl.params.map(p => annotationToType(p.typeAnnotation));
+        const retType = annotationToType(decl.returnType);
+        exports.set(decl.name.name, { kind: "function", params: paramTypes, returnType: retType });
+      } else if (decl.type === "VariableDeclaration") {
+        if (decl.name) {
+          const t = decl.typeAnnotation ? annotationToType(decl.typeAnnotation) : ANY;
+          exports.set(decl.name.name, t);
+        }
+      } else if (decl.type === "ClassDeclaration") {
+        exports.set(decl.name.name, { kind: "named", name: decl.name.name });
+      } else if (decl.type === "InterfaceDeclaration") {
+        exports.set(decl.name.name, { kind: "named", name: decl.name.name });
+      }
+    }
+    if (stmt.type === "FunctionDeclaration" && stmt.exported) {
+      const paramTypes = stmt.params.map(p => annotationToType(p.typeAnnotation));
+      exports.set(stmt.name.name, { kind: "function", params: paramTypes, returnType: annotationToType(stmt.returnType) });
+    }
+    if (stmt.type === "ClassDeclaration" && stmt.exported) {
+      exports.set(stmt.name.name, { kind: "named", name: stmt.name.name });
+    }
+  }
+  return exports;
+}
+function resolveModuleTypes(source, env) {
+  if (!source || !source.startsWith("./") && !source.startsWith("../")) {
+    return new Map();
+  }
+  if (moduleTypeCache.has(source)) {
+    return moduleTypeCache.get(source);
+  }
+  try {
+    const fs = require("fs");
+    const resolver = require("./resolver.js");
+    const compiler = require("./compile.js");
+    if (!env.filePath) {
+      moduleTypeCache.set(source, new Map());
+      return new Map();
+    }
+    const resolved = resolver.resolveImport(source, env.filePath);
+    if (!resolved || !fs.existsSync(resolved)) {
+      moduleTypeCache.set(source, new Map());
+      return new Map();
+    }
+    const fileSource = fs.readFileSync(resolved, "utf8");
+    const ast = compiler.compileToAST(fileSource);
+    const types = extractExportedTypes(ast.body);
+    moduleTypeCache.set(source, types);
+    return types;
+  } catch (e) {
+    moduleTypeCache.set(source, new Map());
+    return new Map();
+  }
 }
 function checkStatements(stmts, env, diags) {
   for (const stmt of stmts) {
@@ -498,16 +628,51 @@ function checkStatement(stmt, env, diags) {
     }
     case "IfStatement": {
       inferExpression(stmt.condition, env);
-      env.push();
       const guard = extractTypeGuard(stmt.condition);
+      env.push();
       if (guard) {
-        env.define(guard.name, guard.narrowedType);
+        applyGuard(guard, env);
       }
       checkStatements(stmt.consequent, env, diags);
       env.pop();
       if (stmt.alternate) {
         env.push();
+        if (guard) {
+          applyInverseGuard(guard, env);
+        }
         checkStatements(stmt.alternate, env, diags);
+        env.pop();
+      }
+      break;
+    }
+    case "MatchStatement": {
+      const matchExpr = stmt.expression;
+      if (matchExpr) {
+        const exprType = inferExpression(matchExpr, env);
+        const cases = stmt.cases || [];
+        let hasDefault = false;
+        for (const c of cases) {
+          if (c.isDefault) {
+            hasDefault = true;
+          }
+          env.push();
+          checkStatements(c.body || [], env, diags);
+          env.pop();
+        }
+        if (!hasDefault && exprType.kind === "union") {
+          diags.push({ line: getLine(stmt), column: getCol(stmt), message: "Match may not be exhaustive. Consider adding a default case.", severity: "warning" });
+        }
+      }
+      break;
+    }
+    case "SwitchStatement": {
+      if (stmt.discriminant) {
+        inferExpression(stmt.discriminant, env);
+      }
+      const cases = stmt.cases || [];
+      for (const c of cases) {
+        env.push();
+        checkStatements(c.body || c.consequent || [], env, diags);
         env.pop();
       }
       break;
@@ -542,11 +707,13 @@ function checkStatement(stmt, env, diags) {
       break;
     }
     case "ImportDeclaration": {
+      const exportedTypes = resolveModuleTypes(stmt.source, env);
       if (stmt.defaultImport) {
-        env.define(stmt.defaultImport, ANY);
+        env.define(stmt.defaultImport, exportedTypes.get("default") ?? ANY);
       }
       for (const spec of stmt.namedImports) {
-        env.define(spec.alias ?? spec.name, ANY);
+        const resolved = exportedTypes.get(spec.name) ?? ANY;
+        env.define(spec.alias ?? spec.name, resolved);
       }
       break;
     }
@@ -669,9 +836,12 @@ function checkReturnTypes(body, expected, env, diags) {
     }
   }
 }
-export function typeCheck(ast) {
+export function typeCheck(ast, filePath) {
   const diags = [];
   const env = new TypeEnv();
+  if (filePath) {
+    env.filePath = filePath;
+  }
   checkStatements(ast.body, env, diags);
   return diags;
 }

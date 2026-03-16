@@ -11,6 +11,9 @@ import { runTest } from "./commands/test.no"
 import { runNew } from "./commands/new.no"
 import { runGenerate } from "./commands/generate.no"
 import { runDev } from "./commands/dev.no"
+import { runBuildProd } from "./commands/build-prod.no"
+import { runDeploy } from "./commands/deploy.no"
+import { runLint } from "./commands/lint.no"
 
 export async fn main(argv) {
   const args = (argv ?? process.argv).slice(2)
@@ -42,7 +45,17 @@ export async fn main(argv) {
   }
 
   if cmd == "build" {
-    runBuild(args.slice(1))
+    const buildArgs = args.slice(1)
+    if buildArgs.includes("--prod") || buildArgs.includes("--production") {
+      await runBuildProd(buildArgs)
+    } else {
+      runBuild(buildArgs)
+    }
+    return
+  }
+
+  if cmd == "deploy" {
+    await runDeploy(args.slice(1))
     return
   }
 
@@ -71,6 +84,11 @@ export async fn main(argv) {
     return
   }
 
+  if cmd == "lint" {
+    runLint(args.slice(1))
+    return
+  }
+
   if cmd == "generate" || cmd == "g" {
     runGenerate(args.slice(1))
     return
@@ -85,7 +103,7 @@ export async fn main(argv) {
     // Not a valid file — fall through
   }
 
-  const knownCommands = ["build", "run", "repl", "check", "fmt", "help", "version", "init", "new", "test", "generate", "dev"]
+  const knownCommands = ["build", "run", "repl", "check", "fmt", "help", "version", "init", "new", "test", "generate", "dev", "deploy", "lint"]
   const suggestion = suggestClosest(cmd, knownCommands)
   console.error("Unknown command '" + cmd + "'")
   console.error("See " + CYAN + "'nodeon help'" + RESET + ".")
