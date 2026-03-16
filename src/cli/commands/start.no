@@ -1,0 +1,100 @@
+import { GREEN, RED, YELLOW, BOLD, RESET, CYAN } from "../utils/colors.no"
+
+const fs = require("fs")
+const path = require("path")
+const childProcess = require("child_process")
+
+export fn runStart(args) {
+  const cwd = process.cwd()
+
+  // Load config
+  const configPath = path.join(cwd, "nodeon.json")
+  let config = {}
+  if fs.existsSync(configPath) {
+    try {
+      config = JSON.parse(fs.readFileSync(configPath, "utf8"))
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  // Determine entry point
+  let entry = null
+  const candidates = [
+    path.join(cwd, "dist", "server", "index.js"),
+    path.join(cwd, "dist", "index.js"),
+    path.join(cwd, "dist", "main.js")
+  ]
+
+  if config.outDir {
+    const customEntry = path.join(cwd, config.outDir, "index.js")
+    candidates.unshift(customEntry)
+    const customServer = path.join(cwd, config.outDir, "server", "index.js")
+    candidates.unshift(customServer)
+  }
+
+  for candidate in candidates {
+    if fs.existsSync(candidate) {
+      entry = candidate
+      break
+    }
+  }
+
+  if !entry {
+    console.error(RED + "  Error: No production build found." + RESET)
+    console.error("  Run " + CYAN + "'nodeon build --prod'" + RESET + " first.")
+    console.error("")
+    console.error("  Looked for:")
+    for c in candidates {
+      console.error("    - " + path.relative(cwd, c))
+    }
+    process.exit(1)
+  }
+
+  // Set production environment
+  const env = Object.assign({}, process.env, { NODE_ENV: "production" })
+
+  // Parse port from args or config
+  let port = 3000
+  const portIdx = args.indexOf("--port")
+  if portIdx >= 0 && args[portIdx + 1] {
+    port = parseInt(args[portIdx + 1], 10)
+  } else if config.dev && config.dev.web && config.dev.web.port {
+    port = config.dev.web.port
+  }
+  env.PORT = String(port)
+
+  console.log("")
+  console.log(BOLD + "  Nodeon Production Server" + RESET)
+  console.log("")
+  console.log("  " + CYAN + "entry" + RESET + "  " + path.relative(cwd, entry))
+  console.log("  " + CYAN + "port" + RESET + "   " + port)
+  console.log("")
+
+  // Start the server
+  const child = childProcess.spawn("node", [entry], {
+    cwd: cwd,
+    env: env,
+    stdio: "inherit"
+  })
+
+  child.on("error", fn(err) {
+    console.error(RED + "  Failed to start server: " + err.message + RESET)
+    process.exit(1)
+  })
+
+  child.on("exit", fn(code) {
+    if code != 0 {
+      console.error(RED + "  Server exited with code " + code + RESET)
+    }
+    process.exit(code || 0)
+  })
+
+  // Forward signals
+  process.on("SIGINT", fn() {
+    child.kill("SIGINT")
+  })
+  process.on("SIGTERM", fn() {
+    child.kill("SIGTERM")
+  })
+}

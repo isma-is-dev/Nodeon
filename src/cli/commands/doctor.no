@@ -1,0 +1,209 @@
+import { GREEN, RED, YELLOW, BOLD, RESET, CYAN } from "../utils/colors.no"
+
+const fs = require("fs")
+const path = require("path")
+const childProcess = require("child_process")
+
+fn execSync(cmd) {
+  try {
+    const result = childProcess.execSync(cmd, { encoding: "utf8", timeout: 5000 })
+    return result.trim()
+  } catch (e) {
+    return null
+  }
+}
+
+fn checkIcon(ok) {
+  if ok {
+    return GREEN + "[OK]" + RESET
+  }
+  return RED + "[FAIL]" + RESET
+}
+
+fn warnIcon() {
+  return YELLOW + "[WARN]" + RESET
+}
+
+export fn runDoctor(args) {
+  const cwd = process.cwd()
+  console.log("")
+  console.log(BOLD + "  Nodeon Doctor v0.3.0" + RESET)
+  console.log("")
+
+  let issues = 0
+  let warnings = 0
+
+  // 1. Nodeon compiler
+  const nodeonVersion = "0.3.0"
+  console.log("  " + checkIcon(true) + "  Nodeon compiler v" + nodeonVersion)
+
+  // 2. Node.js version
+  const nodeVersion = execSync("node --version")
+  if nodeVersion {
+    const major = parseInt(nodeVersion.replace("v", "").split(".")[0], 10)
+    if major >= 18 {
+      console.log("  " + checkIcon(true) + "  Node.js " + nodeVersion)
+    } else {
+      console.log("  " + checkIcon(false) + "  Node.js " + nodeVersion + " (requires >= 18)")
+      issues = issues + 1
+    }
+  } else {
+    console.log("  " + checkIcon(false) + "  Node.js not found")
+    issues = issues + 1
+  }
+
+  // 3. npm version
+  const npmVersion = execSync("npm --version")
+  if npmVersion {
+    console.log("  " + checkIcon(true) + "  npm v" + npmVersion)
+  } else {
+    console.log("  " + warnIcon() + "  npm not found")
+    warnings = warnings + 1
+  }
+
+  // 4. Docker
+  const dockerVersion = execSync("docker --version")
+  if dockerVersion {
+    const dv = dockerVersion.replace("Docker version ", "").split(",")[0]
+    console.log("  " + checkIcon(true) + "  Docker v" + dv)
+  } else {
+    console.log("  " + warnIcon() + "  Docker not found (optional, needed for deploy)")
+    warnings = warnings + 1
+  }
+
+  // 5. Git
+  const gitVersion = execSync("git --version")
+  if gitVersion {
+    const gv = gitVersion.replace("git version ", "")
+    console.log("  " + checkIcon(true) + "  Git v" + gv)
+  } else {
+    console.log("  " + warnIcon() + "  Git not found")
+    warnings = warnings + 1
+  }
+
+  // 6. nodeon.json
+  const configPath = path.join(cwd, "nodeon.json")
+  if fs.existsSync(configPath) {
+    console.log("  " + checkIcon(true) + "  nodeon.json found")
+
+    // Validate JSON
+    try {
+      const config = JSON.parse(fs.readFileSync(configPath, "utf8"))
+      if !config.name {
+        console.log("  " + warnIcon() + "  nodeon.json missing 'name' field")
+        warnings = warnings + 1
+      }
+    } catch (e) {
+      console.log("  " + checkIcon(false) + "  nodeon.json has invalid JSON")
+      issues = issues + 1
+    }
+  } else {
+    console.log("  " + warnIcon() + "  nodeon.json not found (run 'nodeon init')")
+    warnings = warnings + 1
+  }
+
+  // 7. package.json
+  const pkgPath = path.join(cwd, "package.json")
+  if fs.existsSync(pkgPath) {
+    console.log("  " + checkIcon(true) + "  package.json found")
+  } else {
+    console.log("  " + warnIcon() + "  package.json not found")
+    warnings = warnings + 1
+  }
+
+  // 8. node_modules
+  const nmPath = path.join(cwd, "node_modules")
+  if fs.existsSync(nmPath) {
+    console.log("  " + checkIcon(true) + "  Dependencies installed (node_modules/)")
+  } else {
+    console.log("  " + checkIcon(false) + "  node_modules/ not found (run 'npm install')")
+    issues = issues + 1
+  }
+
+  // 9. .env file
+  const envPath = path.join(cwd, ".env")
+  if fs.existsSync(envPath) {
+    console.log("  " + checkIcon(true) + "  .env file found")
+  } else {
+    console.log("  " + warnIcon() + "  .env file not found (optional)")
+    warnings = warnings + 1
+  }
+
+  // 10. .env.local
+  const envLocalPath = path.join(cwd, ".env.local")
+  if fs.existsSync(envLocalPath) {
+    console.log("  " + checkIcon(true) + "  .env.local file found")
+  } else {
+    console.log("  " + warnIcon() + "  .env.local not found (optional)")
+    warnings = warnings + 1
+  }
+
+  // 11. dist directory
+  const distPath = path.join(cwd, "dist")
+  if fs.existsSync(distPath) {
+    console.log("  " + checkIcon(true) + "  dist/ directory found (built)")
+  } else {
+    console.log("  " + warnIcon() + "  dist/ not found (run 'nodeon build')")
+    warnings = warnings + 1
+  }
+
+  // 12. Source files
+  let noFiles = 0
+  fn countNoFiles(dir) {
+    if !fs.existsSync(dir) {
+      return
+    }
+    const entries = fs.readdirSync(dir, { withFileTypes: true })
+    for entry in entries {
+      const fullPath = path.join(dir, entry.name)
+      if entry.isDirectory() && entry.name != "node_modules" && entry.name != "dist" && entry.name != ".git" {
+        countNoFiles(fullPath)
+      } else if entry.isFile() && entry.name.endsWith(".no") {
+        noFiles = noFiles + 1
+      }
+    }
+  }
+  const srcDir = path.join(cwd, "src")
+  if fs.existsSync(srcDir) {
+    countNoFiles(srcDir)
+  }
+  if noFiles > 0 {
+    console.log("  " + checkIcon(true) + "  Found " + noFiles + " .no source files in src/")
+  } else {
+    console.log("  " + warnIcon() + "  No .no files found in src/")
+    warnings = warnings + 1
+  }
+
+  // 13. Database check (if configured)
+  if fs.existsSync(configPath) {
+    try {
+      const config = JSON.parse(fs.readFileSync(configPath, "utf8"))
+      if config.db {
+        const dbUrl = config.db.url || process.env.DATABASE_URL
+        if dbUrl {
+          console.log("  " + checkIcon(true) + "  Database configured: " + config.db.driver)
+        } else {
+          console.log("  " + warnIcon() + "  Database configured but DATABASE_URL not set")
+          warnings = warnings + 1
+        }
+      }
+    } catch (e) {
+      // already reported above
+    }
+  }
+
+  // Summary
+  console.log("")
+  if issues == 0 && warnings == 0 {
+    console.log("  " + GREEN + BOLD + "Everything looks good!" + RESET)
+  } else if issues == 0 {
+    console.log("  " + GREEN + "No issues found." + RESET + " " + YELLOW + warnings + " warning(s)." + RESET)
+  } else {
+    console.log("  " + RED + issues + " issue(s)" + RESET + ", " + YELLOW + warnings + " warning(s)." + RESET)
+  }
+  console.log("")
+
+  if issues > 0 {
+    process.exit(1)
+  }
+}

@@ -13,121 +13,212 @@ function loadConfig() {
     return {};
   }
 }
-const exportedNames = [];
-const exportRegex = /^export\s+(function|class|const|let)\s+(\w+)/gm;
-const origJs = result.js;
-let exportMatch = exportRegex.exec(origJs);
-while (exportMatch !== null) {
-  exportedNames.push(exportMatch[2]);
-  exportMatch = exportRegex.exec(origJs);
-}
-if (exportedNames.length > 0) {
-  let serverCode = serverCode + "\n" + exportedNames.map(n => "module.exports." + n + " = " + n + ";").join("\n");
-}
-fs.writeFileSync(jsOutPath, serverCode, "utf8");
-if (sourceMap && result.map) {
-  fs.writeFileSync(jsOutPath + ".map", result.map, "utf8");
-}
-stats.compiled = stats.compiled + 1;
-console.log("  " + GREEN + "✓" + RESET + " " + stats.compiled + " files compiled");
-if (fs.existsSync(pagesDir)) {
+export async function runBuildProd(args) {
+  const startTime = Date.now();
+  const config = loadConfig();
+  const projectDir = process.cwd();
+  const minify = args.includes("--minify") || args.includes("-min") || (config.minify ?? true);
+  const sourceMap = args.includes("--map") || (config.sourceMap ?? false);
+  const outDir = path.resolve(projectDir, config.outDir ?? "dist");
+  const srcDir = path.resolve(projectDir, config.srcDir ?? "src");
+  const pagesDir = path.resolve(srcDir, "pages");
+  const publicDir = path.resolve(projectDir, "public");
   console.log("");
-  console.log("  " + CYAN + "Pre-rendering pages..." + RESET);
-  const pageFiles = walkFiles(pagesDir, ".no");
-  for (const file of pageFiles) {
-    const relPath = path.relative(pagesDir, file);
-    const routePath = fileToRoute(relPath);
-    if (routePath.includes(":")) {
-      console.log("  " + YELLOW + "⊘" + RESET + " " + routePath + " " + DIM + "(dynamic — skipped)" + RESET);
-      continue;
-    }
-    if (relPath.startsWith("api" + path.sep) || relPath.startsWith("api/")) {
-      console.log("  " + YELLOW + "⊘" + RESET + " " + routePath + " " + DIM + "(API — server only)" + RESET);
-      continue;
-    }
+  console.log("  " + CYAN + BOLD + "⚡ Nodeon production build" + RESET);
+  console.log("");
+  if (fs.existsSync(outDir)) {
+    fs.rmSync(outDir, { recursive: true });
+  }
+  fs.mkdirSync(outDir, { recursive: true });
+  let stats = { compiled: 0, pages: 0, islands: 0, errors: 0 };
+  if (fs.existsSync(publicDir)) {
+    copyDir(publicDir, outDir);
+    console.log("  " + DIM + "✓ Copied public/ assets" + RESET);
+  }
+  console.log("");
+  console.log("  " + CYAN + "Compiling sources..." + RESET);
+  const compiler = require("../../compiler/compile.js");
+  const serverOutDir = path.join(outDir, "server");
+  fs.mkdirSync(serverOutDir, { recursive: true });
+  const noFiles = walkFiles(srcDir, ".no");
+  for (const file of noFiles) {
     try {
       const source = fs.readFileSync(file, "utf8");
-      const result = compiler.compile(source, { minify: false });
-      serverCode = result.js;
-      serverCode = serverCode.replace(/^import\s+.*$/gm, "");
-      serverCode = serverCode.replace(/^export\s+/gm, "");
-      const sandbox = { module: { exports: {} }, exports: {}, require: require, console: console, process: process, Buffer: Buffer, setTimeout: setTimeout };
-      sandbox.module.exports = sandbox.exports;
-      try {
-        vm.runInNewContext(serverCode, sandbox, { timeout: 5000 });
-      } catch (evalErr) {
-        console.log("  " + YELLOW + "⊘" + RESET + " " + routePath + " " + DIM + "(cannot pre-render: " + evalErr.message + ")" + RESET);
-        continue;
+      const result = compiler.compile(source, { minify: minify, sourceMap: sourceMap });
+      const relPath = path.relative(srcDir, file);
+      const jsRelPath = relPath.replace(/\.no$/, ".js");
+      const jsOutPath = path.join(serverOutDir, jsRelPath);
+      fs.mkdirSync(path.dirname(jsOutPath), { recursive: true });
+      let serverCode = result.js;
+      serverCode = serverCode.replace(/^import\s+\{([^}]+)\}\s+from\s+["']([^"']+)["'];?/gm, (_, imports, mod) => {
+        const names = imports.split(",").map(n => n.trim());
+        return `const { ` + names.join(", ") + " } = require(\"" + mod.replace(/\.no$/, ".js") + "\");";
+      });
+      serverCode = serverCode.replace(/^import\s+(\w+)\s+from\s+["']([^"']+)["'];?/gm, (_, name, mod) => {
+        return "const " + name + " = require(\"" + mod.replace(/\.no$/, ".js") + "\");";
+      });
+      serverCode = serverCode.replace(/^export\s+\{([^}]+)\};?/gm, (_, exports) => {
+        const names = exports.split(",").map(n => n.trim());
+        return names.map(n => "module.exports." + n + " = " + n + ";").join("\n");
+      });
+      serverCode = serverCode.replace(/^export\s+(function|class|const|let)\s+/gm, (_, kw) => {
+        return kw + " ";
+      });
+      const exportedNames = [];
+      const exportRegex = /^export\s+(function|class|const|let)\s+(\w+)/gm;
+      const origJs = result.js;
+      let exportMatch = exportRegex.exec(origJs);
+      while (exportMatch !== null) {
+        exportedNames.push(exportMatch[2]);
+        exportMatch = exportRegex.exec(origJs);
       }
-      const mod = sandbox.module.exports;
-      let html = "";
-      if (typeof mod.template === "function") {
-        html = mod.template();
-      } else if (typeof mod.render === "function") {
-        html = mod.render();
-      } else if (typeof mod.default === "function") {
-        const defaultExport = mod.default;
-        if (typeof defaultExport.prototype?.template === "function") {
-          const instance = new defaultExport();
-          html = instance.template();
-        } else {
-          html = defaultExport();
-        }
+      if (exportedNames.length > 0) {
+        serverCode = serverCode + "\n" + exportedNames.map(n => "module.exports." + n + " = " + n + ";").join("\n");
       }
-      if (!html || typeof html !== "string") {
-        console.log("  " + YELLOW + "⊘" + RESET + " " + routePath + " " + DIM + "(no template output)" + RESET);
-        continue;
+      fs.writeFileSync(jsOutPath, serverCode, "utf8");
+      if (sourceMap && result.map) {
+        fs.writeFileSync(jsOutPath + ".map", result.map, "utf8");
       }
-      const title = mod.title ?? mod.meta?.title ?? "Nodeon App";
-      const fullHtml = wrapHtml(html, title, config);
-      let outPath = "";
-      if (routePath === "/") {
-        outPath = path.join(outDir, "index.html");
-      } else {
-        outPath = path.join(outDir, routePath, "index.html");
-      }
-      fs.mkdirSync(path.dirname(outPath), { recursive: true });
-      fs.writeFileSync(outPath, fullHtml, "utf8");
-      const sizeRaw = fullHtml.length / 1024;
-      const sizeKb = sizeRaw.toFixed(1);
-      console.log("  " + GREEN + "✓" + RESET + " " + routePath + " → " + path.relative(projectDir, outPath) + " (" + sizeKb + "kb)");
-      stats.pages = stats.pages + 1;
+      stats.compiled = stats.compiled + 1;
     } catch (err) {
-      console.log("  " + RED + "✗" + RESET + " " + routePath + ": " + err.message);
+      console.log("  " + RED + "✗" + RESET + " " + path.relative(srcDir, file) + ": " + err.message);
       stats.errors = stats.errors + 1;
     }
   }
-}
-const islandsDir = path.join(srcDir, "islands");
-const componentsDir = path.join(srcDir, "components");
-let islandFiles = [];
-if (fs.existsSync(islandsDir)) {
-  islandFiles = walkFiles(islandsDir, ".no").concat(walkFiles(islandsDir, ".js"));
-}
-if (fs.existsSync(componentsDir)) {
-  const componentFiles = walkFiles(componentsDir, ".no").concat(walkFiles(componentsDir, ".js"));
-  for (const file of componentFiles) {
-    const content = fs.readFileSync(file, "utf8");
-    if (content.includes("@island") || content.includes("island(")) {
-      islandFiles.push(file);
+  console.log("  " + GREEN + "✓" + RESET + " " + stats.compiled + " files compiled");
+  if (fs.existsSync(pagesDir)) {
+    console.log("");
+    console.log("  " + CYAN + "Pre-rendering pages..." + RESET);
+    const pageFiles = walkFiles(pagesDir, ".no");
+    for (const file of pageFiles) {
+      const relPath = path.relative(pagesDir, file);
+      const routePath = fileToRoute(relPath);
+      if (routePath.includes(":")) {
+        console.log("  " + YELLOW + "⊘" + RESET + " " + routePath + " " + DIM + "(dynamic — skipped)" + RESET);
+        continue;
+      }
+      if (relPath.startsWith("api" + path.sep) || relPath.startsWith("api/")) {
+        console.log("  " + YELLOW + "⊘" + RESET + " " + routePath + " " + DIM + "(API — server only)" + RESET);
+        continue;
+      }
+      try {
+        const source = fs.readFileSync(file, "utf8");
+        const result = compiler.compile(source, { minify: false });
+        let serverCode = result.js;
+        serverCode = serverCode.replace(/^import\s+.*$/gm, "");
+        serverCode = serverCode.replace(/^export\s+/gm, "");
+        const sandbox = { module: { exports: {} }, exports: {}, require: require, console: console, process: process, Buffer: Buffer, setTimeout: setTimeout };
+        sandbox.module.exports = sandbox.exports;
+        try {
+          vm.runInNewContext(serverCode, sandbox, { timeout: 5000 });
+        } catch (evalErr) {
+          console.log("  " + YELLOW + "⊘" + RESET + " " + routePath + " " + DIM + "(cannot pre-render: " + evalErr.message + ")" + RESET);
+          continue;
+        }
+        const mod = sandbox.module.exports;
+        let html = "";
+        if (typeof mod.template === "function") {
+          html = mod.template();
+        } else if (typeof mod.render === "function") {
+          html = mod.render();
+        } else if (typeof mod.default === "function") {
+          const defaultExport = mod.default;
+          if (typeof defaultExport.prototype?.template === "function") {
+            const instance = new defaultExport();
+            html = instance.template();
+          } else {
+            html = defaultExport();
+          }
+        }
+        if (!html || typeof html !== "string") {
+          console.log("  " + YELLOW + "⊘" + RESET + " " + routePath + " " + DIM + "(no template output)" + RESET);
+          continue;
+        }
+        const title = mod.title ?? mod.meta?.title ?? "Nodeon App";
+        const fullHtml = wrapHtml(html, title, config);
+        let outPath = "";
+        if (routePath === "/") {
+          outPath = path.join(outDir, "index.html");
+        } else {
+          outPath = path.join(outDir, routePath, "index.html");
+        }
+        fs.mkdirSync(path.dirname(outPath), { recursive: true });
+        fs.writeFileSync(outPath, fullHtml, "utf8");
+        const sizeRaw = fullHtml.length / 1024;
+        const sizeKb = sizeRaw.toFixed(1);
+        console.log("  " + GREEN + "✓" + RESET + " " + routePath + " → " + path.relative(projectDir, outPath) + " (" + sizeKb + "kb)");
+        stats.pages = stats.pages + 1;
+      } catch (err) {
+        console.log("  " + RED + "✗" + RESET + " " + routePath + ": " + err.message);
+        stats.errors = stats.errors + 1;
+      }
     }
   }
-}
-console.log("");
-console.log("  " + CYAN + "Generating server entry..." + RESET);
-const serverEntry = generateServerEntry(config, serverOutDir, outDir);
-fs.writeFileSync(path.join(outDir, "server.js"), serverEntry, "utf8");
-console.log("  " + GREEN + "✓" + RESET + " server.js");
-const elapsed = Date.now() - startTime;
-const elapsedRaw = elapsed / 1000;
-const elapsedSec = elapsedRaw.toFixed(2);
-console.log("");
-console.log("  " + BOLD + GREEN + "Build complete" + RESET + " in " + elapsedSec + "s");
-console.log("  " + DIM + stats.compiled + " compiled, " + stats.pages + " pages, " + stats.islands + " islands" + stats.errors > 0 ? ", " + RED + stats.errors + " errors" + RESET : "" + RESET);
-console.log("  " + DIM + "Output: " + path.relative(projectDir, outDir) + "/" + RESET);
-console.log("");
-if (stats.errors > 0) {
-  process.exit(1);
+  const islandsDir = path.join(srcDir, "islands");
+  const componentsDir = path.join(srcDir, "components");
+  let islandFiles = [];
+  if (fs.existsSync(islandsDir)) {
+    islandFiles = walkFiles(islandsDir, ".no").concat(walkFiles(islandsDir, ".js"));
+  }
+  if (fs.existsSync(componentsDir)) {
+    const componentFiles = walkFiles(componentsDir, ".no").concat(walkFiles(componentsDir, ".js"));
+    for (const file of componentFiles) {
+      const content = fs.readFileSync(file, "utf8");
+      if (content.includes("@island") || content.includes("island(")) {
+        islandFiles.push(file);
+      }
+    }
+  }
+  if (islandFiles.length > 0) {
+    console.log("");
+    console.log("  " + CYAN + "Bundling islands..." + RESET);
+    const islandOutDir = path.join(outDir, "_nova", "islands");
+    fs.mkdirSync(islandOutDir, { recursive: true });
+    for (const file of islandFiles) {
+      try {
+        const name = path.basename(file, path.extname(file));
+        let jsContent = "";
+        if (file.endsWith(".no")) {
+          const source = fs.readFileSync(file, "utf8");
+          jsContent = compiler.compile(source, { minify: minify }).js;
+        } else {
+          jsContent = fs.readFileSync(file, "utf8");
+        }
+        const outFile = path.join(islandOutDir, name + ".js");
+        fs.writeFileSync(outFile, jsContent, "utf8");
+        const sizeRaw = jsContent.length / 1024;
+        const sizeKb = sizeRaw.toFixed(1);
+        console.log("  " + GREEN + "✓" + RESET + " " + name + ".js (" + sizeKb + "kb)");
+        stats.islands = stats.islands + 1;
+      } catch (err) {
+        console.log("  " + RED + "✗" + RESET + " " + path.basename(file) + ": " + err.message);
+        stats.errors = stats.errors + 1;
+      }
+    }
+    const manifest = islandFiles.map(file => {
+      const name = path.basename(file, path.extname(file));
+      return "  \"" + name + "\": () => import(\"/_nova/islands/" + name + ".js\")";
+    });
+    const manifestContent = `export const islandModules = {
+` + manifest.join(",\n") + "\n};\n";
+    fs.writeFileSync(path.join(islandOutDir, "manifest.js"), manifestContent, "utf8");
+  }
+  console.log("");
+  console.log("  " + CYAN + "Generating server entry..." + RESET);
+  const serverEntry = generateServerEntry(config, serverOutDir, outDir);
+  fs.writeFileSync(path.join(outDir, "server.js"), serverEntry, "utf8");
+  console.log("  " + GREEN + "✓" + RESET + " server.js");
+  const elapsed = Date.now() - startTime;
+  const elapsedRaw = elapsed / 1000;
+  const elapsedSec = elapsedRaw.toFixed(2);
+  console.log("");
+  console.log("  " + BOLD + GREEN + "Build complete" + RESET + " in " + elapsedSec + "s");
+  console.log("  " + DIM + stats.compiled + " compiled, " + stats.pages + " pages, " + stats.islands + " islands" + stats.errors > 0 ? ", " + RED + stats.errors + " errors" + RESET : "" + RESET);
+  console.log("  " + DIM + "Output: " + path.relative(projectDir, outDir) + "/" + RESET);
+  console.log("");
+  if (stats.errors > 0) {
+    process.exit(1);
+  }
 }
 function generateServerEntry(config, serverOutDir, outDir) {
   const port = config.port ?? 3000;

@@ -9,11 +9,13 @@ Usage: nodeon <command> [options]
 Project:
   new <name>                         Create a new project
   init [name]                        Initialize in existing directory
-  dev [--port 3000]                   Start development server with live reload
+  dev [--port 3000]                  Start development server with live reload
+  start [--port 3000]               Start production server
+  eject [dir] [--force]             Export as plain JS project
 
 Compile:
   build [options] <input> [output]   Compile .no to .js
-  build --prod                        Production build (bundle + pre-render)
+  build --prod                       Production build (bundle + pre-render)
   run <input>                        Compile and execute
   check <input>                      Type-check without compiling
 
@@ -23,8 +25,16 @@ Deploy:
 
 Code Quality:
   test [pattern]                     Run .test.no files
+  lint [options]                     Lint .no files (7 built-in rules)
   fmt <input>                        Format .no source code
   repl                               Interactive REPL
+
+Database:
+  db migrate                         Run pending migrations
+  db rollback [N]                    Rollback last N migrations
+  db seed                            Run seed files
+  db reset                           Drop + migrate + seed
+  db status                          Show migration status
 
 Generate:
   generate entity <name>             Model + migration + service + API + tests
@@ -40,6 +50,7 @@ Generate:
 Info:
   help                               Show this help
   version                            Show version
+  doctor                             Check environment health
 
 Build Options:
   -min, --minify    Minified output
@@ -54,7 +65,9 @@ Examples:
   nodeon test                        Run all tests
   nodeon deploy docker               Generate Dockerfile + docker-compose
   nodeon g entity user               Generate user entity + CRUD
-  nodeon g module blog               Generate complete blog module`
+  nodeon g module blog               Generate complete blog module
+  nodeon db migrate                  Run pending database migrations
+  nodeon doctor                      Check dev environment health`
 
 export fn printHelp() {
   console.log(helpText)

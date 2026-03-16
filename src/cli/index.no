@@ -14,6 +14,10 @@ import { runDev } from "./commands/dev.no"
 import { runBuildProd } from "./commands/build-prod.no"
 import { runDeploy } from "./commands/deploy.no"
 import { runLint } from "./commands/lint.no"
+import { runDoctor } from "./commands/doctor.no"
+import { runDb } from "./commands/db.no"
+import { runStart } from "./commands/start.no"
+import { runEject } from "./commands/eject.no"
 
 export async fn main(argv) {
   const args = (argv ?? process.argv).slice(2)
@@ -94,6 +98,26 @@ export async fn main(argv) {
     return
   }
 
+  if cmd == "doctor" {
+    runDoctor(args.slice(1))
+    return
+  }
+
+  if cmd == "db" {
+    runDb(args.slice(1))
+    return
+  }
+
+  if cmd == "start" {
+    runStart(args.slice(1))
+    return
+  }
+
+  if cmd == "eject" {
+    runEject(args.slice(1))
+    return
+  }
+
   // Try to run as a file
   try {
     const resolved = resolveNodeonFile(cmd)
@@ -103,7 +127,7 @@ export async fn main(argv) {
     // Not a valid file — fall through
   }
 
-  const knownCommands = ["build", "run", "repl", "check", "fmt", "help", "version", "init", "new", "test", "generate", "dev", "deploy", "lint"]
+  const knownCommands = ["build", "run", "repl", "check", "fmt", "help", "version", "init", "new", "test", "generate", "dev", "deploy", "lint", "doctor", "db", "eject", "start"]
   const suggestion = suggestClosest(cmd, knownCommands)
   console.error("Unknown command '" + cmd + "'")
   console.error("See " + CYAN + "'nodeon help'" + RESET + ".")
