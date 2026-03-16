@@ -21,6 +21,6 @@
     "moduleResolution": "node",
     "types": ["node"]
   },
-  "include": ["src/**/*", "cli/**/*", "examples/**/*"],
+  "include": ["src/**/*", "cli/**/*", "examples/**/*", "tests/**/*"],
   "exclude": ["node_modules", "dist"]
 }

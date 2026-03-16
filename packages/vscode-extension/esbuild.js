@@ -11,13 +11,14 @@ const rootDir = path.resolve(__dirname, "../..");
 // Resolves @lexer/*, @parser/*, etc. used by the language-server source
 // so esbuild can bundle everything into a single dist/server.js file.
 
+// Point aliases to the self-hosted compiled JS output under dist.
 const aliases = {
-  "@language": path.join(rootDir, "src", "language"),
-  "@lexer":    path.join(rootDir, "src", "compiler", "lexer"),
-  "@parser":   path.join(rootDir, "src", "compiler", "parser"),
-  "@compiler": path.join(rootDir, "src", "compiler"),
-  "@ast":      path.join(rootDir, "src", "compiler", "ast"),
-  "@src":      path.join(rootDir, "src"),
+  "@language": path.join(rootDir, "dist", "language"),
+  "@lexer":    path.join(rootDir, "dist", "compiler", "lexer"),
+  "@parser":   path.join(rootDir, "dist", "compiler", "parser"),
+  "@compiler": path.join(rootDir, "dist", "compiler"),
+  "@ast":      path.join(rootDir, "dist", "compiler", "ast"),
+  "@src":      path.join(rootDir, "dist"),
 };
 
 /**

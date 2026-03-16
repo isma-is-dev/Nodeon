@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Build script: compiles all src-no .no files to dist-no .js files
+// Build script: compiles all src .no files to dist .js files
 // using the TypeScript compiler as the bootstrap compiler.
 const fs = require("fs");
 const path = require("path");
@@ -7,10 +7,10 @@ const path = require("path");
 // Bootstrap: use the TS compiler to compile .no files
 require("ts-node").register({ transpileOnly: true });
 require("tsconfig-paths").register();
-const { compile } = require("../src/compiler/compile");
+const { compile } = require("../bootstrap/compiler/compile");
 
-const SRC_DIR = path.resolve(__dirname, "../src-no");
-const OUT_DIR = path.resolve(__dirname, "../dist-no");
+const SRC_DIR = path.resolve(__dirname, "../src");
+const OUT_DIR = path.resolve(__dirname, "../dist");
 
 function findNoFiles(dir) {
   const results = [];

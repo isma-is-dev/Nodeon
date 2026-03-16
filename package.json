@@ -2,7 +2,7 @@
   "name": "nodeon",
   "version": "0.1.0",
   "description": "Nodeon programming language — compiles to JavaScript with optional typing and clean syntax",
-  "main": "dist-no/nodeon-compiler.cjs",
+  "main": "dist/nodeon-compiler.cjs",
   "workspaces": [
     "packages/*"
   ],

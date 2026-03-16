@@ -3,6 +3,15 @@ import { RED, BOLD, RESET, DIM, CYAN } from "./colors.no"
 const vm = require('vm')
 const fs = require('fs')
 const path = require('path')
+const ReferenceError = globalThis.ReferenceError
+const URIError = globalThis.URIError
+const EvalError = globalThis.EvalError
+const URL = globalThis.URL
+const URLSearchParams = globalThis.URLSearchParams
+const TextEncoder = globalThis.TextEncoder
+const TextDecoder = globalThis.TextDecoder
+const queueMicrotask = globalThis.queueMicrotask
+const Intl = globalThis.Intl
 
 const sandboxGlobals = {
   console: console,
@@ -55,6 +64,10 @@ const sandboxGlobals = {
 }
 
 export fn runInSandbox(jsCode, filename) {
+  // vm.runInNewContext no soporta import/export de nivel superior.
+  // Transpilado rápido a CommonJS para ejecución en CLI.
+  const cjsCode = esmToCjs(jsCode)
+
   const absFile = path.resolve(process.cwd(), filename)
   try {
     const ctx = Object.assign({}, sandboxGlobals, {
@@ -63,7 +76,7 @@ export fn runInSandbox(jsCode, filename) {
       module: { exports: {} },
       exports: {},
     })
-    vm.runInNewContext(jsCode, ctx, { filename: filename })
+    vm.runInNewContext(cjsCode, ctx, { filename: filename })
   } catch (err) {
     const name = err?.name || "RuntimeError"
     const message = err?.message || String(err)
@@ -94,4 +107,55 @@ export fn runInSandbox(jsCode, filename) {
     }
     process.exit(1)
   }
+}
+
+fn esmToCjs(code) {
+  let out = code
+
+  // import default
+  out = out.replace(~/^[\t ]*import\s+([A-Za-z_$][\w$]*)\s+from\s+["']([^"']+)["'];?/gm,
+    (m, def, src) => `const ${def} = require(${JSON.stringify(src)});`)
+
+  // import * as ns from "x"
+  out = out.replace(~/^[\t ]*import\s+\*\s+as\s+([A-Za-z_$][\w$]*)\s+from\s+["']([^"']+)["'];?/gm,
+    (m, ns, src) => `const ${ns} = require(${JSON.stringify(src)});`)
+
+  // import { a, b as c } from "x"
+  out = out.replace(~/^[\t ]*import\s+{\s*([^}]+)\s*}\s+from\s+["']([^"']+)["'];?/gm,
+    (m, names, src) => {
+      const mapped = names.split(",").map((n) => {
+        const [orig, alias] = n.trim().split(/\s+as\s+/i)
+        return alias ? `${orig}: ${alias}` : orig
+      }).filter(Boolean).join(", ")
+      return `const { ${mapped} } = require(${JSON.stringify(src)});`
+    })
+
+  // import default, { named } from "x"
+  out = out.replace(~/^[\t ]*import\s+([A-Za-z_$][\w$]*)\s*,\s*{\s*([^}]+)\s*}\s+from\s+["']([^"']+)["'];?/gm,
+    (m, def, names, src) => {
+      const mapped = names.split(",").map((n) => {
+        const [orig, alias] = n.trim().split(/\s+as\s+/i)
+        return alias ? `${orig}: ${alias}` : orig
+      }).filter(Boolean).join(", ")
+      const tmp = `__mod_${Math.random().toString(36).slice(2)}`
+      return `const ${tmp} = require(${JSON.stringify(src)});\nconst ${def} = ${tmp}.default ?? ${tmp};\nconst { ${mapped} } = ${tmp};`
+    })
+
+  // export default expression
+  out = out.replace(~/^[\t ]*export\s+default\s+/gm, "module.exports = ")
+
+  // export const/let/var/function/class
+  out = out.replace(~/^[\t ]*export\s+(const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/gm,
+    (m, kind, name) => `${kind} ${name}\nexports.${name} = ${name}`)
+
+  // export { a, b as c }
+  out = out.replace(~/^[\t ]*export\s+{\s*([^}]+)\s*};?/gm,
+    (m, names) => names.split(",").map((n) => {
+      const [orig, alias] = n.trim().split(/\s+as\s+/i)
+      const target = alias || orig
+      const source = orig
+      return `exports.${target} = ${source};`
+    }).join("\n"))
+
+  return out
 }

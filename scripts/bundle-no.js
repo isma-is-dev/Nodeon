@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// Bundle the compiled dist-no modules into a single CJS file for testing.
+// Bundle the compiled dist modules into a single CJS file for testing.
 const { build } = require("esbuild");
 const path = require("path");
 
-const entry = path.resolve(__dirname, "../dist-no/compiler/compile.js");
-const outFile = path.resolve(__dirname, "../dist-no/nodeon-compiler.cjs");
+const entry = path.resolve(__dirname, "../dist/compiler/compile.js");
+const outFile = path.resolve(__dirname, "../dist/nodeon-compiler.cjs");
 
 build({
   entryPoints: [entry],

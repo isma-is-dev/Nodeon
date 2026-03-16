@@ -1,12 +1,12 @@
+import mongodb from "mongodb"
+
 fn greet(name) {
     print("Hello {name}")
 }
 
 greet("Ismael")
 
-fs = require("fs")
 
-console.log(fs)
 
 x: string | number = 'asdf'
 x = 3

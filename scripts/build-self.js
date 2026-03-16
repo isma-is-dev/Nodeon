@@ -1,21 +1,21 @@
 #!/usr/bin/env node
-// Self-hosted build: compiles all src-no .no files using the SELF-HOSTED
-// compiler bundle (dist-no/nodeon-compiler.cjs) instead of the TypeScript
+// Self-hosted build: compiles all src .no files using the SELF-HOSTED
+// compiler bundle (dist/nodeon-compiler.cjs) instead of the TypeScript
 // compiler. This closes the bootstrap loop — Nodeon compiles itself.
 const fs = require("fs");
 const path = require("path");
 
-const BUNDLE = path.resolve(__dirname, "../dist-no/nodeon-compiler.cjs");
+const BUNDLE = path.resolve(__dirname, "../dist/nodeon-compiler.cjs");
 if (!fs.existsSync(BUNDLE)) {
-  console.error("Error: dist-no/nodeon-compiler.cjs not found.");
+  console.error("Error: dist/nodeon-compiler.cjs not found.");
   console.error("Run 'node scripts/build-no.js && node scripts/bundle-no.js' first to bootstrap.");
   process.exit(1);
 }
 
 const { compile } = require(BUNDLE);
 
-const SRC_DIR = path.resolve(__dirname, "../src-no");
-const OUT_DIR = path.resolve(__dirname, "../dist-no");
+const SRC_DIR = path.resolve(__dirname, "../src");
+const OUT_DIR = path.resolve(__dirname, "../dist");
 
 function findNoFiles(dir) {
   const results = [];

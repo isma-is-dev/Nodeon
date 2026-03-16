@@ -2,7 +2,7 @@
 // Unified build script for Nodeon compiler.
 //
 // Strategy:
-//   1. If dist-no/nodeon-compiler.cjs exists → use self-hosted compiler (fast, no TS deps)
+//   1. If dist/nodeon-compiler.cjs exists → use self-hosted compiler (fast, no TS deps)
 //   2. Otherwise → bootstrap from TypeScript compiler (requires ts-node)
 //
 // Usage:
@@ -15,8 +15,8 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-const SRC_DIR = path.resolve(__dirname, "../src-no");
-const OUT_DIR = path.resolve(__dirname, "../dist-no");
+const SRC_DIR = path.resolve(__dirname, "../src");
+const OUT_DIR = path.resolve(__dirname, "../dist");
 const BUNDLE_PATH = path.resolve(OUT_DIR, "nodeon-compiler.cjs");
 const CLI_BUNDLE_PATH = path.resolve(OUT_DIR, "nodeon-cli.cjs");
 const ENTRY_JS = path.resolve(OUT_DIR, "compiler/compile.js");
@@ -44,10 +44,20 @@ function loadCompiler(mode) {
   if (mode === "self") {
     return require(BUNDLE_PATH);
   }
-  // Bootstrap: load TS compiler via ts-node
+  // Bootstrap: load TS compiler via ts-node with alias mapping to src-ts-deprecated
   require("ts-node").register({ transpileOnly: true });
-  require("tsconfig-paths").register();
-  return require("../src/compiler/compile");
+  require("tsconfig-paths").register({
+    baseUrl: path.resolve(__dirname, ".."),
+    paths: {
+      "@language/*": ["src-ts-deprecated/language/*"],
+      "@lexer/*": ["src-ts-deprecated/compiler/lexer/*"],
+      "@parser/*": ["src-ts-deprecated/compiler/parser/*"],
+      "@compiler/*": ["src-ts-deprecated/compiler/*"],
+      "@ast/*": ["src-ts-deprecated/compiler/ast/*"],
+      "@src/*": ["src-ts-deprecated/*"],
+    },
+  });
+  return require("../bootstrap/compiler/compile");
 }
 
 function buildAll(compiler, label) {
@@ -141,7 +151,7 @@ function hashFile(filePath) {
     mode = "bootstrap";
   } else if (forceSelf) {
     if (!hasSelfHosted) {
-      console.error("Error: --self requires dist-no/nodeon-compiler.cjs to exist.");
+      console.error("Error: --self requires dist/nodeon-compiler.cjs to exist.");
       console.error("Run 'node scripts/build.js --bootstrap' first to create it.");
       process.exit(1);
     }

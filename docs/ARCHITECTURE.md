@@ -67,7 +67,7 @@ Nodeon/
 │       ├── symbols.ts            # Delimiter characters
 │       └── tokens.ts             # Token type enum
 │
-├── src-no/                       # Nodeon compiler source (self-hosted implementation)
+├── src/                       # Nodeon compiler source (self-hosted implementation)
 │   ├── compiler/
 │   │   ├── compile.no            # Public API (mirrors compile.ts)
 │   │   ├── generator/
@@ -85,7 +85,7 @@ Nodeon/
 │   └── language/
 │       ├── keywords.no, operators.no, precedence.no, symbols.no, tokens.no
 │
-├── dist-no/                      # Compiled .no → .js output
+├── dist/                      # Compiled .no → .js output
 │   └── nodeon-compiler.cjs       # Bundled self-hosted compiler (98.5kb)
 │
 ├── packages/
@@ -103,8 +103,8 @@ Nodeon/
 │   └── nodeon.ts                 # CLI implementation (build/run/version)
 │
 ├── scripts/
-│   ├── build-no.js               # Compile all .no files to dist-no/
-│   ├── bundle-no.js              # Bundle dist-no/ into single CJS file
+│   ├── build-no.js               # Compile all .no files to dist/
+│   ├── bundle-no.js              # Bundle dist/ into single CJS file
 │   └── build-cli.js              # Build CLI for distribution
 │
 ├── tests/
@@ -377,7 +377,7 @@ ParserBase (token navigation, error recovery, peek/advance/consume)
     └── Parser (all parsing logic: statements, expressions, types, patterns)
 ```
 
-For the self-hosted version (`src-no/`), the parser is split into a deeper hierarchy:
+For the self-hosted version (`src/`), the parser is split into a deeper hierarchy:
 ```
 ParserBase → ParserTypes → ParserExpressions → ParserStatements → Parser
 ```
@@ -749,23 +749,23 @@ The Nodeon compiler is **self-hosting**: the compiler written in Nodeon can comp
 
 ```
 ┌─────────────────┐      compile      ┌──────────────┐
-│ TypeScript       │ ──────────────► │ dist-no/*.js  │  (15 JS modules)
+│ TypeScript       │ ──────────────► │ dist/*.js  │  (15 JS modules)
 │ Compiler (src/)  │                  └──────┬───────┘
 │                  │                         │ esbuild
-│ reads src-no/*.no│                         ▼
+│ reads src/*.no│                         ▼
 └─────────────────┘              ┌───────────────────────┐
                                  │ nodeon-compiler.cjs    │  (98.5kb bundle)
                                  │ (self-hosted compiler) │
                                  └───────────┬───────────┘
                                              │ compiles
                                              ▼
-                                      src-no/*.no  ✓  (all 15 files)
+                                      src/*.no  ✓  (all 15 files)
 ```
 
 ### Pipeline
 
-1. **`scripts/build-no.js`** — Uses the TypeScript compiler to compile all 15 `.no` files from `src-no/` to ES module `.js` files in `dist-no/`, preserving directory structure
-2. **`scripts/bundle-no.js`** — Uses esbuild to bundle all `dist-no/*.js` modules into a single CommonJS file `dist-no/nodeon-compiler.cjs` with `compile` as the entry export
+1. **`scripts/build-no.js`** — Uses the TypeScript compiler to compile all 15 `.no` files from `src/` to ES module `.js` files in `dist/`, preserving directory structure
+2. **`scripts/bundle-no.js`** — Uses esbuild to bundle all `dist/*.js` modules into a single CommonJS file `dist/nodeon-compiler.cjs` with `compile` as the entry export
 3. **Verification** — The bundled compiler is loaded and used to compile all 15 of its own `.no` source files
 
 ### Parser Inheritance Chain (Self-Hosted)
@@ -826,7 +826,7 @@ npx vitest run tests/e2e.test.ts  # Single file
 The `bootstrap.test.ts` file includes:
 1. **Module compilation** — Each of the 15 `.no` files compiles to JS with content assertions
 2. **Compiled lexer integration** — The compiled lexer correctly tokenizes Nodeon source
-3. **Self-compilation** — The bundled compiler (`dist-no/nodeon-compiler.cjs`) compiles all 15 of its own `.no` source files
+3. **Self-compilation** — The bundled compiler (`dist/nodeon-compiler.cjs`) compiles all 15 of its own `.no` source files
 
 ---
 
@@ -852,8 +852,8 @@ npm workspaces with two packages:
 ### Bootstrap Build
 
 ```bash
-node scripts/build-no.js     # Compile 15 .no files → dist-no/*.js
-node scripts/bundle-no.js    # Bundle → dist-no/nodeon-compiler.cjs (98.5kb)
+node scripts/build-no.js     # Compile 15 .no files → dist/*.js
+node scripts/bundle-no.js    # Bundle → dist/nodeon-compiler.cjs (98.5kb)
 ```
 
 ---

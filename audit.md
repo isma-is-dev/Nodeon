@@ -86,7 +86,7 @@ The core is solid and self-hosting is fully achieved with a verified fixpoint. T
 
 ```
 Nodeon/
-├── src/                      # TypeScript compiler source
+├── src-ts-deprecated/        # TypeScript compiler source (deprecated)
 │   ├── compiler/
 │   │   ├── ast/nodes.ts      # 480 lines — AST type definitions
 │   │   ├── lexer/lexer.ts    # 468 lines — tokenizer
@@ -104,8 +104,8 @@ Nodeon/
 │   │   ├── commands/          # build, run, repl, init, help
 │   │   └── utils/             # compile caching, runtime sandbox, errors, colors
 │   └── language/              # keywords, operators, tokens, precedence, symbols
-├── src-no/                    # Self-hosted compiler (Nodeon source)
-├── dist-no/                   # Compiled self-hosted output
+├── src/                       # Self-hosted compiler (Nodeon source)
+├── dist/                     # Compiled self-hosted output
 ├── packages/
 │   ├── language-server/       # LSP implementation (1426 lines)
 │   └── vscode-extension/      # VS Code extension

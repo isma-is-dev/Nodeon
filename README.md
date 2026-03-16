@@ -163,7 +163,7 @@ interface Shape {                    // type-only (stripped from output)
 ## Project Structure
 
 ```
-src/                          # TypeScript compiler (reference implementation)
+src-ts-deprecated/            # TypeScript compiler (Deprecated)
   compiler/
     lexer/                    # Tokenizer with line:col tracking
     parser/                   # Pratt parser (1700 lines)
@@ -172,10 +172,10 @@ src/                          # TypeScript compiler (reference implementation)
     type-checker.ts           # Structural type checker with inference
     compile.ts                # Public API: compile(), compileToAST()
   language/                   # Keywords, operators, tokens, precedence
-src-no/                       # Self-hosted compiler (15 .no modules)
+src/                          # Self-hosted compiler (15 .no modules)
   compiler/                   # Componentized: lexer, parser (5 files), generator, type-checker
   language/                   # Language definitions in Nodeon
-dist-no/                      # Compiled self-hosted compiler
+dist/                         # Compiled self-hosted compiler
   nodeon-compiler.cjs         # Bundled compiler (98.5kb)
 cli/                          # CLI (build/run/version)
 packages/
