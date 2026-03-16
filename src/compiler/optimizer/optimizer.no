@@ -5,9 +5,21 @@
 // ── Public API ──────────────────────────────────────────────────────
 
 export fn optimize(ast) {
+  // Pass 1: Expression-level optimizations (constant folding, peephole, etc.)
+  let body = ast.body.map((s) => optimizeStatement(s))
+
+  // Pass 2: let → const promotion (V8 prefers const for stable bindings)
+  body = promoteLetToConst(body)
+
+  // Pass 3: Constant propagation (inline known const values)
+  body = propagateConstants(body)
+
+  // Pass 4: Array method lowering (.forEach → indexed loop)
+  body = lowerArrayMethods(body)
+
   const program = {
     type: ast.type,
-    body: ast.body.map((s) => optimizeStatement(s)),
+    body: body,
     errors: ast.errors,
     loc: ast.loc,
   }
@@ -494,4 +506,197 @@ fn evalUnaryOp(op, arg) {
     case "typeof" { return typeof arg }
     default { return undefined }
   }
+}
+
+// ── Phase 1.5 Optimizations ──────────────────────────────────────────
+
+// 1. let → const promotion
+fn promoteLetToConst(body) {
+  const mutated = new Set()
+  walkForMutations(body, mutated)
+  return walkForLetPromotion(body, mutated)
+}
+
+fn walkForMutations(nodes, mutated) {
+  if !nodes { return }
+  if Array.isArray(nodes) {
+    for n in nodes { walkForMutations(n, mutated) }
+    return
+  }
+  
+  if nodes.type == "AssignmentExpression" || nodes.type == "CompoundAssignmentExpression" {
+    if nodes.left.type == "Identifier" { mutated.add(nodes.left.name) }
+    walkForMutations(nodes.right, mutated)
+    return
+  }
+  if nodes.type == "UpdateExpression" {
+    if nodes.argument.type == "Identifier" { mutated.add(nodes.argument.name) }
+    return
+  }
+  
+  const keys = ["body", "consequent", "alternate", "cases", "expression", "left", "right", "argument", "value", "callee", "arguments", "object", "property", "elements", "properties", "condition", "iterable", "tryBlock", "catchBlock", "finallyBlock", "declaration"]
+  for key in keys {
+    if nodes[key] { walkForMutations(nodes[key], mutated) }
+  }
+}
+
+fn walkForLetPromotion(nodes, mutated) {
+  if !nodes { return nodes }
+  if Array.isArray(nodes) {
+    return nodes.map((n) => walkForLetPromotion(n, mutated))
+  }
+  
+  if nodes.type == "VariableDeclaration" && nodes.kind == "let" {
+    if !mutated.has(nodes.name.name) {
+      nodes.kind = "const"
+    }
+  }
+  
+  const keys = ["body", "consequent", "alternate", "cases", "expression", "left", "right", "argument", "value", "callee", "arguments", "object", "property", "elements", "properties", "condition", "iterable", "tryBlock", "catchBlock", "finallyBlock", "declaration"]
+  for key in keys {
+    if nodes[key] {
+      nodes[key] = walkForLetPromotion(nodes[key], mutated)
+    }
+  }
+  return nodes
+}
+
+// 2. Constant Propagation
+fn propagateConstants(body) {
+  return walkForConstProp(body, {})
+}
+
+fn walkForConstProp(nodes, constants) {
+  if !nodes { return nodes }
+  if Array.isArray(nodes) {
+    return nodes.map((n) => walkForConstProp(n, constants))
+  }
+  
+  if nodes.type == "Identifier" && constants[nodes.name] != undefined {
+    return constants[nodes.name]
+  }
+
+  // Only dive into value positions to avoid replacing declarations/keys
+  if nodes.type == "ExpressionStatement" {
+    nodes.expression = walkForConstProp(nodes.expression, constants)
+  }
+  if nodes.type == "VariableDeclaration" {
+    nodes.value = walkForConstProp(nodes.value, constants)
+    if nodes.kind == "const" && nodes.value && nodes.value.type == "Literal" {
+      constants[nodes.name.name] = nodes.value
+    }
+  }
+  if nodes.type == "ReturnStatement" || nodes.type == "ThrowStatement" {
+    nodes.value = walkForConstProp(nodes.value, constants)
+  }
+  if nodes.type == "IfStatement" || nodes.type == "TernaryExpression" {
+    nodes.condition = walkForConstProp(nodes.condition, constants)
+    nodes.consequent = walkForConstProp(nodes.consequent, constants)
+    nodes.alternate = walkForConstProp(nodes.alternate, constants)
+  }
+  if nodes.type == "ForStatement" {
+    nodes.iterable = walkForConstProp(nodes.iterable, constants)
+    nodes.body = walkForConstProp(nodes.body, constants)
+  }
+  if nodes.type == "WhileStatement" || nodes.type == "DoWhileStatement" {
+    nodes.condition = walkForConstProp(nodes.condition, constants)
+    nodes.body = walkForConstProp(nodes.body, constants)
+  }
+  if nodes.type == "FunctionDeclaration" || nodes.type == "ArrowFunction" {
+    // Basic scoping clone
+    nodes.body = walkForConstProp(nodes.body, Object.assign({}, constants))
+  }
+  if nodes.type == "BinaryExpression" || nodes.type == "AssignmentExpression" || nodes.type == "CompoundAssignmentExpression" {
+    if nodes.type != "AssignmentExpression" && nodes.type != "CompoundAssignmentExpression" {
+      nodes.left = walkForConstProp(nodes.left, constants)
+    }
+    nodes.right = walkForConstProp(nodes.right, constants)
+  }
+  if nodes.type == "UnaryExpression" || nodes.type == "UpdateExpression" || nodes.type == "SpreadExpression" || nodes.type == "AwaitExpression" {
+    if nodes.type != "UpdateExpression" {
+      nodes.argument = walkForConstProp(nodes.argument, constants)
+    }
+  }
+  if nodes.type == "CallExpression" || nodes.type == "NewExpression" {
+    nodes.callee = walkForConstProp(nodes.callee, constants)
+    nodes.arguments = walkForConstProp(nodes.arguments, constants)
+  }
+  if nodes.type == "ArrayExpression" {
+    nodes.elements = walkForConstProp(nodes.elements, constants)
+  }
+  if nodes.type == "ObjectExpression" {
+    nodes.properties = nodes.properties.map((p) => {
+      const newP = { ...p, value: walkForConstProp(p.value, constants) }
+      if p.computed { newP.key = walkForConstProp(p.key, constants) }
+      return newP
+    })
+  }
+  if nodes.type == "MemberExpression" {
+    nodes.object = walkForConstProp(nodes.object, constants)
+    if nodes.computed {
+      nodes.property = walkForConstProp(nodes.property, constants)
+    }
+  }
+  if nodes.type == "SwitchStatement" {
+    nodes.discriminant = walkForConstProp(nodes.discriminant, constants)
+    nodes.cases = walkForConstProp(nodes.cases, constants)
+  }
+  if nodes.type == "SwitchCase" {
+    nodes.test = walkForConstProp(nodes.test, constants)
+    nodes.consequent = walkForConstProp(nodes.consequent, constants)
+  }
+  if nodes.type == "MatchStatement" {
+    nodes.discriminant = walkForConstProp(nodes.discriminant, constants)
+    nodes.cases = walkForConstProp(nodes.cases, constants)
+  }
+  if nodes.type == "MatchCase" {
+    nodes.guard = walkForConstProp(nodes.guard, constants)
+    nodes.body = walkForConstProp(nodes.body, constants)
+  }
+  if nodes.type == "_OptimizedBlock" || nodes.type == "BlockStatement" {
+    nodes.body = walkForConstProp(nodes.body, constants)
+  }
+  if nodes.type == "TryCatchStatement" {
+    nodes.tryBlock = walkForConstProp(nodes.tryBlock, constants)
+    nodes.catchBlock = walkForConstProp(nodes.catchBlock, constants)
+    nodes.finallyBlock = walkForConstProp(nodes.finallyBlock, constants)
+  }
+  return nodes
+}
+
+// 3. Array Method Lowering
+fn lowerArrayMethods(nodes) {
+  if !nodes { return nodes }
+  if Array.isArray(nodes) {
+    return nodes.map((n) => lowerArrayMethods(n))
+  }
+  
+  if nodes.type == "ExpressionStatement" && nodes.expression.type == "CallExpression" {
+    const call = nodes.expression
+    if call.callee.type == "MemberExpression" && call.callee.object.type == "Identifier" && !call.callee.computed {
+      const method = call.callee.property.name
+      // Convert arr.forEach(x => { ... }) into a for...in loop (which Nodeon generates as an indexed loop array optimization)
+      if method == "forEach" && call.arguments.length == 1 {
+        const arg = call.arguments[0]
+        if arg.type == "ArrowFunction" && arg.params.length == 1 {
+           return {
+             type: "ForStatement",
+             kind: "in",
+             variable: arg.params[0],
+             iterable: call.callee.object,
+             body: Array.isArray(arg.body) ? lowerArrayMethods(arg.body) : [{ type: "ExpressionStatement", expression: lowerArrayMethods(arg.body) }],
+             loc: nodes.loc
+           }
+        }
+      }
+    }
+  }
+  
+  const keys = ["body", "consequent", "alternate", "cases", "expression", "left", "right", "argument", "value", "callee", "arguments", "object", "property", "elements", "properties", "condition", "iterable", "tryBlock", "catchBlock", "finallyBlock", "declaration"]
+  for key in keys {
+    if nodes[key] {
+      nodes[key] = lowerArrayMethods(nodes[key])
+    }
+  }
+  return nodes
 }
