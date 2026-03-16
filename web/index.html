@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nodeon — Lenguaje sin ruido</title>
+  <style>
+    :root {
+      --bg-dark: #0c0308;
+      --bg-panel: #1a0a0f;
+      --bg-glow: #2b0f16;
+      --red-hot: #ff2a4f;
+      --red-neon: #ff4d6a;
+      --red-deep: #8c1126;
+      --text-main: #f8d4d8;
+      --text-dim: #c28892;
+      --grid-line: rgba(255, 74, 102, 0.12);
+      --border-strong: #ff4d6a;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Lucida Console", "Courier New", monospace;
+      background: radial-gradient(circle at 20% 20%, rgba(255, 74, 102, 0.12), transparent 45%),
+                  radial-gradient(circle at 80% 0%, rgba(255, 42, 79, 0.18), transparent 40%),
+                  linear-gradient(180deg, #0f050a 0%, #090307 40%, #0f050a 100%);
+      color: var(--text-main);
+      min-height: 100vh;
+      line-height: 1.6;
+      letter-spacing: 0.01em;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(255, 77, 106, 0.07) 0,
+        rgba(255, 77, 106, 0.07) 1px,
+        transparent 1px,
+        transparent 3px
+      );
+      pointer-events: none;
+      mix-blend-mode: screen;
+      opacity: 0.45;
+    }
+
+    a { color: var(--red-neon); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 4;
+      background: rgba(12, 3, 8, 0.95);
+      border-bottom: 1px solid var(--border-strong);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+      backdrop-filter: blur(6px);
+    }
+
+    .topbar {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      justify-content: space-between;
+    }
+
+    .logo {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--text-main);
+      text-transform: uppercase;
+      text-shadow: -1px 0 var(--red-neon), 1px 0 var(--red-deep);
+    }
+
+    nav {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    nav a {
+      font-size: 14px;
+      padding: 6px 10px;
+      border: 1px solid rgba(255, 77, 106, 0.35);
+      border-radius: 6px;
+      background: rgba(43, 15, 22, 0.45);
+      box-shadow: 0 0 0 1px rgba(255, 42, 79, 0.18);
+      transition: border-color 120ms ease;
+    }
+
+    nav a:hover { border-color: var(--red-hot); }
+
+    .hero {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 64px 18px 48px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 32px;
+      align-items: center;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border: 1px solid var(--border-strong);
+      background: rgba(43, 15, 22, 0.6);
+      color: var(--red-neon);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border-radius: 4px;
+      box-shadow: 0 0 16px rgba(255, 42, 79, 0.28);
+    }
+
+    h1 {
+      margin: 12px 0 10px;
+      font-size: clamp(28px, 4vw, 40px);
+      line-height: 1.2;
+      text-shadow: 2px 0 var(--red-hot), -2px 0 var(--red-deep);
+    }
+
+    h2 {
+      margin: 0 0 12px;
+      font-size: 20px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--red-neon);
+    }
+
+    p { margin: 0 0 14px; color: var(--text-main); }
+
+    .lede { color: var(--text-dim); max-width: 620px; }
+
+    .actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border-strong);
+      background: linear-gradient(180deg, rgba(255, 42, 79, 0.16), rgba(28, 8, 15, 0.95));
+      color: var(--text-main);
+      text-decoration: none;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+    }
+
+    .btn.secondary {
+      background: rgba(26, 10, 15, 0.7);
+      border-color: rgba(255, 77, 106, 0.5);
+      color: var(--text-dim);
+    }
+
+    .panel {
+      border: 1px solid rgba(255, 77, 106, 0.35);
+      background: radial-gradient(circle at 30% 20%, rgba(255, 42, 79, 0.08), transparent 45%),
+                  radial-gradient(circle at 80% 0%, rgba(255, 42, 79, 0.06), transparent 40%),
+                  linear-gradient(180deg, rgba(43, 15, 22, 0.8), rgba(12, 3, 8, 0.9));
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 16px 28px rgba(0, 0, 0, 0.4);
+      position: relative;
+    }
+
+    .panel::after {
+      content: "";
+      position: absolute;
+      inset: 12px;
+      border: 1px solid rgba(255, 77, 106, 0.15);
+      pointer-events: none;
+      border-radius: 8px;
+    }
+
+    pre, code, textarea {
+      font-family: "Lucida Console", "Courier New", monospace;
+      font-size: 14px;
+      color: var(--text-main);
+      background: #0f050a;
+    }
+
+    pre {
+      margin: 0;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 77, 106, 0.4);
+      box-shadow: inset 0 0 12px rgba(255, 42, 79, 0.18);
+      overflow-x: auto;
+    }
+
+    section {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 24px 18px 12px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 18px;
+    }
+
+    .list { padding-left: 18px; color: var(--text-main); }
+
+    .list li { margin: 6px 0; }
+
+    .subdued { color: var(--text-dim); font-size: 13px; }
+
+    .playground {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 16px;
+      align-items: start;
+    }
+
+    .radio-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .radio-item {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .radio-item input { accent-color: var(--red-neon); }
+
+    .snippet { display: none; margin-top: 10px; }
+
+    input[type="radio"]:checked + label + .snippet { display: block; }
+
+    textarea {
+      width: 100%;
+      min-height: 180px;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 77, 106, 0.4);
+      background: #0f050a;
+      color: var(--text-main);
+      resize: vertical;
+      box-shadow: inset 0 0 10px rgba(255, 42, 79, 0.16);
+    }
+
+    .console {
+      border: 1px solid rgba(255, 77, 106, 0.35);
+      border-radius: 8px;
+      background: #0a0206;
+      padding: 10px;
+      color: #ff9fb5;
+      box-shadow: inset 0 0 10px rgba(255, 42, 79, 0.22);
+      font-size: 13px;
+    }
+
+    .doc-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+    }
+
+    footer {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 28px 18px 48px;
+      color: var(--text-dim);
+      font-size: 13px;
+      border-top: 1px solid rgba(255, 77, 106, 0.35);
+    }
+
+    .footer-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 18px;
+    }
+
+    .footer-title {
+      color: var(--text-main);
+      margin: 0 0 10px;
+      font-size: 14px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .footer-links {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: grid;
+      gap: 8px;
+    }
+
+    .footer-links a {
+      color: var(--text-dim);
+      text-decoration: none;
+      border-bottom: 1px dashed rgba(255, 77, 106, 0.35);
+      padding-bottom: 2px;
+    }
+
+    .footer-links a:hover { color: var(--text-main); border-color: var(--red-hot); }
+
+    .footer-brand {
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--text-main);
+      text-transform: uppercase;
+      text-shadow: 1px 0 var(--red-hot), -1px 0 var(--red-deep);
+    }
+
+    @media (max-width: 640px) {
+      .topbar { flex-direction: column; align-items: flex-start; }
+      nav { width: 100%; }
+      nav a { flex: 1; text-align: center; }
+      .hero { padding-top: 36px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="topbar">
+      <div class="logo">Nodeon</div>
+      <nav aria-label="Navegación principal">
+        <a href="#home">Inicio</a>
+        <a href="#getting-started">Instalación</a>
+        <a href="#playground">Playground</a>
+        <a href="#docs">Docs básicas</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="hero" id="home">
+    <div>
+      <span class="badge">Lenguaje sin ruido</span>
+      <h1>Nodeon: sintaxis clara, JavaScript al final.</h1>
+      <p class="lede">Minimalista como Python, compatible con el ecosistema JS/Node y pensado para escribir sin fricción: sin punto y coma, interpolación natural y tipado opcional.</p>
+      <div class="actions">
+        <a class="btn" href="#getting-started">Empezar rápido</a>
+        <a class="btn secondary" href="#docs">Ver sintaxis</a>
+      </div>
+    </div>
+    <div class="panel" aria-label="Ejemplo de código Nodeon">
+      <pre><code>fn greet(name) {
+  print("Hello {name}!")
+}
+
+fn scoreToGrade(score) {
+  match score {
+    case s when s &gt;= 90 { "A" }
+    case s when s &gt;= 80 { "B" }
+    default { "F" }
+  }
+}
+
+result = scoreToGrade(87)
+greet("Arcader")
+print("Grade: {result}")</code></pre>
+    </div>
+  </section>
+
+  <section id="getting-started">
+    <h2>Getting Started</h2>
+    <div class="grid-2">
+      <div class="panel">
+        <p><strong>Requisitos</strong>: Node.js 18+ y npm.</p>
+        <ol class="list">
+          <li><code>npm install</code> — instala dependencias.</li>
+          <li><code>node cli/bin.js build hello.no</code> — compila a JavaScript.</li>
+          <li><code>node cli/bin.js run hello.no</code> — compila y ejecuta en memoria.</li>
+        </ol>
+        <p class="subdued">Tip: añade <code>-min</code> para minificar o <code>--map</code> para generar source maps.</p>
+      </div>
+      <div class="panel" aria-label="Primer programa">
+        <pre><code>// hello.no
+fn main() {
+  print("Hola {name}")
+}
+
+main()</code></pre>
+        <p class="subdued">Guarda el archivo, compila con <code>node cli/bin.js build hello.no</code> y ejecuta el .js resultante o usa <code>run</code> para hacerlo en un paso.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="playground">
+    <h2>Playground minimal</h2>
+    <p class="subdued">Sin JavaScript en la página: selecciona un snippet o escribe el tuyo, luego cópialo y ejecútalo con <code>node cli/bin.js run archivo.no</code> o pégalo en tu flujo de trabajo.</p>
+    <div class="playground">
+      <div class="panel">
+        <div class="radio-list" role="group" aria-label="Snippets de Nodeon">
+          <div class="radio-item">
+            <input type="radio" name="snippet" id="s1" checked />
+            <label for="s1">Hola mundo</label>
+            <div class="snippet">
+              <pre><code>fn main() {
+  print("Hello Arcade!")
+}
+
+main()</code></pre>
+              <div class="console">$ node cli/bin.js run hello.no<br/>Hello Arcade!</div>
+            </div>
+          </div>
+          <div class="radio-item">
+            <input type="radio" name="snippet" id="s2" />
+            <label for="s2">Función con tipos opcionales</label>
+            <div class="snippet">
+              <pre><code>fn add(a: number, b: number) {
+  a + b
+}
+
+print("Suma: {add(8, 34)}")</code></pre>
+              <div class="console">$ node cli/bin.js run add.no<br/>Suma: 42</div>
+            </div>
+          </div>
+          <div class="radio-item">
+            <input type="radio" name="snippet" id="s3" />
+            <label for="s3">match con guardas</label>
+            <div class="snippet">
+              <pre><code>fn label(score) {
+  match score {
+    case s when s &gt;= 90 { "SS" }
+    case s when s &gt;= 75 { "S" }
+    default { "C" }
+  }
+}
+
+print(label(82))</code></pre>
+              <div class="console">$ node cli/bin.js run ranks.no<br/>S</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="panel" aria-label="Editor simple">
+        <p class="subdued">Escribe aquí para copiarlo a tu terminal:</p>
+        <textarea aria-label="Editor de Nodeon" placeholder="fn main() {\n  print(\"Listo para compilar\")\n}\n\nmain()"></textarea>
+        <p class="subdued">Compila y ejecuta localmente: <code>node cli/bin.js run tu-archivo.no</code></p>
+      </div>
+    </div>
+  </section>
+
+  <section id="docs">
+    <h2>Documentación básica</h2>
+    <div class="doc-grid">
+      <div class="panel">
+        <h3>Variables</h3>
+        <pre><code>x = 42
+name = "Ismael"</code></pre>
+        <p class="subdued">Se compilan a <code>let</code> en JavaScript.</p>
+      </div>
+      <div class="panel">
+        <h3>Funciones</h3>
+        <pre><code>fn double(x) { x * 2 }
+fn sum(a, b) = a + b
+async fn fetch(url) { ... }</code></pre>
+        <p class="subdued">Cuerpo de una sola expresión ⇒ retorno implícito.</p>
+      </div>
+      <div class="panel">
+        <h3>Control de flujo</h3>
+        <pre><code>if score &gt;= 90 { print("A") }
+else if score &gt;= 80 { print("B") }
+else { print("F") }
+
+for i in 0..10 { print(i) }
+while x &gt; 0 { x = x - 1 }</code></pre>
+      </div>
+      <div class="panel">
+        <h3>Strings</h3>
+        <pre><code>"Hola {name}"  // interpolación
+'sin {interpolación}'  // literal
+`Hola ${name}`  // estilo JS</code></pre>
+      </div>
+      <div class="panel">
+        <h3>Clases</h3>
+        <pre><code>class Dog {
+  #name
+  constructor(name) { this.#name = name }
+  fn bark() { print("{this.#name}!") }
+}</code></pre>
+      </div>
+      <div class="panel">
+        <h3>Tipos y enums</h3>
+        <pre><code>fn add(a: number, b: number): number {
+  a + b
+}
+
+enum Color { Red, Green, Blue }</code></pre>
+      </div>
+    </div>
+    <p class="subdued">Más detalles en <code>docs/ARCHITECTURE.md</code> y <code>nodeon-design.md</code> dentro del repo.</p>
+  </section>
+
+  <footer>
+    <div class="footer-grid">
+      <div>
+        <div class="footer-brand">Nodeon</div>
+        <p class="subdued">Lenguaje sin ruido. Hecho con <span aria-label="corazón">♥</span> y transpilado a JavaScript.</p>
+        <p class="subdued">MIT License · Node.js 18+ · CLI y LSP incluidos.</p>
+      </div>
+
+      <div>
+        <p class="footer-title">Usar Nodeon</p>
+        <ul class="footer-links">
+          <li><a href="#getting-started">Instalación rápida</a></li>
+          <li><a href="#playground">Playground</a></li>
+          <li><a href="README.md">README</a></li>
+          <li><a href="nodeon-design.md">Guía de diseño</a></li>
+        </ul>
+      </div>
+
+      <div>
+        <p class="footer-title">Documentación</p>
+        <ul class="footer-links">
+          <li><a href="docs/ARCHITECTURE.md">Arquitectura</a></li>
+          <li><a href="docs/">Docs técnicas</a></li>
+          <li><a href="examples/">Ejemplos</a></li>
+          <li><a href="tests/">Tests</a></li>
+        </ul>
+      </div>
+
+      <div>
+        <p class="footer-title">Comunidad</p>
+        <ul class="footer-links">
+          <li><a href="https://github.com/ismaelmartin/nodeon">GitHub</a></li>
+          <li><a href="packages/vscode-extension">Extensión VS Code</a></li>
+          <li><a href="packages/language-server">Language Server</a></li>
+          <li><a href="buglist.md">Buglist</a></li>
+        </ul>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
