@@ -4,6 +4,8 @@ fn greet(name) {
 
 greet("Ismael")
 
+fs.writeFileSync("hello.txt", "Hello World")
+
 x: string | number = 'asdf'
 x = 3
 print("x = {x}")

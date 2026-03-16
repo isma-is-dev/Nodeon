@@ -1,6 +1,6 @@
 # ⚠️ DEPRECATED — TypeScript Compiler Sources
 
-This `src/` directory contains the **original TypeScript-based compiler** for Nodeon.
+This `src-ts/` directory contains the **original TypeScript-based compiler** for Nodeon.
 
 **It is no longer actively maintained.** The self-hosted compiler in `src-no/` is the primary implementation and receives all new features and bug fixes.
 
