@@ -3,6 +3,13 @@ import { formatError } from "./errors.no"
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
+const os = require('os')
+
+const CACHE_MODE = (process.env.NODEON_CACHE ?? '').toLowerCase()
+const CACHE_DISABLED = CACHE_MODE == 'none' || CACHE_MODE == 'memory'
+const CACHE_DIR = process.env.NODEON_CACHE_DIR
+  ? path.resolve(process.cwd(), process.env.NODEON_CACHE_DIR)
+  : path.resolve(process.cwd(), 'node_modules', '.cache', 'nodeon')
 
 let compilerModule = null
 
@@ -52,7 +59,7 @@ export fn compileFile(inputPath, outputPath, opts) {
 
   const source = fs.readFileSync(absIn, 'utf8')
 
-  const cacheDir = path.resolve(process.cwd(), '.nodeon-cache')
+  const cacheDir = CACHE_DIR
   const outFileName = resolveOutFileName(outputPath, absIn, options.minify)
   const cacheKey = computeCacheKey(inputPath, source, options.minify, options.sourceMap, outFileName)
   const cachePath = path.join(cacheDir, cacheKey + '.json')
@@ -60,21 +67,23 @@ export fn compileFile(inputPath, outputPath, opts) {
   try {
     let out = computeOutputPath(outputPath, absIn, options)
 
-    if !fs.existsSync(cacheDir) {
-      fs.mkdirSync(cacheDir, { recursive: true })
-    }
-
-    if fs.existsSync(cachePath) {
-      const cached = JSON.parse(fs.readFileSync(cachePath, 'utf8'))
-      if options.sourceMap && cached.sourceMap && out {
-        fs.writeFileSync(out, cached.jsCode, 'utf8')
-        fs.writeFileSync(out + '.map', JSON.stringify(cached.sourceMap), 'utf8')
-      } else {
-        if options.write && out {
-          fs.writeFileSync(out, cached.jsCode, 'utf8')
-        }
+    if !CACHE_DISABLED {
+      if !fs.existsSync(cacheDir) {
+        fs.mkdirSync(cacheDir, { recursive: true })
       }
-      return { ast: null, jsCode: cached.jsCode, out: out }
+
+      if fs.existsSync(cachePath) {
+        const cached = JSON.parse(fs.readFileSync(cachePath, 'utf8'))
+        if options.sourceMap && cached.sourceMap && out {
+          fs.writeFileSync(out, cached.jsCode, 'utf8')
+          fs.writeFileSync(out + '.map', JSON.stringify(cached.sourceMap), 'utf8')
+        } else {
+          if options.write && out {
+            fs.writeFileSync(out, cached.jsCode, 'utf8')
+          }
+        }
+        return { ast: null, jsCode: cached.jsCode, out: out }
+      }
     }
 
     const compiler = getCompiler()
@@ -83,7 +92,9 @@ export fn compileFile(inputPath, outputPath, opts) {
     const ast = result.ast
     const diagnostics = result.diagnostics
 
-    fs.writeFileSync(cachePath, JSON.stringify({ jsCode: jsCode }), 'utf8')
+    if !CACHE_DISABLED {
+      fs.writeFileSync(cachePath, JSON.stringify({ jsCode: jsCode }), 'utf8')
+    }
     if out { fs.writeFileSync(out, jsCode, 'utf8') }
     return { ast: ast, jsCode: jsCode, out: out, diagnostics: diagnostics }
   } catch (err) {
