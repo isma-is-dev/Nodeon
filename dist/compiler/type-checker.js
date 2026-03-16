@@ -123,6 +123,9 @@ function annotationToType(ann) {
       }
       return ANY;
     }
+    case "nullable": {
+      return { kind: "union", types: [annotationToType(ann.inner), NULL_TYPE, UNDEFINED] };
+    }
     default: {
       return ANY;
     }

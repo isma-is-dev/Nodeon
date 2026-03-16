@@ -10,6 +10,7 @@ import { startRepl } from "./commands/repl.js";
 import { runTest } from "./commands/test.js";
 import { runNew } from "./commands/new.js";
 import { runGenerate } from "./commands/generate.js";
+import { runDev } from "./commands/dev.js";
 export async function main(argv) {
   const args = argv ?? process.argv.slice(2);
   const cmd = args[0];
@@ -23,6 +24,10 @@ export async function main(argv) {
   }
   if (cmd === "new") {
     await runNew(args.slice(1));
+    return;
+  }
+  if (cmd === "dev") {
+    runDev(args.slice(1));
     return;
   }
   if (cmd === "init") {
@@ -64,7 +69,7 @@ export async function main(argv) {
   } catch (e) {
 
   }
-  const knownCommands = ["build", "run", "repl", "check", "fmt", "help", "version", "init", "new", "test", "generate"];
+  const knownCommands = ["build", "run", "repl", "check", "fmt", "help", "version", "init", "new", "test", "generate", "dev"];
   const suggestion = suggestClosest(cmd, knownCommands);
   console.error("Unknown command '" + cmd + "'");
   console.error("See " + CYAN + "'nodeon help'" + RESET + ".");

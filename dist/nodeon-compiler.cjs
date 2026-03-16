@@ -21,10 +21,12 @@ var compile_exports = {};
 __export(compile_exports, {
   Lexer: () => Lexer,
   Parser: () => Parser,
+  PluginRegistry: () => PluginRegistry,
   SourceMapBuilder: () => SourceMapBuilder,
   compile: () => compile,
   compileToAST: () => compileToAST,
   compileWithSourceMap: () => compileWithSourceMap,
+  defaultRegistry: () => defaultRegistry,
   format: () => format,
   generateJS: () => generateJS,
   generateJSWithSourceMap: () => generateJSWithSourceMap,
@@ -729,6 +731,10 @@ var ParserTypes = class extends ParserBase {
       } else {
         break;
       }
+    }
+    if (this.checkOperator("?")) {
+      this.advance();
+      type = { kind: "nullable", inner: type };
     }
     if (this.checkOperator("|") && !this.checkOperator("||")) {
       const types = [type];
@@ -3327,6 +3333,9 @@ function annotationToType(ann) {
       }
       return ANY;
     }
+    case "nullable": {
+      return { kind: "union", types: [annotationToType(ann.inner), NULL_TYPE, UNDEFINED] };
+    }
     default: {
       return ANY;
     }
@@ -4466,16 +4475,88 @@ function fmtType(t) {
     case "literal": {
       return JSON.stringify(t.value);
     }
+    case "nullable": {
+      return fmtType(t.inner) + "?";
+    }
     default: {
       return "any";
     }
   }
 }
 
+// dist/compiler/plugin.js
+var PluginRegistry = class {
+  #plugins = [];
+  register(plugin) {
+    return this.#plugins.push(plugin);
+  }
+  unregister(name) {
+    return this.#plugins = this.#plugins.filter((p) => p.name !== name);
+  }
+  getPlugins() {
+    return this.#plugins;
+  }
+  clear() {
+    return this.#plugins = [];
+  }
+  runBeforeParse(source, ctx) {
+    let result = source;
+    for (const plugin of this.#plugins) {
+      if (plugin.beforeParse) {
+        result = plugin.beforeParse(result, ctx);
+      }
+    }
+    return result;
+  }
+  runAfterParse(ast, ctx) {
+    let result = ast;
+    for (const plugin of this.#plugins) {
+      if (plugin.afterParse) {
+        result = plugin.afterParse(result, ctx);
+      }
+    }
+    return result;
+  }
+  runBeforeGenerate(ast, ctx) {
+    let result = ast;
+    for (const plugin of this.#plugins) {
+      if (plugin.beforeGenerate) {
+        result = plugin.beforeGenerate(result, ctx);
+      }
+    }
+    return result;
+  }
+  runAfterGenerate(js, ctx) {
+    let result = js;
+    for (const plugin of this.#plugins) {
+      if (plugin.afterGenerate) {
+        result = plugin.afterGenerate(result, ctx);
+      }
+    }
+    return result;
+  }
+  runResolveImport(specifier, fromFile) {
+    for (const plugin of this.#plugins) {
+      if (plugin.resolveImport) {
+        const resolved = plugin.resolveImport(specifier, fromFile);
+        if (resolved !== null) {
+          return resolved;
+        }
+      }
+    }
+    return null;
+  }
+};
+var defaultRegistry = new PluginRegistry();
+
 // dist/compiler/compile.js
 function compile(source, options) {
   const opts = options ?? {};
-  const ast = compileToAST(source);
+  const registry = opts.plugins ?? defaultRegistry;
+  const ctx = { filePath: opts.filePath, compileOptions: opts, metadata: {} };
+  const transformedSource = registry.runBeforeParse(source, ctx);
+  let ast = compileToAST(transformedSource);
+  ast = registry.runAfterParse(ast, ctx);
   const rawErrors = ast.errors ?? [];
   const parserErrors = [];
   for (const err of rawErrors) {
@@ -4483,14 +4564,22 @@ function compile(source, options) {
   }
   const typeErrors = opts.check ? typeCheck(ast) : [];
   const diagnostics = parserErrors.concat(typeErrors);
-  const js = generateJS(ast, opts.minify ?? false);
+  ast = registry.runBeforeGenerate(ast, ctx);
+  let js = generateJS(ast, opts.minify ?? false);
+  js = registry.runAfterGenerate(js, ctx);
   return { js, ast, diagnostics };
 }
 function compileWithSourceMap(source, sourceFile, outputFile, options) {
   const opts = options ?? {};
-  const ast = compileToAST(source);
-  const result = generateJSWithSourceMap(ast, sourceFile, source, outputFile, opts.minify ?? false);
-  return { js: result.js, ast, sourceMap: result.sourceMap };
+  const registry = opts.plugins ?? defaultRegistry;
+  const ctx = { filePath: opts.filePath ?? sourceFile, compileOptions: opts, metadata: {} };
+  const transformedSource = registry.runBeforeParse(source, ctx);
+  let ast = compileToAST(transformedSource);
+  ast = registry.runAfterParse(ast, ctx);
+  ast = registry.runBeforeGenerate(ast, ctx);
+  const result = generateJSWithSourceMap(ast, sourceFile, transformedSource, outputFile, opts.minify ?? false);
+  const js = registry.runAfterGenerate(result.js, ctx);
+  return { js, ast, sourceMap: result.sourceMap };
 }
 function compileToAST(source) {
   const tokens = new Lexer(source).tokenize();
@@ -4500,10 +4589,12 @@ function compileToAST(source) {
 0 && (module.exports = {
   Lexer,
   Parser,
+  PluginRegistry,
   SourceMapBuilder,
   compile,
   compileToAST,
   compileWithSourceMap,
+  defaultRegistry,
   format,
   generateJS,
   generateJSWithSourceMap,

@@ -10,6 +10,7 @@ import { startRepl } from "./commands/repl.no"
 import { runTest } from "./commands/test.no"
 import { runNew } from "./commands/new.no"
 import { runGenerate } from "./commands/generate.no"
+import { runDev } from "./commands/dev.no"
 
 export async fn main(argv) {
   const args = (argv ?? process.argv).slice(2)
@@ -27,6 +28,11 @@ export async fn main(argv) {
 
   if cmd == "new" {
     await runNew(args.slice(1))
+    return
+  }
+
+  if cmd == "dev" {
+    runDev(args.slice(1))
     return
   }
 
@@ -79,7 +85,7 @@ export async fn main(argv) {
     // Not a valid file — fall through
   }
 
-  const knownCommands = ["build", "run", "repl", "check", "fmt", "help", "version", "init", "new", "test", "generate"]
+  const knownCommands = ["build", "run", "repl", "check", "fmt", "help", "version", "init", "new", "test", "generate", "dev"]
   const suggestion = suggestClosest(cmd, knownCommands)
   console.error("Unknown command '" + cmd + "'")
   console.error("See " + CYAN + "'nodeon help'" + RESET + ".")

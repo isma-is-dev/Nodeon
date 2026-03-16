@@ -9,7 +9,7 @@ Usage: nodeon <command> [options]
 Project:
   new <name>                         Create a new project
   init [name]                        Initialize in existing directory
-  dev                                Start development server (coming soon)
+  dev [--port 3000]                   Start development server with live reload
 
 Compile:
   build [options] <input> [output]   Compile .no to .js

@@ -4,6 +4,8 @@ import { generateJS, generateJSWithSourceMap } from "@compiler/generator/js-gene
 import { Program } from "@ast/nodes";
 import type { SourceMap } from "@compiler/generator/source-map";
 import { typeCheck, TypeDiagnostic } from "@compiler/type-checker";
+import { PluginRegistry, defaultRegistry } from "@compiler/plugin";
+import type { CompilerPlugin, PluginContext } from "@compiler/plugin";
 
 export interface CompileResult {
   js: string;
@@ -20,13 +22,33 @@ export interface CompileWithMapResult {
 export interface CompileOptions {
   minify?: boolean;
   check?: boolean;
+  plugins?: PluginRegistry;
+  filePath?: string;
 }
 
 export function compile(source: string, options: CompileOptions = {}): CompileResult {
-  const ast = compileToAST(source);
+  const registry = options.plugins ?? defaultRegistry;
+  const ctx: PluginContext = { filePath: options.filePath, compileOptions: options, metadata: {} };
+
+  // Plugin: beforeParse
+  const transformedSource = registry.runBeforeParse(source, ctx);
+
+  let ast = compileToAST(transformedSource);
+
+  // Plugin: afterParse
+  ast = registry.runAfterParse(ast, ctx);
+
   const parserErrors = ((ast as any).errors ?? []).map((e: any) => ({ message: e.message, source: "parser" as const }));
   const diagnostics: TypeDiagnostic[] = options.check ? [...parserErrors, ...typeCheck(ast)] : parserErrors;
-  const js = generateJS(ast, options.minify ?? false);
+
+  // Plugin: beforeGenerate
+  ast = registry.runBeforeGenerate(ast, ctx);
+
+  let js = generateJS(ast, options.minify ?? false);
+
+  // Plugin: afterGenerate
+  js = registry.runAfterGenerate(js, ctx);
+
   return { js, ast, diagnostics };
 }
 
@@ -36,15 +58,24 @@ export function compileWithSourceMap(
   outputFile: string,
   options: CompileOptions = {},
 ): CompileWithMapResult {
-  const ast = compileToAST(source);
-  const { js, sourceMap } = generateJSWithSourceMap(
+  const registry = options.plugins ?? defaultRegistry;
+  const ctx: PluginContext = { filePath: options.filePath ?? sourceFile, compileOptions: options, metadata: {} };
+
+  const transformedSource = registry.runBeforeParse(source, ctx);
+  let ast = compileToAST(transformedSource);
+  ast = registry.runAfterParse(ast, ctx);
+  ast = registry.runBeforeGenerate(ast, ctx);
+
+  const result = generateJSWithSourceMap(
     ast,
     sourceFile,
-    source,
+    transformedSource,
     outputFile,
     options.minify ?? false,
   );
-  return { js, ast, sourceMap };
+
+  const js = registry.runAfterGenerate(result.js, ctx);
+  return { js, ast, sourceMap: result.sourceMap };
 }
 
 export function compileToAST(source: string): Program {
@@ -58,3 +89,5 @@ export { generateJS, generateJSWithSourceMap } from "@compiler/generator/js-gene
 export type { SourceMap } from "@compiler/generator/source-map";
 export { typeCheck } from "@compiler/type-checker";
 export type { TypeDiagnostic } from "@compiler/type-checker";
+export { PluginRegistry, defaultRegistry } from "@compiler/plugin";
+export type { CompilerPlugin, PluginContext } from "@compiler/plugin";

@@ -36,6 +36,10 @@ export class ParserTypes extends ParserBase {
         break;
       }
     }
+    if (this.checkOperator("?")) {
+      this.advance();
+      type = { kind: "nullable", inner: type };
+    }
     if (this.checkOperator("|") && !this.checkOperator("||")) {
       const types = [type];
       while (this.checkOperator("|") && !this.checkOperator("||")) {

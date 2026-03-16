@@ -86,5 +86,49 @@ test("index.no (barrel)", path.join(testDir, "index.no"), [
   "runner.js", "expect.js", "mock.js",
 ]);
 
+// Tier 2 stdlib
+const httpDir = path.resolve(__dirname, "../packages/http/src");
+const stringDir = path.resolve(__dirname, "../packages/string/src");
+const jsonDir = path.resolve(__dirname, "../packages/json/src");
+const dbDir = path.resolve(__dirname, "../packages/db/src");
+
+console.log("\n  @nodeon/http");
+test("client.no", path.join(httpDir, "client.no"), [
+  "function request(", "function get(", "function post(",
+  "function put(", "function patch(", "function del(",
+  "function createJsonResponse(", "function parseBody(",
+]);
+test("server.no", path.join(httpDir, "server.no"), [
+  "class Router", "function createServer(",
+]);
+
+console.log("\n  @nodeon/string");
+test("index.no", path.join(stringDir, "index.no"), [
+  "function capitalize(", "function camelCase(", "function snakeCase(",
+  "function kebabCase(", "function slugify(", "function truncate(",
+  "function escapeHtml(", "function wordWrap(",
+]);
+
+console.log("\n  @nodeon/json");
+test("index.no", path.join(jsonDir, "index.no"), [
+  "function safeParse(", "function pretty(", "function get(",
+  "function set(", "function validate(", "function diff(",
+  "function pick(", "function omit(", "function flatten(",
+]);
+
+console.log("\n  @nodeon/db");
+test("database.no", path.join(dbDir, "database.no"), [
+  "class Database", "function connect(",
+]);
+test("query-builder.no", path.join(dbDir, "query-builder.no"), [
+  "class QueryBuilder", "function table(",
+]);
+test("schema.no", path.join(dbDir, "schema.no"), [
+  "class Schema",
+]);
+test("migrations.no", path.join(dbDir, "migrations.no"), [
+  "class MigrationRunner",
+]);
+
 console.log(`\n  ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

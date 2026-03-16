@@ -1,0 +1,175 @@
+// @nodeon/db — Migration runner
+// Tracks and executes database schema migrations
+
+const fs = require('fs')
+const path = require('path')
+
+export class MigrationRunner {
+  #db = null
+  #migrationsDir = ""
+  #tableName = "_migrations"
+
+  fn constructor(db, migrationsDir) {
+    this.#db = db
+    this.#migrationsDir = migrationsDir ?? "migrations"
+  }
+
+  // Ensure migration tracking table exists
+  async fn init() {
+    await this.#db.query("CREATE TABLE IF NOT EXISTS " + this.#tableName + " (id SERIAL PRIMARY KEY, name VARCHAR(255) NOT NULL UNIQUE, executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+  }
+
+  // Get list of already-executed migrations
+  async fn getExecuted() {
+    const result = await this.#db.query("SELECT name FROM " + this.#tableName + " ORDER BY id ASC")
+    return result.rows.map((r) => r.name || r[0])
+  }
+
+  // Get pending migrations (on disk but not yet executed)
+  fn getPending(executed) {
+    if !fs.existsSync(this.#migrationsDir) { return [] }
+    const files = fs.readdirSync(this.#migrationsDir)
+      .filter((f) => f.endsWith(".sql") || f.endsWith(".no"))
+      .sort()
+    const executedSet = new Set(executed)
+    return files.filter((f) => !executedSet.has(f))
+  }
+
+  // Run all pending migrations
+  async fn up() {
+    await this.init()
+    const executed = await this.getExecuted()
+    const pending = this.getPending(executed)
+
+    if pending.length == 0 {
+      return { ran: 0, migrations: [] }
+    }
+
+    const results = []
+    for name in pending {
+      const filePath = path.join(this.#migrationsDir, name)
+      const content = fs.readFileSync(filePath, 'utf8')
+
+      // Extract UP section (before -- DOWN or end of file)
+      const upSQL = extractSection(content, "up")
+
+      try {
+        // Split by semicolons and execute each statement
+        const statements = upSQL.split(";").filter((s) => s.trim().length > 0)
+        for stmt in statements {
+          await this.#db.query(stmt)
+        }
+        await this.#db.query("INSERT INTO " + this.#tableName + " (name) VALUES ($1)", [name])
+        results.push({ name: name, status: "success" })
+      } catch (err) {
+        results.push({ name: name, status: "error", error: err.message })
+        break
+      }
+    }
+
+    return { ran: results.filter((r) => r.status == "success").length, migrations: results }
+  }
+
+  // Rollback the last migration
+  async fn down(steps) {
+    await this.init()
+    const executed = await this.getExecuted()
+    const count = steps ?? 1
+
+    if executed.length == 0 {
+      return { rolled: 0, migrations: [] }
+    }
+
+    const toRollback = executed.slice(0 - count).reverse()
+    const results = []
+
+    for name in toRollback {
+      const filePath = path.join(this.#migrationsDir, name)
+      if !fs.existsSync(filePath) {
+        results.push({ name: name, status: "error", error: "Migration file not found" })
+        continue
+      }
+
+      const content = fs.readFileSync(filePath, 'utf8')
+      const downSQL = extractSection(content, "down")
+
+      if !downSQL || downSQL.trim().length == 0 {
+        results.push({ name: name, status: "error", error: "No DOWN section found" })
+        continue
+      }
+
+      try {
+        const statements = downSQL.split(";").filter((s) => s.trim().length > 0)
+        for stmt in statements {
+          await this.#db.query(stmt)
+        }
+        await this.#db.query("DELETE FROM " + this.#tableName + " WHERE name = $1", [name])
+        results.push({ name: name, status: "success" })
+      } catch (err) {
+        results.push({ name: name, status: "error", error: err.message })
+        break
+      }
+    }
+
+    return { rolled: results.filter((r) => r.status == "success").length, migrations: results }
+  }
+
+  // Get migration status
+  async fn status() {
+    await this.init()
+    const executed = await this.getExecuted()
+    const pending = this.getPending(executed)
+    return {
+      executed: executed,
+      pending: pending,
+      total: executed.length + pending.length
+    }
+  }
+
+  // Create a new migration file
+  fn create(name) {
+    if !fs.existsSync(this.#migrationsDir) {
+      fs.mkdirSync(this.#migrationsDir, { recursive: true })
+    }
+
+    const timestamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14)
+    const fileName = timestamp + "_" + name + ".sql"
+    const filePath = path.join(this.#migrationsDir, fileName)
+
+    const template = '-- UP\n\n-- DOWN\n'
+    fs.writeFileSync(filePath, template)
+
+    return { fileName: fileName, filePath: filePath }
+  }
+}
+
+// Extract UP or DOWN section from migration file
+fn extractSection(content, section) {
+  const lines = content.split("\n")
+  let inSection = false
+  const result = []
+  const marker = "-- " + section.toUpperCase()
+  const otherMarker = section == "up" ? "-- DOWN" : "-- UP"
+
+  for line in lines {
+    const trimmed = line.trim().toUpperCase()
+    if trimmed == marker || trimmed.startsWith(marker + " ") {
+      inSection = true
+      continue
+    }
+    if trimmed == otherMarker || trimmed.startsWith(otherMarker + " ") {
+      if inSection { break }
+      continue
+    }
+    if inSection {
+      result.push(line)
+    }
+  }
+
+  // If no markers found, return everything (for UP) or nothing (for DOWN)
+  if result.length == 0 && section == "up" {
+    return content
+  }
+
+  return result.join("\n")
+}

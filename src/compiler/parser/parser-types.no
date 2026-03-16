@@ -41,6 +41,12 @@ export class ParserTypes extends ParserBase {
       }
     }
 
+    // Nullable type: string?, number[]?
+    if this.checkOperator("?") {
+      this.advance()
+      type = { kind: "nullable", inner: type }
+    }
+
     // Union type: string | number
     if this.checkOperator("|") && !this.checkOperator("||") {
       const types = [type]

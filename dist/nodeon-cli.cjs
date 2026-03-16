@@ -760,6 +760,10 @@ var init_parser_types = __esm({
             break;
           }
         }
+        if (this.checkOperator("?")) {
+          this.advance();
+          type = { kind: "nullable", inner: type };
+        }
         if (this.checkOperator("|") && !this.checkOperator("||")) {
           const types = [type];
           while (this.checkOperator("|") && !this.checkOperator("||")) {
@@ -3368,6 +3372,9 @@ function annotationToType(ann) {
       }
       return ANY;
     }
+    case "nullable": {
+      return { kind: "union", types: [annotationToType(ann.inner), NULL_TYPE, UNDEFINED] };
+    }
     default: {
       return ANY;
     }
@@ -4565,6 +4572,9 @@ function fmtType(t) {
     case "literal": {
       return JSON.stringify(t.value);
     }
+    case "nullable": {
+      return fmtType(t.inner) + "?";
+    }
     default: {
       return "any";
     }
@@ -4575,15 +4585,87 @@ var init_formatter = __esm({
   }
 });
 
+// dist/compiler/plugin.js
+var PluginRegistry, defaultRegistry;
+var init_plugin = __esm({
+  "dist/compiler/plugin.js"() {
+    PluginRegistry = class {
+      #plugins = [];
+      register(plugin) {
+        return this.#plugins.push(plugin);
+      }
+      unregister(name) {
+        return this.#plugins = this.#plugins.filter((p) => p.name !== name);
+      }
+      getPlugins() {
+        return this.#plugins;
+      }
+      clear() {
+        return this.#plugins = [];
+      }
+      runBeforeParse(source, ctx) {
+        let result = source;
+        for (const plugin of this.#plugins) {
+          if (plugin.beforeParse) {
+            result = plugin.beforeParse(result, ctx);
+          }
+        }
+        return result;
+      }
+      runAfterParse(ast, ctx) {
+        let result = ast;
+        for (const plugin of this.#plugins) {
+          if (plugin.afterParse) {
+            result = plugin.afterParse(result, ctx);
+          }
+        }
+        return result;
+      }
+      runBeforeGenerate(ast, ctx) {
+        let result = ast;
+        for (const plugin of this.#plugins) {
+          if (plugin.beforeGenerate) {
+            result = plugin.beforeGenerate(result, ctx);
+          }
+        }
+        return result;
+      }
+      runAfterGenerate(js, ctx) {
+        let result = js;
+        for (const plugin of this.#plugins) {
+          if (plugin.afterGenerate) {
+            result = plugin.afterGenerate(result, ctx);
+          }
+        }
+        return result;
+      }
+      runResolveImport(specifier, fromFile) {
+        for (const plugin of this.#plugins) {
+          if (plugin.resolveImport) {
+            const resolved = plugin.resolveImport(specifier, fromFile);
+            if (resolved !== null) {
+              return resolved;
+            }
+          }
+        }
+        return null;
+      }
+    };
+    defaultRegistry = new PluginRegistry();
+  }
+});
+
 // dist/compiler/compile.js
 var compile_exports = {};
 __export(compile_exports, {
   Lexer: () => Lexer,
   Parser: () => Parser,
+  PluginRegistry: () => PluginRegistry,
   SourceMapBuilder: () => SourceMapBuilder,
   compile: () => compile,
   compileToAST: () => compileToAST,
   compileWithSourceMap: () => compileWithSourceMap,
+  defaultRegistry: () => defaultRegistry,
   format: () => format,
   generateJS: () => generateJS,
   generateJSWithSourceMap: () => generateJSWithSourceMap,
@@ -4591,7 +4673,11 @@ __export(compile_exports, {
 });
 function compile(source, options) {
   const opts = options ?? {};
-  const ast = compileToAST(source);
+  const registry = opts.plugins ?? defaultRegistry;
+  const ctx = { filePath: opts.filePath, compileOptions: opts, metadata: {} };
+  const transformedSource = registry.runBeforeParse(source, ctx);
+  let ast = compileToAST(transformedSource);
+  ast = registry.runAfterParse(ast, ctx);
   const rawErrors = ast.errors ?? [];
   const parserErrors = [];
   for (const err of rawErrors) {
@@ -4599,14 +4685,22 @@ function compile(source, options) {
   }
   const typeErrors = opts.check ? typeCheck(ast) : [];
   const diagnostics = parserErrors.concat(typeErrors);
-  const js = generateJS(ast, opts.minify ?? false);
+  ast = registry.runBeforeGenerate(ast, ctx);
+  let js = generateJS(ast, opts.minify ?? false);
+  js = registry.runAfterGenerate(js, ctx);
   return { js, ast, diagnostics };
 }
 function compileWithSourceMap(source, sourceFile, outputFile, options) {
   const opts = options ?? {};
-  const ast = compileToAST(source);
-  const result = generateJSWithSourceMap(ast, sourceFile, source, outputFile, opts.minify ?? false);
-  return { js: result.js, ast, sourceMap: result.sourceMap };
+  const registry = opts.plugins ?? defaultRegistry;
+  const ctx = { filePath: opts.filePath ?? sourceFile, compileOptions: opts, metadata: {} };
+  const transformedSource = registry.runBeforeParse(source, ctx);
+  let ast = compileToAST(transformedSource);
+  ast = registry.runAfterParse(ast, ctx);
+  ast = registry.runBeforeGenerate(ast, ctx);
+  const result = generateJSWithSourceMap(ast, sourceFile, transformedSource, outputFile, opts.minify ?? false);
+  const js = registry.runAfterGenerate(result.js, ctx);
+  return { js, ast, sourceMap: result.sourceMap };
 }
 function compileToAST(source) {
   const tokens = new Lexer(source).tokenize();
@@ -4620,12 +4714,14 @@ var init_compile = __esm({
     init_type_checker();
     init_source_map();
     init_formatter();
+    init_plugin();
     init_lexer();
     init_parser();
     init_js_generator();
     init_source_map();
     init_type_checker();
     init_formatter();
+    init_plugin();
   }
 });
 
@@ -4691,7 +4787,7 @@ Usage: nodeon <command> [options]
 Project:
   new <name>                         Create a new project
   init [name]                        Initialize in existing directory
-  dev                                Start development server (coming soon)
+  dev [--port 3000]                   Start development server with live reload
 
 Compile:
   build [options] <input> [output]   Compile .no to .js
@@ -4973,13 +5069,13 @@ var path3 = require("path");
 var ReferenceError2 = globalThis.ReferenceError;
 var URIError = globalThis.URIError;
 var EvalError = globalThis.EvalError;
-var URL = globalThis.URL;
-var URLSearchParams = globalThis.URLSearchParams;
+var URL2 = globalThis.URL;
+var URLSearchParams2 = globalThis.URLSearchParams;
 var TextEncoder = globalThis.TextEncoder;
 var TextDecoder = globalThis.TextDecoder;
 var queueMicrotask2 = globalThis.queueMicrotask;
 var Intl = globalThis.Intl;
-var sandboxGlobals = { console, setTimeout, setInterval, clearTimeout, clearInterval, JSON, Math, Date, RegExp, Error, TypeError, RangeError, SyntaxError, ReferenceError: ReferenceError2, URIError, EvalError, parseInt, parseFloat, isNaN, isFinite, encodeURIComponent, decodeURIComponent, encodeURI, decodeURI, Array, Object, String, Number, Boolean, Map, Set, WeakMap, WeakSet, Promise, Symbol, Proxy, Reflect, require, process, Buffer, URL, URLSearchParams, TextEncoder, TextDecoder, queueMicrotask: queueMicrotask2, Intl, globalThis };
+var sandboxGlobals = { console, setTimeout, setInterval, clearTimeout, clearInterval, JSON, Math, Date, RegExp, Error, TypeError, RangeError, SyntaxError, ReferenceError: ReferenceError2, URIError, EvalError, parseInt, parseFloat, isNaN, isFinite, encodeURIComponent, decodeURIComponent, encodeURI, decodeURI, Array, Object, String, Number, Boolean, Map, Set, WeakMap, WeakSet, Promise, Symbol, Proxy, Reflect, require, process, Buffer, URL: URL2, URLSearchParams: URLSearchParams2, TextEncoder, TextDecoder, queueMicrotask: queueMicrotask2, Intl, globalThis };
 function runInSandbox(jsCode, filename) {
   const cjsCode = esmToCjs(jsCode);
   const absFile = path3.resolve(process.cwd(), filename);
@@ -6024,6 +6120,300 @@ function runGenerate(args) {
   }
 }
 
+// dist/cli/commands/dev.js
+var fs11 = require("fs");
+var path11 = require("path");
+var http = require("http");
+function loadConfig2() {
+  const configPath = path11.resolve(process.cwd(), "nodeon.json");
+  if (!fs11.existsSync(configPath)) {
+    return {};
+  }
+  try {
+    return JSON.parse(fs11.readFileSync(configPath, "utf8"));
+  } catch (e) {
+    return {};
+  }
+}
+var MIME_TYPES = { ".html": "text/html", ".css": "text/css", ".js": "application/javascript", ".json": "application/json", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".svg": "image/svg+xml", ".ico": "image/x-icon", ".woff": "font/woff", ".woff2": "font/woff2", ".ttf": "font/ttf", ".wasm": "application/wasm" };
+function compileAndRun(filePath) {
+  const source = fs11.readFileSync(filePath, "utf8");
+  const compiler = require(path11.resolve(process.cwd(), "dist", "nodeon-compiler.cjs"));
+  const result = compiler.compile(source);
+  if (result.diagnostics.length > 0) {
+    for (const diag of result.diagnostics) {
+      console.error("  " + RED + "error" + RESET + ": " + diag.message);
+    }
+    return null;
+  }
+  const vm4 = require("vm");
+  const mod = { exports: {} };
+  let code2 = result.js;
+  code2 = code2.replace(/import\s+\{([^}]+)\}\s+from\s+["']([^"']+)["'];?/g, 'const {$1} = require("$2");');
+  code2 = code2.replace(/import\s+(\w+)\s+from\s+["']([^"']+)["'];?/g, 'const $1 = require("$2");');
+  code2 = code2.replace(/export\s+(class|function|const|let|var)\s+/g, "$1 ");
+  code2 = code2.replace(/export\s+default\s+/g, "module.exports.default = ");
+  const exportPattern = /(?:class|function)\s+(\w+)/g;
+  let matched = exportPattern.exec(result.js);
+  const namedExports = [];
+  while (matched !== null) {
+    if (result.js.includes("export " + matched[0].trim().split(" ")[0]) || result.js.includes("export " + matched[0])) {
+      namedExports.push(matched[1]);
+    }
+    matched = exportPattern.exec(result.js);
+  }
+  for (const name of namedExports) {
+    code2 = code2 + "\nmodule.exports." + name + " = typeof " + name + " !== 'undefined' ? " + name + " : undefined;";
+  }
+  try {
+    const script = new vm4.Script(code2, { filename: filePath });
+    const sandbox = { module: mod, exports: mod.exports, require, __filename: filePath, __dirname: path11.dirname(filePath), console, process, Buffer, setTimeout, setInterval, clearTimeout, clearInterval, URL, URLSearchParams };
+    script.runInNewContext(sandbox);
+    return mod.exports;
+  } catch (err) {
+    console.error("  " + RED + "error" + RESET + " executing " + filePath + ": " + err.message);
+    return null;
+  }
+}
+function buildRoutes(pagesDir) {
+  const routes = [];
+  if (!fs11.existsSync(pagesDir)) {
+    return routes;
+  }
+  function scan(dir, prefix) {
+    const entries = fs11.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = path11.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        scan(full, prefix + "/" + entry.name);
+      } else {
+        if (!entry.name.endsWith(".no") && !entry.name.endsWith(".js")) {
+          continue;
+        }
+        const ext = path11.extname(entry.name);
+        const base = entry.name.slice(0, 0 - ext.length);
+        const segment = base === "index" ? "" : "/" + base;
+        const urlPath = prefix + segment || "/";
+        const paramNames = [];
+        const pattern = urlPath.replace(/\[([^\]]+)\]/g, (_, name) => {
+          paramNames.push(name);
+          return ":(" + name + ")";
+        });
+        const regexStr = "^" + pattern.replace(/:\(([^)]+)\)/g, "([^/]+)").replace(/\//g, "\\/") + "$";
+        routes.push({ pattern: urlPath, regex: new RegExp(regexStr), paramNames, filePath: full, isDynamic: paramNames.length > 0, isApi: urlPath.startsWith("/api/") || urlPath.startsWith("/api") });
+      }
+    }
+  }
+  scan(pagesDir, "");
+  routes.sort((a, b) => {
+    if (a.isDynamic !== b.isDynamic) {
+      return a.isDynamic ? 1 : -1;
+    }
+    return a.pattern.localeCompare(b.pattern);
+  });
+  return routes;
+}
+function matchRoute(routes, urlPath) {
+  const normalized = urlPath === "/" ? "/" : urlPath.replace(/\/$/, "");
+  for (const route of routes) {
+    const matched = normalized.match(route.regex);
+    if (matched) {
+      const params = {};
+      let i = 0;
+      while (i < route.paramNames.length) {
+        params[route.paramNames[i]] = matched[i + 1];
+        i = i + 1;
+      }
+      return { route, params };
+    }
+  }
+  return null;
+}
+function escapeHtml(str) {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function renderErrorPage(err, urlPath) {
+  return "<!DOCTYPE html><html><head><title>Nova Error</title><style>body{font-family:system-ui;padding:2rem;background:#1a1a2e;color:#e0e0e0}pre{background:#16213e;padding:1rem;border-radius:8px;overflow-x:auto;border-left:4px solid #e94560}h1{color:#e94560}</style></head><body><h1>Server Error</h1><p>Error rendering <code>" + urlPath + "</code></p><pre>" + escapeHtml(err.stack || err.message) + "</pre></body></html>";
+}
+function render404(urlPath, routes) {
+  const routeList = routes.map((r) => '<li><a href="' + r.pattern + '">' + r.pattern + "</a></li>").join("");
+  return "<!DOCTYPE html><html><head><title>404 - Nova</title><style>body{font-family:system-ui;padding:2rem;background:#1a1a2e;color:#e0e0e0}a{color:#00d2ff}h1{color:#e94560}ul{list-style:none;padding:0}li{padding:4px 0}</style></head><body><h1>404 - Not Found</h1><p>No route matches <code>" + urlPath + "</code></p><h2>Available routes:</h2><ul>" + routeList + "</ul></body></html>";
+}
+function wrapHtmlShell(html, title) {
+  if (html.includes("<html") || html.includes("<!DOCTYPE") || html.includes("<!doctype")) {
+    return html;
+  }
+  return '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n<meta name="viewport" content="width=device-width, initial-scale=1.0">\n<title>' + (title || "Nova") + "</title>\n</head>\n<body>\n" + html + "\n</body>\n</html>";
+}
+function injectLiveReload(html, port) {
+  const script = '\n<script>(function(){ var es = new EventSource("/__nova_reload"); es.onmessage = function(){ location.reload(); }; })();</script>\n';
+  if (html.includes("</body>")) {
+    return html.replace("</body>", script + "</body>");
+  }
+  return html + script;
+}
+var sseClients = [];
+function notifyReload() {
+  for (const client of sseClients) {
+    try {
+      client.write("data: reload\n\n");
+    } catch (e) {
+    }
+  }
+}
+function runDev(args) {
+  const config = loadConfig2();
+  const flags = args || [];
+  let port = 3e3;
+  const portIdx = flags.indexOf("--port");
+  if (portIdx !== -1 && flags[portIdx + 1]) {
+    port = parseInt(flags[portIdx + 1], 10);
+  } else if (config.port) {
+    port = config.port;
+  }
+  const projectDir = process.cwd();
+  const pagesDir = path11.join(projectDir, "src", "pages");
+  const publicDir = path11.join(projectDir, "public");
+  if (!fs11.existsSync(pagesDir)) {
+    console.error("");
+    console.error("  " + RED + "Error:" + RESET + " No src/pages/ directory found.");
+    console.error("  " + DIM + "Run 'nodeon new' to create a project, or create src/pages/ manually." + RESET);
+    console.error("");
+    process.exit(1);
+  }
+  let routes = buildRoutes(pagesDir);
+  function handleRequest(req, res) {
+    const url = new URL(req.url, "http://localhost");
+    const urlPath = url.pathname;
+    if (urlPath === "/__nova_reload") {
+      res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive", "Access-Control-Allow-Origin": "*" });
+      res.write("data: connected\n\n");
+      sseClients.push(res);
+      req.on("close", () => {
+        sseClients = sseClients.filter((c) => c !== res);
+      });
+      return;
+    }
+    if (urlPath !== "/" && fs11.existsSync(publicDir)) {
+      const staticPath = path11.join(publicDir, urlPath);
+      if (fs11.existsSync(staticPath) && fs11.statSync(staticPath).isFile()) {
+        const ext = path11.extname(staticPath);
+        const mime = MIME_TYPES[ext] || "application/octet-stream";
+        res.writeHead(200, { "Content-Type": mime });
+        fs11.createReadStream(staticPath).pipe(res);
+        return;
+      }
+    }
+    const matched = matchRoute(routes, urlPath);
+    if (matched) {
+      try {
+        const pageMod = compileAndRun(matched.route.filePath);
+        if (!pageMod) {
+          res.writeHead(500, { "Content-Type": "text/html" });
+          res.end(renderErrorPage({ message: "Compilation failed" }, urlPath));
+          return;
+        }
+        if (matched.route.isApi) {
+          const handler = pageMod.default || pageMod;
+          let result = null;
+          if (typeof handler === "function") {
+            result = handler(req, res, matched.params);
+          } else {
+            const method = req.method.toLowerCase();
+            const methodName = method === "delete" ? "del" : method;
+            if (handler[methodName] && typeof handler[methodName] === "function") {
+              result = handler[methodName](req, matched.params);
+            } else if (typeof handler === "object") {
+              result = handler;
+            }
+          }
+          if (!res.headersSent) {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify(result));
+          }
+        } else {
+          const PageClass = pageMod.default || pageMod;
+          let html = "";
+          if (typeof PageClass === "function" && PageClass.prototype && PageClass.prototype.template) {
+            const instance = new PageClass();
+            let data = {};
+            if (typeof instance.load === "function") {
+              data = instance.load(matched.params) || {};
+            }
+            html = instance.template(data, matched.params);
+            if (typeof instance.style === "function") {
+              const css = instance.style();
+              if (css) {
+                html = "<style>" + css + "</style>" + html;
+              }
+            }
+          } else if (typeof PageClass === "function") {
+            html = PageClass(matched.params);
+          } else if (typeof PageClass === "string") {
+            html = PageClass;
+          }
+          html = wrapHtmlShell(html, "Nova");
+          html = injectLiveReload(html, port);
+          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+          res.end(html);
+        }
+      } catch (err) {
+        console.error("  " + RED + "Error rendering " + urlPath + ":" + RESET + " " + err.message);
+        res.writeHead(500, { "Content-Type": "text/html" });
+        res.end(renderErrorPage(err, urlPath));
+      }
+      return;
+    }
+    res.writeHead(404, { "Content-Type": "text/html" });
+    res.end(render404(urlPath, routes));
+  }
+  const server = http.createServer(handleRequest);
+  let debounceTimer = null;
+  function watchHandler() {
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+    debounceTimer = setTimeout(() => {
+      routes = buildRoutes(pagesDir);
+      console.log("  " + DIM + "[nova] Routes reloaded (" + routes.length + " routes)" + RESET);
+      notifyReload();
+    }, 100);
+  }
+  if (fs11.existsSync(pagesDir)) {
+    fs11.watch(pagesDir, { recursive: true }, watchHandler);
+  }
+  const srcDir = path11.join(projectDir, "src");
+  if (fs11.existsSync(srcDir)) {
+    fs11.watch(srcDir, { recursive: true }, (eventType, filename) => {
+      if (filename && !filename.startsWith("pages")) {
+        if (debounceTimer) {
+          clearTimeout(debounceTimer);
+        }
+        debounceTimer = setTimeout(() => {
+          console.log("  " + DIM + "[nova] Source changed: " + filename + RESET);
+          notifyReload();
+        }, 150);
+      }
+    });
+  }
+  server.listen(port, () => {
+    console.log("");
+    console.log("  " + CYAN + BOLD + "\u26A1 Nova dev server" + RESET);
+    console.log("");
+    console.log("  " + BOLD + "Local:" + RESET + "   http://localhost:" + port);
+    console.log("  " + BOLD + "Routes:" + RESET + "  " + routes.length + " pages");
+    console.log("");
+    for (const route of routes) {
+      const tag = route.isApi ? " " + YELLOW + "[API]" + RESET : "";
+      const dyn = route.isDynamic ? " " + CYAN + "[dynamic]" + RESET : "";
+      console.log("  " + DIM + "\u2192" + RESET + " " + route.pattern + tag + dyn);
+    }
+    console.log("");
+    console.log("  " + DIM + "Watching for changes..." + RESET);
+    console.log("");
+  });
+}
+
 // dist/cli/index.js
 async function main(argv) {
   const args = argv ?? process.argv.slice(2);
@@ -6038,6 +6428,10 @@ async function main(argv) {
   }
   if (cmd === "new") {
     await runNew(args.slice(1));
+    return;
+  }
+  if (cmd === "dev") {
+    runDev(args.slice(1));
     return;
   }
   if (cmd === "init") {
@@ -6078,7 +6472,7 @@ async function main(argv) {
     return;
   } catch (e) {
   }
-  const knownCommands = ["build", "run", "repl", "check", "fmt", "help", "version", "init", "new", "test", "generate"];
+  const knownCommands = ["build", "run", "repl", "check", "fmt", "help", "version", "init", "new", "test", "generate", "dev"];
   const suggestion = suggestClosest(cmd, knownCommands);
   console.error("Unknown command '" + cmd + "'");
   console.error("See " + CYAN + "'nodeon help'" + RESET + ".");

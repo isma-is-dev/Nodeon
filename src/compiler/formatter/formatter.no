@@ -496,6 +496,7 @@ fn fmtType(t) {
     }
     case "tuple" { return "[" + t.elements.map((x) => fmtType(x)).join(", ") + "]" }
     case "literal" { return JSON.stringify(t.value) }
+    case "nullable" { return fmtType(t.inner) + "?" }
     default { return "any" }
   }
 }

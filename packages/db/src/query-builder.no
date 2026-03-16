@@ -1,0 +1,236 @@
+// @nodeon/db — Fluent query builder
+// Chainable API for building SQL queries
+
+export class QueryBuilder {
+  #table = ""
+  #selectCols = []
+  #whereClauses = []
+  #whereParams = []
+  #orderClauses = []
+  #limitVal = null
+  #offsetVal = null
+  #joinClauses = []
+  #groupCols = []
+  #havingClauses = []
+  #db = null
+  #operation = "select"
+  #insertData = null
+  #updateData = null
+
+  fn constructor(tableName, db) {
+    this.#table = tableName
+    this.#db = db
+  }
+
+  fn select(...cols) {
+    this.#operation = "select"
+    this.#selectCols = cols.length > 0 ? cols : ["*"]
+    return this
+  }
+
+  fn where(column, op, value) {
+    if value == undefined {
+      // Two-arg form: where("name", "John") → name = 'John'
+      this.#whereClauses.push(column + " = $" + (this.#whereParams.length + 1))
+      this.#whereParams.push(op)
+    } else {
+      this.#whereClauses.push(column + " " + op + " $" + (this.#whereParams.length + 1))
+      this.#whereParams.push(value)
+    }
+    return this
+  }
+
+  fn whereIn(column, values) {
+    const placeholders = values.map((_, i) => "$" + (this.#whereParams.length + i + 1))
+    this.#whereClauses.push(column + " IN (" + placeholders.join(", ") + ")")
+    for v in values {
+      this.#whereParams.push(v)
+    }
+    return this
+  }
+
+  fn whereNull(column) {
+    this.#whereClauses.push(column + " IS NULL")
+    return this
+  }
+
+  fn whereNotNull(column) {
+    this.#whereClauses.push(column + " IS NOT NULL")
+    return this
+  }
+
+  fn orderBy(column, direction) {
+    const dir = direction ?? "ASC"
+    this.#orderClauses.push(column + " " + dir.toUpperCase())
+    return this
+  }
+
+  fn limit(n) {
+    this.#limitVal = n
+    return this
+  }
+
+  fn offset(n) {
+    this.#offsetVal = n
+    return this
+  }
+
+  fn join(joinTable, leftCol, op, rightCol) {
+    this.#joinClauses.push("JOIN " + joinTable + " ON " + leftCol + " " + op + " " + rightCol)
+    return this
+  }
+
+  fn leftJoin(joinTable, leftCol, op, rightCol) {
+    this.#joinClauses.push("LEFT JOIN " + joinTable + " ON " + leftCol + " " + op + " " + rightCol)
+    return this
+  }
+
+  fn groupBy(...cols) {
+    this.#groupCols = cols
+    return this
+  }
+
+  fn having(clause) {
+    this.#havingClauses.push(clause)
+    return this
+  }
+
+  fn insert(data) {
+    this.#operation = "insert"
+    this.#insertData = data
+    return this
+  }
+
+  fn update(data) {
+    this.#operation = "update"
+    this.#updateData = data
+    return this
+  }
+
+  fn remove() {
+    this.#operation = "delete"
+    return this
+  }
+
+  fn count(col) {
+    this.#selectCols = ["COUNT(" + (col ?? "*") + ") as count"]
+    return this
+  }
+
+  // Build the SQL string and params
+  fn toSQL() {
+    if this.#operation == "select" {
+      return this.#buildSelect()
+    }
+    if this.#operation == "insert" {
+      return this.#buildInsert()
+    }
+    if this.#operation == "update" {
+      return this.#buildUpdate()
+    }
+    if this.#operation == "delete" {
+      return this.#buildDelete()
+    }
+    return { sql: "", params: [] }
+  }
+
+  // Execute the query against the database
+  async fn exec() {
+    if !this.#db { throw new Error("No database connection. Use table(name, db) or pass db to QueryBuilder.") }
+    const built = this.toSQL()
+    return this.#db.query(built.sql, built.params)
+  }
+
+  // Convenience: execute and return first row
+  async fn first() {
+    this.#limitVal = 1
+    const result = await this.exec()
+    return result.rows.length > 0 ? result.rows[0] : null
+  }
+
+  // --- Private builders ---
+
+  fn #buildSelect() {
+    const cols = this.#selectCols.length > 0 ? this.#selectCols.join(", ") : "*"
+    let sql = "SELECT " + cols + " FROM " + this.#table
+
+    for j in this.#joinClauses {
+      sql = sql + " " + j
+    }
+
+    if this.#whereClauses.length > 0 {
+      sql = sql + " WHERE " + this.#whereClauses.join(" AND ")
+    }
+
+    if this.#groupCols.length > 0 {
+      sql = sql + " GROUP BY " + this.#groupCols.join(", ")
+    }
+
+    if this.#havingClauses.length > 0 {
+      sql = sql + " HAVING " + this.#havingClauses.join(" AND ")
+    }
+
+    if this.#orderClauses.length > 0 {
+      sql = sql + " ORDER BY " + this.#orderClauses.join(", ")
+    }
+
+    if this.#limitVal != null {
+      sql = sql + " LIMIT " + this.#limitVal
+    }
+
+    if this.#offsetVal != null {
+      sql = sql + " OFFSET " + this.#offsetVal
+    }
+
+    return { sql: sql, params: this.#whereParams }
+  }
+
+  fn #buildInsert() {
+    const data = this.#insertData
+    if !data { return { sql: "", params: [] } }
+
+    const keys = Object.keys(data)
+    const params = keys.map((k) => data[k])
+    const placeholders = keys.map((_, i) => "$" + (i + 1))
+
+    const sql = "INSERT INTO " + this.#table + " (" + keys.join(", ") + ") VALUES (" + placeholders.join(", ") + ") RETURNING *"
+    return { sql: sql, params: params }
+  }
+
+  fn #buildUpdate() {
+    const data = this.#updateData
+    if !data { return { sql: "", params: [] } }
+
+    const keys = Object.keys(data)
+    const setClauses = keys.map((k, i) => k + " = $" + (i + 1))
+    const params = keys.map((k) => data[k])
+
+    // Where params continue after update params
+    const whereParams = this.#whereParams.map((p) => p)
+    const adjustedWhere = this.#whereClauses.map((clause) => {
+      return clause.replace(/\$(\d+)/g, (_, n) => "$" + (parseInt(n, 10) + keys.length))
+    })
+
+    let sql = "UPDATE " + this.#table + " SET " + setClauses.join(", ")
+    if adjustedWhere.length > 0 {
+      sql = sql + " WHERE " + adjustedWhere.join(" AND ")
+    }
+
+    return { sql: sql, params: params.concat(whereParams) }
+  }
+
+  fn #buildDelete() {
+    let sql = "DELETE FROM " + this.#table
+    if this.#whereClauses.length > 0 {
+      sql = sql + " WHERE " + this.#whereClauses.join(" AND ")
+    }
+    return { sql: sql, params: this.#whereParams }
+  }
+}
+
+// Factory function
+export fn table(name, db) {
+  const qb = new QueryBuilder(name, db)
+  qb.select()
+  return qb
+}

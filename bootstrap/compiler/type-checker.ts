@@ -125,6 +125,8 @@ function annotationToType(ann: TypeAnnotation | undefined): NType {
       if (typeof ann.value === "number") return NUMBER;
       if (typeof ann.value === "boolean") return BOOLEAN;
       return ANY;
+    case "nullable":
+      return { kind: "union", types: [annotationToType(ann.inner), NULL_TYPE, UNDEFINED] };
     default:
       return ANY;
   }
@@ -150,6 +152,13 @@ export function typeToString(t: NType): string {
       return `{ ${entries.join("; ")} }`;
     }
   }
+}
+
+export function isNullableType(t: NType): boolean {
+  if (t.kind === "union") {
+    return t.types.some(inner => inner.kind === "primitive" && (inner.name === "null" || inner.name === "undefined"));
+  }
+  return false;
 }
 
 // ── Type Compatibility ───────────────────────────────────────────

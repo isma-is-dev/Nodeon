@@ -4,11 +4,22 @@ import { generateJS, generateJSWithSourceMap } from "./generator/js-generator.no
 import { typeCheck } from "./type-checker.no"
 import { SourceMapBuilder } from "./generator/source-map.no"
 import { format } from "./formatter/formatter.no"
+import { PluginRegistry, defaultRegistry } from "./plugin.no"
 
 // Compile Nodeon source to JavaScript
 export fn compile(source, options) {
   const opts = options ?? {}
-  const ast = compileToAST(source)
+  const registry = opts.plugins ?? defaultRegistry
+  const ctx = { filePath: opts.filePath, compileOptions: opts, metadata: {} }
+
+  // Plugin: beforeParse
+  const transformedSource = registry.runBeforeParse(source, ctx)
+
+  let ast = compileToAST(transformedSource)
+
+  // Plugin: afterParse
+  ast = registry.runAfterParse(ast, ctx)
+
   const rawErrors = ast.errors ?? []
   const parserErrors = []
   for err in rawErrors {
@@ -16,16 +27,33 @@ export fn compile(source, options) {
   }
   const typeErrors = opts.check ? typeCheck(ast) : []
   const diagnostics = parserErrors.concat(typeErrors)
-  const js = generateJS(ast, opts.minify ?? false)
+
+  // Plugin: beforeGenerate
+  ast = registry.runBeforeGenerate(ast, ctx)
+
+  let js = generateJS(ast, opts.minify ?? false)
+
+  // Plugin: afterGenerate
+  js = registry.runAfterGenerate(js, ctx)
+
   return { js: js, ast: ast, diagnostics: diagnostics }
 }
 
 // Compile with source map
 export fn compileWithSourceMap(source, sourceFile, outputFile, options) {
   const opts = options ?? {}
-  const ast = compileToAST(source)
-  const result = generateJSWithSourceMap(ast, sourceFile, source, outputFile, opts.minify ?? false)
-  return { js: result.js, ast: ast, sourceMap: result.sourceMap }
+  const registry = opts.plugins ?? defaultRegistry
+  const ctx = { filePath: opts.filePath ?? sourceFile, compileOptions: opts, metadata: {} }
+
+  const transformedSource = registry.runBeforeParse(source, ctx)
+  let ast = compileToAST(transformedSource)
+  ast = registry.runAfterParse(ast, ctx)
+  ast = registry.runBeforeGenerate(ast, ctx)
+
+  const result = generateJSWithSourceMap(ast, sourceFile, transformedSource, outputFile, opts.minify ?? false)
+
+  const js = registry.runAfterGenerate(result.js, ctx)
+  return { js: js, ast: ast, sourceMap: result.sourceMap }
 }
 
 // Parse Nodeon source to AST
@@ -41,3 +69,4 @@ export { generateJS, generateJSWithSourceMap } from "./generator/js-generator.no
 export { SourceMapBuilder } from "./generator/source-map.no"
 export { typeCheck } from "./type-checker.no"
 export { format } from "./formatter/formatter.no"
+export { PluginRegistry, defaultRegistry } from "./plugin.no"

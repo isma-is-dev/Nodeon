@@ -1,0 +1,153 @@
+// @nodeon/db — Schema builder for table creation/modification
+// Fluent API for defining table schemas in migrations
+
+export class Schema {
+  #tableName = ""
+  #columns = []
+  #constraints = []
+
+  fn constructor(tableName) {
+    this.#tableName = tableName
+  }
+
+  fn id() {
+    this.#columns.push("id SERIAL PRIMARY KEY")
+    return this
+  }
+
+  fn uuid(name) {
+    this.#columns.push((name ?? "id") + " UUID PRIMARY KEY DEFAULT gen_random_uuid()")
+    return this
+  }
+
+  fn string(name, maxLength) {
+    const len = maxLength ?? 255
+    this.#columns.push(name + " VARCHAR(" + len + ")")
+    return this
+  }
+
+  fn text(name) {
+    this.#columns.push(name + " TEXT")
+    return this
+  }
+
+  fn integer(name) {
+    this.#columns.push(name + " INTEGER")
+    return this
+  }
+
+  fn bigint(name) {
+    this.#columns.push(name + " BIGINT")
+    return this
+  }
+
+  fn float(name) {
+    this.#columns.push(name + " REAL")
+    return this
+  }
+
+  fn decimal(name, precision, scale) {
+    const p = precision ?? 10
+    const s = scale ?? 2
+    this.#columns.push(name + " DECIMAL(" + p + ", " + s + ")")
+    return this
+  }
+
+  fn boolean(name) {
+    this.#columns.push(name + " BOOLEAN DEFAULT false")
+    return this
+  }
+
+  fn json(name) {
+    this.#columns.push(name + " JSONB")
+    return this
+  }
+
+  fn timestamp(name) {
+    this.#columns.push(name + " TIMESTAMP")
+    return this
+  }
+
+  fn timestamps() {
+    this.#columns.push("created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    this.#columns.push("updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    return this
+  }
+
+  fn date(name) {
+    this.#columns.push(name + " DATE")
+    return this
+  }
+
+  fn notNull() {
+    // Modify the last column
+    if this.#columns.length > 0 {
+      const last = this.#columns.length - 1
+      this.#columns[last] = this.#columns[last] + " NOT NULL"
+    }
+    return this
+  }
+
+  fn unique() {
+    if this.#columns.length > 0 {
+      const last = this.#columns.length - 1
+      this.#columns[last] = this.#columns[last] + " UNIQUE"
+    }
+    return this
+  }
+
+  fn defaultValue(val) {
+    if this.#columns.length > 0 {
+      const last = this.#columns.length - 1
+      if typeof val == "string" {
+        this.#columns[last] = this.#columns[last] + " DEFAULT '" + val + "'"
+      } else {
+        this.#columns[last] = this.#columns[last] + " DEFAULT " + val
+      }
+    }
+    return this
+  }
+
+  fn references(refTable, refColumn) {
+    if this.#columns.length > 0 {
+      const last = this.#columns.length - 1
+      this.#columns[last] = this.#columns[last] + " REFERENCES " + refTable + "(" + (refColumn ?? "id") + ")"
+    }
+    return this
+  }
+
+  fn index(columns) {
+    const cols = Array.isArray(columns) ? columns : [columns]
+    const indexName = "idx_" + this.#tableName + "_" + cols.join("_")
+    this.#constraints.push("CREATE INDEX " + indexName + " ON " + this.#tableName + " (" + cols.join(", ") + ")")
+    return this
+  }
+
+  fn uniqueIndex(columns) {
+    const cols = Array.isArray(columns) ? columns : [columns]
+    const indexName = "idx_" + this.#tableName + "_" + cols.join("_") + "_unique"
+    this.#constraints.push("CREATE UNIQUE INDEX " + indexName + " ON " + this.#tableName + " (" + cols.join(", ") + ")")
+    return this
+  }
+
+  // Generate CREATE TABLE SQL
+  fn toSQL() {
+    let sql = "CREATE TABLE IF NOT EXISTS " + this.#tableName + " (\n"
+    sql = sql + "  " + this.#columns.join(",\n  ")
+    sql = sql + "\n)"
+    const statements = [sql]
+    for constraint in this.#constraints {
+      statements.push(constraint)
+    }
+    return statements
+  }
+
+  // Generate DROP TABLE SQL
+  fn toDropSQL() {
+    return ["DROP TABLE IF EXISTS " + this.#tableName + " CASCADE"]
+  }
+
+  fn getTableName() {
+    return this.#tableName
+  }
+}

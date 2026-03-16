@@ -622,6 +622,9 @@ function fmtType(t) {
     case "literal": {
       return JSON.stringify(t.value);
     }
+    case "nullable": {
+      return fmtType(t.inner) + "?";
+    }
     default: {
       return "any";
     }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { compile, compileWithSourceMap, compileToAST } from "@compiler/compile";
+import { compile, compileWithSourceMap, compileToAST, PluginRegistry, defaultRegistry } from "@compiler/compile";
 import { compileWithIR } from "@compiler/compile-ir";
 import { compileToWasm, compileToWat } from "@compiler/compile-wasm";
 import { typeCheck } from "@compiler/type-checker";
@@ -1487,3 +1487,151 @@ describe("WebAssembly backend", () => {
 
 // Standard library compilation tests are in scripts/test-stdlib.js
 // They run outside vitest to avoid OOM in the fork worker process.
+
+// ── Compiler Plugin API ──────────────────────────────────────────
+describe("Compiler plugin API", () => {
+  it("beforeParse transforms source before compilation", () => {
+    const reg = new PluginRegistry();
+    reg.register({
+      name: "test-before-parse",
+      beforeParse(source: string) {
+        return source.replace("MAGIC", "42");
+      },
+    });
+    const js = compile("let x = MAGIC", { plugins: reg }).js;
+    expect(js).toContain("let x = 42");
+  });
+
+  it("afterParse transforms AST after parsing", () => {
+    const reg = new PluginRegistry();
+    reg.register({
+      name: "test-after-parse",
+      afterParse(ast: any) {
+        for (const stmt of ast.body) {
+          if (stmt.type === "VariableDeclaration") {
+            stmt.value = { type: "Literal", value: 99, literalType: "number" };
+          }
+        }
+        return ast;
+      },
+    });
+    const js = compile("let x = 1", { plugins: reg }).js;
+    expect(js).toContain("99");
+  });
+
+  it("afterGenerate transforms JS output", () => {
+    const reg = new PluginRegistry();
+    reg.register({
+      name: "test-after-generate",
+      afterGenerate(js: string) {
+        return "// AUTO-GENERATED\n" + js;
+      },
+    });
+    const js = compile("let x = 1", { plugins: reg }).js;
+    expect(js).toContain("// AUTO-GENERATED");
+    expect(js).toContain("let x = 1");
+  });
+
+  it("multiple plugins run in order", () => {
+    const reg = new PluginRegistry();
+    reg.register({
+      name: "plugin-a",
+      beforeParse(source: string) { return source.replace("A", "B"); },
+    });
+    reg.register({
+      name: "plugin-b",
+      beforeParse(source: string) { return source.replace("B", "C"); },
+    });
+    const js = compile("let x = 'A'", { plugins: reg }).js;
+    expect(js).toContain('"C"');
+  });
+
+  it("unregister removes a plugin by name", () => {
+    const reg = new PluginRegistry();
+    reg.register({
+      name: "removable",
+      afterGenerate(js: string) { return "// REMOVED\n" + js; },
+    });
+    reg.unregister("removable");
+    const js = compile("let x = 1", { plugins: reg }).js;
+    expect(js).not.toContain("// REMOVED");
+  });
+
+  it("resolveImport returns first non-null plugin result", () => {
+    const reg = new PluginRegistry();
+    reg.register({
+      name: "resolver-a",
+      resolveImport(spec: string) { return spec === "@nova/core" ? "/resolved/nova.js" : null; },
+    });
+    reg.register({
+      name: "resolver-b",
+      resolveImport() { return "/fallback.js"; },
+    });
+    expect(reg.runResolveImport("@nova/core", "test.no")).toBe("/resolved/nova.js");
+    expect(reg.runResolveImport("unknown", "test.no")).toBe("/fallback.js");
+  });
+
+  it("empty registry is a no-op", () => {
+    const reg = new PluginRegistry();
+    const js = compile("let x = 1", { plugins: reg }).js;
+    expect(js).toContain("let x = 1");
+  });
+
+  it("defaultRegistry is exported and usable", () => {
+    expect(defaultRegistry).toBeDefined();
+    expect(typeof defaultRegistry.register).toBe("function");
+    expect(typeof defaultRegistry.runBeforeParse).toBe("function");
+  });
+});
+
+// ── Null Safety: T? type ────────────────────────────────────────────
+describe("Null safety: T? type", () => {
+  it("parses nullable type annotation string?", () => {
+    const ast = compileToAST("let x: string? = null");
+    const decl = ast.body[0] as any;
+    expect(decl.typeAnnotation).toBeDefined();
+    expect(decl.typeAnnotation.kind).toBe("nullable");
+    expect(decl.typeAnnotation.inner.kind).toBe("named");
+    expect(decl.typeAnnotation.inner.name).toBe("string");
+  });
+
+  it("parses nullable array type number[]?", () => {
+    const ast = compileToAST("let x: number[]? = null");
+    const decl = ast.body[0] as any;
+    expect(decl.typeAnnotation.kind).toBe("nullable");
+    expect(decl.typeAnnotation.inner.kind).toBe("array");
+    expect(decl.typeAnnotation.inner.elementType.kind).toBe("named");
+    expect(decl.typeAnnotation.inner.elementType.name).toBe("number");
+  });
+
+  it("compiles nullable typed variable correctly", () => {
+    const js = compile("let name: string? = null").js;
+    expect(js).toContain("let name = null");
+  });
+
+  it("compiles nullable function parameter", () => {
+    const js = compile("fn greet(name: string?) { return name }").js;
+    expect(js).toContain("function greet(name)");
+  });
+
+  it("type checker treats T? as T | null | undefined", () => {
+    // Assigning null to a nullable type should not produce errors
+    const result = compile("let x: string? = null", { check: true });
+    const typeErrors = result.diagnostics.filter((d: any) => d.severity === "error");
+    expect(typeErrors.length).toBe(0);
+  });
+
+  it("nullable in union type: string? | number", () => {
+    const ast = compileToAST("let x: string? | number = 42");
+    const decl = ast.body[0] as any;
+    // Should parse as union of (nullable string) and number
+    expect(decl.typeAnnotation.kind).toBe("union");
+  });
+
+  it("formatter round-trips nullable type", () => {
+    const ast = compileToAST("let x: string? = null");
+    const decl = ast.body[0] as any;
+    expect(decl.typeAnnotation.kind).toBe("nullable");
+    expect(decl.typeAnnotation.inner.name).toBe("string");
+  });
+});

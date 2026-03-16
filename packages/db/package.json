@@ -1,0 +1,9 @@
+{
+  "name": "@nodeon/db",
+  "version": "0.2.0",
+  "description": "Database layer for Nodeon — query builder, migrations, seeds",
+  "main": "src/index.no",
+  "type": "module",
+  "license": "MIT",
+  "keywords": ["nodeon", "database", "query-builder", "migrations", "postgresql"]
+}

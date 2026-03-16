@@ -7,4 +7,6 @@ import { signal, computed, effect, untracked, batch, isSignal, isComputed, isRea
 import { parseTemplate, compileTemplate, renderTemplate } from "./template.js";
 import { Injectable, Inject, InjectionToken, Container, rootContainer } from "./di.js";
 import { scanForIslands, generateIslandEntry, generateManifest, bundleIslands, bundleIsland } from "./island-bundler.js";
-export { buildRoutes, matchRoute, renderPage, wrapHtmlShell, injectStyle, postProcess, createDevServer, buildSite, island, renderIsland, extractIslandIds, injectIslandScripts, signal, computed, effect, untracked, batch, isSignal, isComputed, isReactive, parseTemplate, compileTemplate, renderTemplate, Injectable, Inject, InjectionToken, Container, rootContainer, scanForIslands, generateIslandEntry, generateManifest, bundleIslands, bundleIsland };
+import { createNovaPlugin, __novaEsc } from "./nova-plugin.js";
+import { page, api, layout, middleware, service, inject, collectRouteMetadata } from "./decorators.js";
+export { buildRoutes, matchRoute, renderPage, wrapHtmlShell, injectStyle, postProcess, createDevServer, buildSite, island, renderIsland, extractIslandIds, injectIslandScripts, signal, computed, effect, untracked, batch, isSignal, isComputed, isReactive, parseTemplate, compileTemplate, renderTemplate, Injectable, Inject, InjectionToken, Container, rootContainer, scanForIslands, generateIslandEntry, generateManifest, bundleIslands, bundleIsland, createNovaPlugin, __novaEsc, page, api, layout, middleware, service, inject, collectRouteMetadata };

@@ -1,0 +1,76 @@
+// CompilerPlugin — hook interface for extending the Nodeon compilation pipeline.
+// Plugins can transform source text, AST nodes, or generated JS at each phase.
+
+export class PluginRegistry {
+  #plugins = []
+
+  fn register(plugin) {
+    this.#plugins.push(plugin)
+  }
+
+  fn unregister(name) {
+    this.#plugins = this.#plugins.filter((p) => p.name != name)
+  }
+
+  fn getPlugins() {
+    return this.#plugins
+  }
+
+  fn clear() {
+    this.#plugins = []
+  }
+
+  fn runBeforeParse(source, ctx) {
+    let result = source
+    for plugin in this.#plugins {
+      if plugin.beforeParse {
+        result = plugin.beforeParse(result, ctx)
+      }
+    }
+    return result
+  }
+
+  fn runAfterParse(ast, ctx) {
+    let result = ast
+    for plugin in this.#plugins {
+      if plugin.afterParse {
+        result = plugin.afterParse(result, ctx)
+      }
+    }
+    return result
+  }
+
+  fn runBeforeGenerate(ast, ctx) {
+    let result = ast
+    for plugin in this.#plugins {
+      if plugin.beforeGenerate {
+        result = plugin.beforeGenerate(result, ctx)
+      }
+    }
+    return result
+  }
+
+  fn runAfterGenerate(js, ctx) {
+    let result = js
+    for plugin in this.#plugins {
+      if plugin.afterGenerate {
+        result = plugin.afterGenerate(result, ctx)
+      }
+    }
+    return result
+  }
+
+  fn runResolveImport(specifier, fromFile) {
+    for plugin in this.#plugins {
+      if plugin.resolveImport {
+        const resolved = plugin.resolveImport(specifier, fromFile)
+        if resolved != null {
+          return resolved
+        }
+      }
+    }
+    return null
+  }
+}
+
+export const defaultRegistry = new PluginRegistry()

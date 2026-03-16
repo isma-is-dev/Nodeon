@@ -8,7 +8,8 @@ export type TypeAnnotation =
   | { kind: "object"; properties: { key: string; value: TypeAnnotation; optional?: boolean }[] } // { name: string, age?: number }
   | { kind: "tuple"; elements: TypeAnnotation[] }                 // [string, number]
   | { kind: "literal"; value: string | number | boolean }         // "hello", 42, true
-  | { kind: "intersection"; types: TypeAnnotation[] };            // A & B
+  | { kind: "intersection"; types: TypeAnnotation[] }             // A & B
+  | { kind: "nullable"; inner: TypeAnnotation };                  // string?, number?
 
 // ── Source Location (for source maps) ────────────────────────────────
 export type SourceLoc = { line: number; column: number };

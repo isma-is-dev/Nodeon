@@ -1675,6 +1675,12 @@ export class Parser extends ParserBase {
       }
     }
 
+    // Nullable type: string?, number[]?
+    if (this.checkExactOperator("?")) {
+      this.advance();
+      type = { kind: "nullable", inner: type };
+    }
+
     // Union type: string | number (exact token match, not prefix)
     if (this.checkExactOperator("|")) {
       const types: TypeAnnotation[] = [type];

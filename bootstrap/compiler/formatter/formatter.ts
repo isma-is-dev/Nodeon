@@ -534,6 +534,7 @@ function fmtType(t: TypeAnnotation): string {
     }
     case "tuple": return `[${t.elements.map(fmtType).join(", ")}]`;
     case "literal": return JSON.stringify(t.value);
+    case "nullable": return `${fmtType(t.inner)}?`;
     default: return "any";
   }
 }
