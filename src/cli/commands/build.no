@@ -87,8 +87,8 @@ fn collectDependencies(entryFile) {
   const visited = new Set()
   const ordered = []
 
-  const compiler = require('../../compiler/compile.no')
-  const resolver = require('../../compiler/resolver.no')
+  const compiler = require('../../compiler/compile.js') ?? require('../../compiler/compile.no')
+  const resolver = require('../../compiler/resolver.js') ?? require('../../compiler/resolver.no')
 
   fn walk(absFile) {
     if visited.has(absFile) { return }

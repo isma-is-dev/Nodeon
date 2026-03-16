@@ -15,7 +15,15 @@ let compilerModule = null
 
 fn getCompiler() {
   if !compilerModule {
-    compilerModule = require('../../compiler/compile.no')
+    const candidates = ['../../compiler/compile.js', '../../compiler/compile.no']
+    for c in candidates {
+      try {
+        compilerModule = require(c)
+        break
+      } catch (err) {
+        if err.code != 'MODULE_NOT_FOUND' { throw err }
+      }
+    }
   }
   return compilerModule
 }

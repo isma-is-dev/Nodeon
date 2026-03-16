@@ -24,6 +24,20 @@ greet("World")
 
 Requirements: **Node.js 18+**, npm.
 
+### From npm (recommended)
+
+```bash
+npm install -g nodeon-lang   # instala el CLI global
+
+# o por proyecto
+npm install nodeon-lang --save-dev
+
+# ejecutar
+nodeon run main.no
+```
+
+### Desde el repo
+
 ```bash
 npm install           # install dependencies
 npm test              # run 307 tests

@@ -49,12 +49,13 @@ function loadCompiler(mode) {
   require("tsconfig-paths").register({
     baseUrl: path.resolve(__dirname, ".."),
     paths: {
-      "@language/*": ["src-ts-deprecated/language/*"],
-      "@lexer/*": ["src-ts-deprecated/compiler/lexer/*"],
-      "@parser/*": ["src-ts-deprecated/compiler/parser/*"],
-      "@compiler/*": ["src-ts-deprecated/compiler/*"],
-      "@ast/*": ["src-ts-deprecated/compiler/ast/*"],
-      "@src/*": ["src-ts-deprecated/*"],
+      // Bootstrap compiler lives under bootstrap/, mirror aliases there
+      "@language/*": ["bootstrap/language/*"],
+      "@lexer/*": ["bootstrap/compiler/lexer/*"],
+      "@parser/*": ["bootstrap/compiler/parser/*"],
+      "@compiler/*": ["bootstrap/compiler/*"],
+      "@ast/*": ["bootstrap/compiler/ast/*"],
+      "@src/*": ["bootstrap/*"],
     },
   });
   return require("../bootstrap/compiler/compile");
@@ -80,6 +81,7 @@ function buildAll(compiler, label) {
     try {
       const source = fs.readFileSync(file, "utf8");
       const result = compiler.compile(source);
+
       fs.writeFileSync(outPath, result.js, "utf8");
       ok++;
       const kb = (result.js.length / 1024).toFixed(1);

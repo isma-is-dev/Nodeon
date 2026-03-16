@@ -29,8 +29,8 @@ export fn runFmt(args) {
 
   try {
     const source = fs.readFileSync(absInput, 'utf8')
-    const compiler = require('../../compiler/compile.no')
-    const formatter = require('../../compiler/formatter/formatter.no')
+    const compiler = require('../../compiler/compile.js') ?? require('../../compiler/compile.no')
+    const formatter = require('../../compiler/formatter/formatter.js') ?? require('../../compiler/formatter/formatter.no')
     const ast = compiler.compileToAST(source)
     const formatted = formatter.format(ast)
 
