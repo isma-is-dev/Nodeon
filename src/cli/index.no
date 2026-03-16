@@ -7,6 +7,9 @@ import { runRun, resolveNodeonFile } from "./commands/run.no"
 import { runCheck } from "./commands/check.no"
 import { runFmt } from "./commands/fmt.no"
 import { startRepl } from "./commands/repl.no"
+import { runTest } from "./commands/test.no"
+import { runNew } from "./commands/new.no"
+import { runGenerate } from "./commands/generate.no"
 
 export async fn main(argv) {
   const args = (argv ?? process.argv).slice(2)
@@ -19,6 +22,11 @@ export async fn main(argv) {
 
   if cmd == "version" || cmd == "--version" || cmd == "-v" {
     printVersion()
+    return
+  }
+
+  if cmd == "new" {
+    await runNew(args.slice(1))
     return
   }
 
@@ -37,6 +45,11 @@ export async fn main(argv) {
     return
   }
 
+  if cmd == "test" {
+    await runTest(args.slice(1))
+    return
+  }
+
   if cmd == "repl" {
     startRepl()
     return
@@ -52,6 +65,11 @@ export async fn main(argv) {
     return
   }
 
+  if cmd == "generate" || cmd == "g" {
+    runGenerate(args.slice(1))
+    return
+  }
+
   // Try to run as a file
   try {
     const resolved = resolveNodeonFile(cmd)
@@ -61,7 +79,7 @@ export async fn main(argv) {
     // Not a valid file — fall through
   }
 
-  const knownCommands = ["build", "run", "repl", "check", "fmt", "help", "version", "init"]
+  const knownCommands = ["build", "run", "repl", "check", "fmt", "help", "version", "init", "new", "test", "generate"]
   const suggestion = suggestClosest(cmd, knownCommands)
   console.error("Unknown command '" + cmd + "'")
   console.error("See " + CYAN + "'nodeon help'" + RESET + ".")

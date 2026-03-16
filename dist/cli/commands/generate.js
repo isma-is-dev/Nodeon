@@ -1,0 +1,171 @@
+import { GREEN, RED, DIM, YELLOW, CYAN, BOLD, RESET } from "../utils/colors.js";
+const fs = require("fs");
+const path = require("path");
+function writeFile(filePath, content) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content, "utf8");
+  const rel = path.relative(process.cwd(), filePath);
+  console.log("  " + GREEN + "+" + RESET + " " + rel);
+}
+function capitalize(str) {
+  if (!str || str.length === 0) {
+    return str;
+  }
+  return str[0].toUpperCase() + str.slice(1);
+}
+function pascalCase(str) {
+  return str.split(/[-_]/).map(s => capitalize(s)).join("");
+}
+function camelCase(str) {
+  const parts = str.split(/[-_]/);
+  return parts[0] + parts.slice(1).map(s => capitalize(s)).join("");
+}
+function pluralize(str) {
+  if (str.endsWith("s")) {
+    return str + "es";
+  }
+  if (str.endsWith("y")) {
+    return str.slice(0, -1) + "ies";
+  }
+  return str + "s";
+}
+function generateEntity(name) {
+  const className = pascalCase(name);
+  const tableName = pluralize(name.toLowerCase());
+  const varName = camelCase(name);
+  console.log("");
+  console.log(BOLD + "  Generating entity: " + className + RESET);
+  console.log("");
+  writeFile(path.resolve("packages", "db", "src", "models", name + ".no"), "@entity(\"" + tableName + "\")\nexport class " + className + " {\n  @id @auto id: number\n  @column name: string\n  @column @nullable description: string\n  @timestamps createdAt: Date\n  @timestamps updatedAt: Date\n}\n");
+  const timestamp = Date.now();
+  const migrationNum = String(timestamp).slice(-6);
+  writeFile(path.resolve("packages", "db", "src", "migrations", migrationNum + "_create_" + tableName + ".no"), "import { Migration } from \"@nodeon/db\"\n\nexport class Create" + capitalize(tableName) + " extends Migration {\n  async fn up(db) {\n    await db.createTable(\"" + tableName + "\", fn(t) {\n      t.id()\n      t.string(\"name\")\n      t.string(\"description\").nullable()\n      t.timestamps()\n    })\n  }\n\n  async fn down(db) {\n    await db.dropTable(\"" + tableName + "\")\n  }\n}\n");
+  writeFile(path.resolve("packages", "shared", "src", "types", name + ".no"), "export type " + className + " = {\n  id: number\n  name: string\n  description: string | null\n  createdAt: Date\n  updatedAt: Date\n}\n\n@validate\nexport type Create" + className + " = {\n  name: string @minLength(1) @maxLength(255)\n  description: string | null\n}\n\n@validate\nexport type Update" + className + " = {\n  name: string @minLength(1) @maxLength(255)\n  description: string | null\n}\n");
+  writeFile(path.resolve("apps", "api", "src", "services", name + "-service.no"), "import { " + className + ", Create" + className + ", Update" + className + " } from \"@shared/types/" + name + "\"\n\n@service\nexport class " + className + "Service {\n  @inject db: Database\n  @inject log: Logger\n\n  async fn findAll(): " + className + "[] {\n    return await this.db." + varName + ".findMany()\n  }\n\n  async fn findById(id: number): " + className + " | null {\n    return await this.db." + varName + ".findOne(id)\n  }\n\n  async fn create(data: Create" + className + "): " + className + " {\n    this.log.info(\"Creating " + name + "\")\n    return await this.db." + varName + ".create(data)\n  }\n\n  async fn update(id: number, data: Update" + className + "): " + className + " {\n    return await this.db." + varName + ".update(id, data)\n  }\n\n  async fn delete(id: number): boolean {\n    return await this.db." + varName + ".delete(id)\n  }\n}\n");
+  writeFile(path.resolve("apps", "api", "src", "routes", tableName + ".no"), "import { " + className + "Service } from \"../services/" + name + "-service\"\nimport { Create" + className + ", Update" + className + " } from \"@shared/types/" + name + "\"\n\n@api(\"/api/" + tableName + "\")\nexport class " + capitalize(tableName) + "API {\n  @inject " + varName + "s: " + className + "Service\n\n  @get(\"/\")\n  async fn list() {\n    return await this." + varName + "s.findAll()\n  }\n\n  @get(\"/:id\")\n  async fn show(@param id: number) {\n    const item = await this." + varName + "s.findById(id)\n    if !item { throw NotFound(\"" + className + " not found\") }\n    return item\n  }\n\n  @post(\"/\")\n  async fn create(@body data: Create" + className + ") {\n    return await this." + varName + "s.create(data)\n  }\n\n  @put(\"/:id\")\n  async fn update(@param id: number, @body data: Update" + className + ") {\n    return await this." + varName + "s.update(id, data)\n  }\n\n  @delete(\"/:id\")\n  async fn remove(@param id: number) {\n    await this." + varName + "s.delete(id)\n    return { ok: true }\n  }\n}\n");
+  writeFile(path.resolve("tests", "api", "services", name + "-service.test.no"), "import { describe, it, expect } from \"@nodeon/test\"\n\ndescribe(\"" + className + "Service\", fn() {\n  it(\"should be defined\", fn() {\n    expect(true).toBeTruthy()\n  })\n\n  it(\"findAll returns an array\", fn() {\n    // TODO: implement with test database\n    expect([]).toBeArray()\n  })\n})\n");
+  console.log("");
+  console.log(DIM + "  Generated 6 files for entity '" + name + "'." + RESET);
+  console.log(DIM + "  Run 'nodeon db migrate' to create the database table." + RESET);
+  console.log("");
+}
+function generatePage(pagePath) {
+  const parts = pagePath.split("/");
+  const fileName = parts[parts.length - 1];
+  const className = pascalCase(fileName.replace(/\[|\]/g, ""));
+  console.log("");
+  console.log(BOLD + "  Generating page: " + pagePath + RESET);
+  console.log("");
+  const hasDynamicParam = fileName.includes("[");
+  const paramName = hasDynamicParam ? fileName.replace(/\[|\]/g, "").replace(".no", "") : null;
+  let loadFn = "";
+  if (hasDynamicParam) {
+    loadFn = "\n  async fn load(params) {\n    // TODO: fetch data using params." + paramName + "\n    return { " + paramName + ": params." + paramName + " }\n  }\n";
+  } else {
+    loadFn = "\n  fn load() {\n    return { title: \"" + className + "\" }\n  }\n";
+  }
+  writeFile(path.resolve("apps", "web", "src", "pages", pagePath + ".no"), "@page\nexport class " + className + " {" + loadFn + "\n  fn template(data) {\n    return \"<h1>" + className + "</h1>\"\n  }\n}\n");
+  console.log("");
+}
+function generateComponent(name) {
+  const className = pascalCase(name);
+  console.log("");
+  console.log(BOLD + "  Generating component: " + className + RESET);
+  console.log("");
+  writeFile(path.resolve("apps", "web", "src", "components", className + ".no"), "@component\nexport class " + className + " {\n  @input title: string = \"\"\n\n  fn template() {\n    return \"<div class=\\\"" + name.toLowerCase() + "\\\">\" + this.title + \"</div>\"\n  }\n\n  fn style() {\n    return \"." + name.toLowerCase() + " { }\"\n  }\n}\n");
+  console.log("");
+}
+function generateIsland(name) {
+  const className = pascalCase(name);
+  console.log("");
+  console.log(BOLD + "  Generating island: " + className + RESET);
+  console.log("");
+  writeFile(path.resolve("apps", "web", "src", "islands", className + ".no"), "@island(idle)\nexport class " + className + " {\n  @signal count: number = 0\n\n  fn increment() {\n    this.count = this.count + 1\n  }\n\n  fn template() {\n    return \"<div class=\\\"" + name.toLowerCase() + "\\\"><button @click={this.increment}>Count: \" + this.count + \"</button></div>\"\n  }\n}\n");
+  console.log("");
+}
+function generateService(name) {
+  const className = pascalCase(name) + "Service";
+  console.log("");
+  console.log(BOLD + "  Generating service: " + className + RESET);
+  console.log("");
+  writeFile(path.resolve("apps", "api", "src", "services", name + "-service.no"), "@service\nexport class " + className + " {\n  @inject log: Logger\n\n  async fn execute(data) {\n    this.log.info(\"" + className + ".execute called\")\n    // TODO: implement business logic\n    return data\n  }\n}\n");
+  writeFile(path.resolve("tests", "api", "services", name + "-service.test.no"), "import { describe, it, expect } from \"@nodeon/test\"\n\ndescribe(\"" + className + "\", fn() {\n  it(\"should be defined\", fn() {\n    expect(true).toBeTruthy()\n  })\n})\n");
+  console.log("");
+}
+function generateMiddleware(name) {
+  const className = pascalCase(name) + "Middleware";
+  console.log("");
+  console.log(BOLD + "  Generating middleware: " + className + RESET);
+  console.log("");
+  writeFile(path.resolve("apps", "api", "src", "middleware", name + ".no"), "@middleware\nexport class " + className + " {\n  @inject log: Logger\n\n  async fn handle(req, next) {\n    this.log.debug(\"" + className + " processing request\")\n    const response = await next()\n    return response\n  }\n}\n");
+  console.log("");
+}
+function generateJob(name) {
+  const className = pascalCase(name);
+  console.log("");
+  console.log(BOLD + "  Generating job: " + className + RESET);
+  console.log("");
+  writeFile(path.resolve("apps", "api", "src", "jobs", name + ".no"), "@job\nexport class " + className + " {\n  @inject log: Logger\n\n  async fn execute(payload) {\n    this.log.info(\"Job " + className + " started\")\n    // TODO: implement job logic\n    this.log.info(\"Job " + className + " completed\")\n  }\n}\n");
+  console.log("");
+}
+function generateModule(name) {
+  console.log("");
+  console.log(BOLD + "  Generating module: " + name + RESET);
+  console.log("");
+  generateEntity(name);
+  writeFile(path.resolve("apps", "web", "src", "pages", pluralize(name), "index.no"), "@page\nexport class " + pascalCase(pluralize(name)) + "List {\n  async fn load() {\n    // TODO: fetch " + pluralize(name) + " from API\n    return { items: [] }\n  }\n\n  fn template(data) {\n    return \"<h1>" + capitalize(pluralize(name)) + "</h1>\\n<ul>\" + data.items.map((item) => \"<li>\" + item.name + \"</li>\").join(\"\") + \"</ul>\"\n  }\n}\n");
+  writeFile(path.resolve("apps", "web", "src", "pages", pluralize(name), "[id].no"), "@page\nexport class " + pascalCase(name) + "Detail {\n  async fn load(params) {\n    // TODO: fetch " + name + " by id from API\n    return { item: { id: params.id, name: \"" + capitalize(name) + " \" + params.id } }\n  }\n\n  fn template(data) {\n    return \"<h1>\" + data.item.name + \"</h1>\"\n  }\n}\n");
+  console.log(DIM + "  Generated complete module '" + name + "'." + RESET);
+  console.log("");
+}
+function printGenerateHelp() {
+  console.log("");
+  console.log(BOLD + "  nodeon generate" + RESET + " — Code scaffolding");
+  console.log("");
+  console.log("  Usage: nodeon generate <type> <name>");
+  console.log("  Alias: nodeon g <type> <name>");
+  console.log("");
+  console.log("  Types:");
+  console.log("    " + CYAN + "entity" + RESET + " <name>      Model + migration + service + API + tests");
+  console.log("    " + CYAN + "page" + RESET + " <path>        Page component with load function");
+  console.log("    " + CYAN + "component" + RESET + " <name>   Server component (zero JS)");
+  console.log("    " + CYAN + "island" + RESET + " <name>      Interactive island component");
+  console.log("    " + CYAN + "service" + RESET + " <name>     Injectable service");
+  console.log("    " + CYAN + "middleware" + RESET + " <name>   Request middleware");
+  console.log("    " + CYAN + "job" + RESET + " <name>         Background job");
+  console.log("    " + CYAN + "module" + RESET + " <name>      Full module (entity + service + API + pages + tests)");
+  console.log("");
+}
+export function runGenerate(args) {
+  const genType = args[0];
+  const genName = args[1];
+  if (!genType) {
+    printGenerateHelp();
+    return;
+  }
+  if (!genName) {
+    console.error(RED + "  Missing name. Usage: nodeon generate " + genType + " <name>" + RESET);
+    process.exit(1);
+  }
+  if (genType === "entity") {
+    generateEntity(genName);
+  } else if (genType === "page") {
+    generatePage(genName);
+  } else if (genType === "component") {
+    generateComponent(genName);
+  } else if (genType === "island") {
+    generateIsland(genName);
+  } else if (genType === "service") {
+    generateService(genName);
+  } else if (genType === "middleware") {
+    generateMiddleware(genName);
+  } else if (genType === "job") {
+    generateJob(genName);
+  } else if (genType === "module") {
+    generateModule(genName);
+  } else {
+    console.error(RED + "  Unknown generator type: " + genType + RESET);
+    printGenerateHelp();
+    process.exit(1);
+  }
+}

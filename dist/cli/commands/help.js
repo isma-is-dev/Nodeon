@@ -1,16 +1,36 @@
 import { CYAN, BOLD, RESET } from "../utils/colors.js";
-const version = "0.1.0";
+const version = "0.2.0";
 const helpText = `nodeon v${version}
 
-Usage: nodeon <command> [options] <file>
+Usage: nodeon <command> [options]
 
-Commands:
-  build [options] <input> [output]   Compile .no → .js
+Project:
+  new <name>                         Create a new project
+  init [name]                        Initialize in existing directory
+  dev                                Start development server (coming soon)
+
+Compile:
+  build [options] <input> [output]   Compile .no to .js
   run <input>                        Compile and execute
   check <input>                      Type-check without compiling
+
+Code Quality:
+  test [pattern]                     Run .test.no files
   fmt <input>                        Format .no source code
   repl                               Interactive REPL
-  init [name]                        Initialize a new project
+
+Generate:
+  generate entity <name>             Model + migration + service + API + tests
+  generate page <path>               Page component
+  generate component <name>          Server component
+  generate island <name>             Interactive island component
+  generate service <name>            Injectable service
+  generate middleware <name>         Request middleware
+  generate job <name>                Background job
+  generate module <name>             Full module (all of the above)
+  (alias: g)
+
+Info:
   help                               Show this help
   version                            Show version
 
@@ -20,12 +40,12 @@ Build Options:
   --check           Enable type checking
 
 Examples:
-  nodeon build hello.no              → hello.js
-  nodeon build -min hello.no         → hello.min.js
-  nodeon run hello.no                → compile & execute
-  nodeon check hello.no              → type-check
-  nodeon fmt hello.no                → format in-place
-  nodeon repl                        → interactive mode`;
+  nodeon new my-app                  Create a full-stack project
+  nodeon build hello.no              Compile to hello.js
+  nodeon run hello.no                Compile and execute
+  nodeon test                        Run all tests
+  nodeon g entity user               Generate user entity + CRUD
+  nodeon g module blog               Generate complete blog module`;
 export function printHelp() {
   return console.log(helpText);
 }

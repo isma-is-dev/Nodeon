@@ -109,7 +109,7 @@ export fn runInSandbox(jsCode, filename) {
   }
 }
 
-fn esmToCjs(code) {
+export fn esmToCjs(code) {
   let out = code
 
   // import default

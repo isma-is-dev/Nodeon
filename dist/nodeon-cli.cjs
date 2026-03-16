@@ -4683,18 +4683,38 @@ function suggestClosest(input, candidates, maxDistance) {
 }
 
 // dist/cli/commands/help.js
-var version = "0.1.0";
+var version = "0.2.0";
 var helpText = `nodeon v${version}
 
-Usage: nodeon <command> [options] <file>
+Usage: nodeon <command> [options]
 
-Commands:
-  build [options] <input> [output]   Compile .no \u2192 .js
+Project:
+  new <name>                         Create a new project
+  init [name]                        Initialize in existing directory
+  dev                                Start development server (coming soon)
+
+Compile:
+  build [options] <input> [output]   Compile .no to .js
   run <input>                        Compile and execute
   check <input>                      Type-check without compiling
+
+Code Quality:
+  test [pattern]                     Run .test.no files
   fmt <input>                        Format .no source code
   repl                               Interactive REPL
-  init [name]                        Initialize a new project
+
+Generate:
+  generate entity <name>             Model + migration + service + API + tests
+  generate page <path>               Page component
+  generate component <name>          Server component
+  generate island <name>             Interactive island component
+  generate service <name>            Injectable service
+  generate middleware <name>         Request middleware
+  generate job <name>                Background job
+  generate module <name>             Full module (all of the above)
+  (alias: g)
+
+Info:
   help                               Show this help
   version                            Show version
 
@@ -4704,12 +4724,12 @@ Build Options:
   --check           Enable type checking
 
 Examples:
-  nodeon build hello.no              \u2192 hello.js
-  nodeon build -min hello.no         \u2192 hello.min.js
-  nodeon run hello.no                \u2192 compile & execute
-  nodeon check hello.no              \u2192 type-check
-  nodeon fmt hello.no                \u2192 format in-place
-  nodeon repl                        \u2192 interactive mode`;
+  nodeon new my-app                  Create a full-stack project
+  nodeon build hello.no              Compile to hello.js
+  nodeon run hello.no                Compile and execute
+  nodeon test                        Run all tests
+  nodeon g entity user               Generate user entity + CRUD
+  nodeon g module blog               Generate complete blog module`;
 function printHelp() {
   return console.log(helpText);
 }
@@ -4957,9 +4977,9 @@ var URL = globalThis.URL;
 var URLSearchParams = globalThis.URLSearchParams;
 var TextEncoder = globalThis.TextEncoder;
 var TextDecoder = globalThis.TextDecoder;
-var queueMicrotask = globalThis.queueMicrotask;
+var queueMicrotask2 = globalThis.queueMicrotask;
 var Intl = globalThis.Intl;
-var sandboxGlobals = { console, setTimeout, setInterval, clearTimeout, clearInterval, JSON, Math, Date, RegExp, Error, TypeError, RangeError, SyntaxError, ReferenceError: ReferenceError2, URIError, EvalError, parseInt, parseFloat, isNaN, isFinite, encodeURIComponent, decodeURIComponent, encodeURI, decodeURI, Array, Object, String, Number, Boolean, Map, Set, WeakMap, WeakSet, Promise, Symbol, Proxy, Reflect, require, process, Buffer, URL, URLSearchParams, TextEncoder, TextDecoder, queueMicrotask, Intl, globalThis };
+var sandboxGlobals = { console, setTimeout, setInterval, clearTimeout, clearInterval, JSON, Math, Date, RegExp, Error, TypeError, RangeError, SyntaxError, ReferenceError: ReferenceError2, URIError, EvalError, parseInt, parseFloat, isNaN, isFinite, encodeURIComponent, decodeURIComponent, encodeURI, decodeURI, Array, Object, String, Number, Boolean, Map, Set, WeakMap, WeakSet, Promise, Symbol, Proxy, Reflect, require, process, Buffer, URL, URLSearchParams, TextEncoder, TextDecoder, queueMicrotask: queueMicrotask2, Intl, globalThis };
 function runInSandbox(jsCode, filename) {
   const cjsCode = esmToCjs(jsCode);
   const absFile = path3.resolve(process.cwd(), filename);
@@ -5506,6 +5526,504 @@ function startRepl() {
   rl.on("close", () => process.exit(0));
 }
 
+// dist/cli/commands/test.js
+var fs8 = require("fs");
+var path8 = require("path");
+var vm3 = require("vm");
+function findTestFiles(dir, pattern) {
+  const results = [];
+  if (!fs8.existsSync(dir)) {
+    return results;
+  }
+  const entries = fs8.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const full = path8.join(dir, entry.name);
+    if (entry.isDirectory() && entry.name !== "node_modules" && entry.name !== "dist" && entry.name !== ".git") {
+      const sub = findTestFiles(full, pattern);
+      for (const f of sub) {
+        results.push(f);
+      }
+    } else if (entry.isFile() && entry.name.endsWith(".test.no")) {
+      if (!pattern || full.includes(pattern)) {
+        results.push(full);
+      }
+    }
+  }
+  return results;
+}
+async function runTestFile(filePath) {
+  const relPath = path8.relative(process.cwd(), filePath);
+  try {
+    const result = compileFile(relPath, void 0, { minify: false, write: false });
+    const cjsCode = esmToCjs(result.jsCode);
+    const testDir = path8.dirname(filePath);
+    const testRequire = createTestRequire(testDir);
+    const mod = { exports: {} };
+    const runFn = new Function("module", "exports", "require", "__dirname", "__filename", "console", "setTimeout", "setInterval", "clearTimeout", "clearInterval", "JSON", "Math", "Date", "Error", "TypeError", "RangeError", "Array", "Object", "String", "Number", "Boolean", "Map", "Set", "Promise", "Symbol", "Buffer", "process", "queueMicrotask", "globalThis", cjsCode);
+    runFn(mod, mod.exports, testRequire, testDir, filePath, console, setTimeout, setInterval, clearTimeout, clearInterval, JSON, Math, Date, Error, TypeError, RangeError, Array, Object, String, Number, Boolean, Map, Set, Promise, Symbol, Buffer, process, queueMicrotask, globalThis);
+    const testLib = testRequire("@nodeon/test");
+    if (testLib && testLib.run) {
+      const results = await testLib.run();
+      return { file: relPath, results };
+    }
+    return { file: relPath, results: { passed: 0, failed: 0, skipped: 0, failures: [] } };
+  } catch (err) {
+    console.error(RED + "  \u2717 " + RESET + relPath + ": " + err.message);
+    if (err.stack) {
+      const lines = err.stack.split("\n").slice(0, 3);
+      for (const line of lines) {
+        console.error(DIM + "    " + line + RESET);
+      }
+    }
+    return { file: relPath, results: { passed: 0, failed: 1, skipped: 0, failures: [{ name: relPath, error: err }] } };
+  }
+}
+async function runTest(args) {
+  const flags = args.filter((a) => a.startsWith("-"));
+  const positional = args.filter((a) => !a.startsWith("-"));
+  const pattern = positional[0] || null;
+  const watchMode = flags.includes("-w") || flags.includes("--watch");
+  console.log("");
+  console.log(BOLD + "  Nodeon Test Runner" + RESET);
+  console.log("");
+  const searchDirs = ["tests", "test", "src", "packages"];
+  let testFiles = [];
+  for (const dir of searchDirs) {
+    const absDir = path8.resolve(process.cwd(), dir);
+    const found = findTestFiles(absDir, pattern);
+    for (const f of found) {
+      testFiles.push(f);
+    }
+  }
+  const rootEntries = fs8.readdirSync(process.cwd(), { withFileTypes: true });
+  for (const entry of rootEntries) {
+    if (entry.isFile() && entry.name.endsWith(".test.no")) {
+      if (!pattern || entry.name.includes(pattern)) {
+        testFiles.push(path8.resolve(process.cwd(), entry.name));
+      }
+    }
+  }
+  if (testFiles.length === 0) {
+    console.log(YELLOW + "  No test files found." + RESET);
+    console.log(DIM + "  Looking for *.test.no files in: tests/, test/, src/, packages/" + RESET);
+    console.log("");
+    return;
+  }
+  console.log(DIM + "  Found " + testFiles.length + " test file" + testFiles.length > 1 ? "s" : "" + RESET);
+  console.log("");
+  const startTime = Date.now();
+  let totalPassed = 0;
+  let totalFailed = 0;
+  let totalSkipped = 0;
+  for (const file of testFiles) {
+    const relFile = path8.relative(process.cwd(), file);
+    console.log(CYAN + "  " + relFile + RESET);
+    const fileResult = await runTestFile(file);
+    if (fileResult.results) {
+      totalPassed = totalPassed + fileResult.results.passed;
+      totalFailed = totalFailed + fileResult.results.failed;
+      totalSkipped = totalSkipped + fileResult.results.skipped;
+    }
+  }
+  const elapsed = Date.now() - startTime;
+  console.log("");
+  console.log("  " + BOLD + "Results:" + RESET);
+  const passLabel = GREEN + totalPassed + " passed" + RESET;
+  const failLabel = totalFailed > 0 ? RED + totalFailed + " failed" + RESET : "";
+  const skipLabel = totalSkipped > 0 ? YELLOW + totalSkipped + " skipped" + RESET : "";
+  const parts = [passLabel, failLabel, skipLabel].filter(Boolean);
+  const total = totalPassed + totalFailed + totalSkipped;
+  console.log("  Tests: " + parts.join(", ") + " (" + total + " total)");
+  console.log("  Files: " + testFiles.length);
+  const elapsedSec = elapsed / 1e3;
+  console.log("  Time:  " + elapsedSec.toFixed(2) + "s");
+  console.log("");
+  if (totalFailed > 0) {
+    process.exit(1);
+  }
+}
+
+// dist/cli/commands/new.js
+var fs9 = require("fs");
+var path9 = require("path");
+var readline2 = require("readline");
+function ask(rl, question) {
+  return new Promise((resolve2) => {
+    rl.question(question, (answer) => {
+      resolve2(answer.trim());
+    });
+  });
+}
+function askChoice(rl, question, options) {
+  return new Promise((resolve2) => {
+    console.log(question);
+    let i = 0;
+    while (i < options.length) {
+      console.log("  " + CYAN + i + 1 + RESET + ") " + options[i].label + options[i].default ? " " + DIM + "(default)" + RESET : "");
+      i = i + 1;
+    }
+    rl.question("  > ", (answer) => {
+      const idx = parseInt(answer) - 1;
+      if (idx >= 0 && idx < options.length) {
+        resolve2(options[idx].value);
+      } else {
+        const def = options.find((o) => o.default);
+        resolve2(def ? def.value : options[0].value);
+      }
+    });
+  });
+}
+function writeFile(filePath, content) {
+  fs9.mkdirSync(path9.dirname(filePath), { recursive: true });
+  fs9.writeFileSync(filePath, content, "utf8");
+}
+function generateNodeonJson(name, projectType, dbChoice) {
+  const config = { name, version: "0.1.0", type: "workspace" };
+  if (projectType === "fullstack" || projectType === "api") {
+    config.workspace = { apps: ["apps/*"], packages: ["packages/*"] };
+  }
+  config.compiler = { strict: true, sourceMap: true, target: "node20" };
+  if (projectType === "fullstack" || projectType === "api") {
+    config.paths = { "@shared/*": ["packages/shared/src/*"], "@db/*": ["packages/db/src/*"] };
+    if (dbChoice !== "none") {
+      config.db = { driver: dbChoice, url: "${DATABASE_URL}", migrations: "packages/db/src/migrations", models: "packages/db/src/models", seeds: "packages/db/src/seeds" };
+    }
+    config.dev = { web: { port: 3e3 }, api: { port: 3001 } };
+  }
+  config.test = { include: ["tests/**/*.test.no"] };
+  return JSON.stringify(config, null, 2);
+}
+function generatePackageJson(name) {
+  return JSON.stringify({ name, version: "0.1.0", private: true, workspaces: ["apps/*", "packages/*"] }, null, 2);
+}
+function generateGitignore() {
+  return "node_modules/\ndist/\n.env\n.env.local\n.nodeon-cache/\n*.js.map\n";
+}
+function generateEnvExample(dbChoice) {
+  let env = "NODE_ENV=development\nPORT=3000\nAPI_PORT=3001\n";
+  if (dbChoice === "postgresql") {
+    env = env + "\nDATABASE_URL=postgresql://nodeon:nodeon@localhost:5432/myapp\nDB_NAME=myapp\nDB_USER=nodeon\nDB_PASSWORD=nodeon\n";
+  }
+  if (dbChoice === "sqlite") {
+    env = env + "\nDATABASE_URL=./data/app.db\n";
+  }
+  env = env + "\nSESSION_SECRET=change-me-in-production\n";
+  return env;
+}
+function generateReadme(name) {
+  return "# " + name + "\n\nBuilt with [Nodeon](https://github.com/isma-is-dev/Nodeon) + Nova framework.\n\n## Getting Started\n\n```bash\nnodeon dev\n```\n\n## Commands\n\n| Command | Description |\n|---------|-------------|\n| `nodeon dev` | Start development server |\n| `nodeon build` | Production build |\n| `nodeon test` | Run tests |\n| `nodeon generate entity <name>` | Generate a new entity |\n| `nodeon generate page <path>` | Generate a new page |\n";
+}
+function scaffoldFullstack(projectDir, name, dbChoice) {
+  writeFile(path9.join(projectDir, "nodeon.json"), generateNodeonJson(name, "fullstack", dbChoice));
+  writeFile(path9.join(projectDir, "package.json"), generatePackageJson(name));
+  writeFile(path9.join(projectDir, ".gitignore"), generateGitignore());
+  writeFile(path9.join(projectDir, ".env.example"), generateEnvExample(dbChoice));
+  writeFile(path9.join(projectDir, "README.md"), generateReadme(name));
+  writeFile(path9.join(projectDir, "apps", "web", "src", "pages", "index.no"), 'export fn load() {\n  return { title: "Welcome to ' + name + '" }\n}\n\nexport fn template(data) {\n  return "<h1>" + data.title + "</h1>\\n<p>Edit apps/web/src/pages/index.no to get started.</p>"\n}\n');
+  writeFile(path9.join(projectDir, "apps", "web", "src", "pages", "about.no"), 'export fn template() {\n  return "<h1>About</h1>\\n<p>Built with Nodeon + Nova.</p>"\n}\n');
+  writeFile(path9.join(projectDir, "apps", "web", "src", "components", "Header.no"), 'export fn template(props) {\n  return "<header><nav><a href=\\"/\\">Home</a> | <a href=\\"/about\\">About</a></nav></header>"\n}\n');
+  writeFile(path9.join(projectDir, "apps", "web", "src", "layouts", "Main.no"), 'import { Header } from "../components/Header.no"\n\nexport fn template(props) {\n  return "<html><head><title>" + (props.title ?? "' + name + '") + "</title></head><body>" + Header.template() + "<main>" + props.content + "</main></body></html>"\n}\n');
+  writeFile(path9.join(projectDir, "apps", "api", "src", "main.no"), 'const http = require("http")\n\nconst PORT = process.env.API_PORT ?? 3001\n\nconst server = http.createServer((req, res) => {\n  res.writeHead(200, { "Content-Type": "application/json" })\n  res.end(JSON.stringify({ status: "ok", message: "' + name + ' API running" }))\n})\n\nserver.listen(PORT, () => {\n  print("API server running on http://localhost:" + PORT)\n})\n');
+  writeFile(path9.join(projectDir, "apps", "api", "src", "routes", "health.no"), 'export fn handler(req, res) {\n  return { status: "ok", timestamp: new Date().toISOString() }\n}\n');
+  writeFile(path9.join(projectDir, "packages", "shared", "src", "index.no"), '// Shared types and validation\nexport { AppConfig } from "./types/config.no"\n');
+  writeFile(path9.join(projectDir, "packages", "shared", "src", "types", "config.no"), '// Application configuration type\nexport const AppConfig = {\n  name: "' + name + '",\n  version: "0.1.0"\n}\n');
+  if (dbChoice !== "none") {
+    writeFile(path9.join(projectDir, "packages", "db", "src", "index.no"), '// Database client\nconst dbUrl = process.env.DATABASE_URL ?? ""\n\nexport fn getDatabase() {\n  print("Database URL: " + dbUrl)\n  return { url: dbUrl }\n}\n');
+    writeFile(path9.join(projectDir, "packages", "db", "src", "migrations", ".gitkeep"), "");
+    writeFile(path9.join(projectDir, "packages", "db", "src", "models", ".gitkeep"), "");
+    writeFile(path9.join(projectDir, "packages", "db", "src", "seeds", ".gitkeep"), "");
+  }
+  writeFile(path9.join(projectDir, "tests", "example.test.no"), 'import { describe, it, expect } from "@nodeon/test"\n\ndescribe("Example", fn() {\n  it("should pass a basic assertion", fn() {\n    expect(1 + 1).toBe(2)\n  })\n\n  it("should check strings", fn() {\n    expect("hello").toContain("ell")\n  })\n\n  it("should check arrays", fn() {\n    expect([1, 2, 3]).toHaveLength(3)\n  })\n})\n');
+  if (dbChoice === "postgresql") {
+    writeFile(path9.join(projectDir, "infra", "docker", "docker-compose.yml"), 'services:\n  db:\n    image: postgres:16-alpine\n    environment:\n      POSTGRES_DB: ${DB_NAME:-myapp}\n      POSTGRES_USER: ${DB_USER:-nodeon}\n      POSTGRES_PASSWORD: ${DB_PASSWORD:-nodeon}\n    ports:\n      - "5432:5432"\n    volumes:\n      - pgdata:/var/lib/postgresql/data\n\nvolumes:\n  pgdata:\n');
+  }
+}
+function scaffoldApi(projectDir, name, dbChoice) {
+  writeFile(path9.join(projectDir, "nodeon.json"), generateNodeonJson(name, "api", dbChoice));
+  writeFile(path9.join(projectDir, "package.json"), generatePackageJson(name));
+  writeFile(path9.join(projectDir, ".gitignore"), generateGitignore());
+  writeFile(path9.join(projectDir, ".env.example"), generateEnvExample(dbChoice));
+  writeFile(path9.join(projectDir, "README.md"), generateReadme(name));
+  writeFile(path9.join(projectDir, "src", "main.no"), 'const http = require("http")\n\nconst PORT = process.env.PORT ?? 3000\n\nconst server = http.createServer((req, res) => {\n  res.writeHead(200, { "Content-Type": "application/json" })\n  res.end(JSON.stringify({ status: "ok", message: "' + name + ' API running" }))\n})\n\nserver.listen(PORT, () => {\n  print("Server running on http://localhost:" + PORT)\n})\n');
+  writeFile(path9.join(projectDir, "tests", "example.test.no"), 'import { describe, it, expect } from "@nodeon/test"\n\ndescribe("Example", fn() {\n  it("should work", fn() {\n    expect(true).toBeTruthy()\n  })\n})\n');
+}
+function scaffoldLibrary(projectDir, name) {
+  const config = { name, version: "0.1.0", type: "library", compiler: { strict: true, sourceMap: true }, test: { include: ["tests/**/*.test.no"] } };
+  writeFile(path9.join(projectDir, "nodeon.json"), JSON.stringify(config, null, 2));
+  writeFile(path9.join(projectDir, "package.json"), JSON.stringify({ name, version: "0.1.0", main: "dist/index.js", files: ["dist/**/*"] }, null, 2));
+  writeFile(path9.join(projectDir, ".gitignore"), generateGitignore());
+  writeFile(path9.join(projectDir, "README.md"), "# " + name + "\n\nA Nodeon library.\n");
+  writeFile(path9.join(projectDir, "src", "index.no"), "// " + name + ' \u2014 main entry point\n\nexport fn hello(name) {\n  return "Hello, " + name + "!"\n}\n');
+  writeFile(path9.join(projectDir, "tests", "index.test.no"), 'import { describe, it, expect } from "@nodeon/test"\nimport { hello } from "../src/index.no"\n\ndescribe("' + name + '", fn() {\n  it("greets by name", fn() {\n    expect(hello("World")).toBe("Hello, World!")\n  })\n})\n');
+}
+function scaffoldCli(projectDir, name) {
+  const config = { name, version: "0.1.0", type: "cli", entry: "src/main.no", compiler: { strict: true, sourceMap: true } };
+  writeFile(path9.join(projectDir, "nodeon.json"), JSON.stringify(config, null, 2));
+  writeFile(path9.join(projectDir, "package.json"), JSON.stringify({ name, version: "0.1.0", bin: { [name]: "./dist/main.js" }, files: ["dist/**/*"] }, null, 2));
+  writeFile(path9.join(projectDir, ".gitignore"), generateGitignore());
+  writeFile(path9.join(projectDir, "README.md"), "# " + name + "\n\nA CLI tool built with Nodeon.\n");
+  writeFile(path9.join(projectDir, "src", "main.no"), 'const args = process.argv.slice(2)\nconst cmd = args[0]\n\nif !cmd || cmd == "help" {\n  print("Usage: ' + name + ' <command>")\n  print("Commands: greet, version, help")\n} else {\n  if cmd == "version" {\n    print("' + name + ' v0.1.0")\n  } else {\n    if cmd == "greet" {\n      const name = args[1] ?? "World"\n      print("Hello, " + name + "!")\n    } else {\n      print("Unknown command: " + cmd)\n      process.exit(1)\n    }\n  }\n}\n');
+}
+async function runNew(args) {
+  const nameArg = args.filter((a) => !a.startsWith("-"))[0];
+  const nonInteractive = args.includes("--yes") || args.includes("-y");
+  console.log("");
+  console.log(BOLD + "  Nodeon" + RESET + " \u2014 Create New Project");
+  console.log("");
+  const rl = readline2.createInterface({ input: process.stdin, output: process.stdout });
+  let name = nameArg;
+  if (!name) {
+    name = await ask(rl, "  Project name: ");
+  }
+  if (!name) {
+    console.error(RED + "  Project name is required." + RESET);
+    rl.close();
+    process.exit(1);
+  }
+  if (!/^[a-zA-Z][\w-]*$/.test(name)) {
+    console.error(RED + "  Invalid project name. Use letters, numbers, hyphens only." + RESET);
+    rl.close();
+    process.exit(1);
+  }
+  let projectType = "fullstack";
+  let dbChoice = "postgresql";
+  if (!nonInteractive) {
+    console.log("");
+    projectType = await askChoice(rl, "  What kind of project?", [{ label: "Full-stack web app (Nova)", value: "fullstack", default: true }, { label: "API only (backend)", value: "api" }, { label: "Library (npm package)", value: "library" }, { label: "CLI tool", value: "cli" }]);
+    if (projectType === "fullstack" || projectType === "api") {
+      console.log("");
+      dbChoice = await askChoice(rl, "  Database?", [{ label: "PostgreSQL", value: "postgresql", default: true }, { label: "SQLite", value: "sqlite" }, { label: "None", value: "none" }]);
+    }
+  }
+  rl.close();
+  const projectDir = path9.resolve(process.cwd(), name);
+  if (fs9.existsSync(projectDir)) {
+    console.error(RED + "  Directory '" + name + "' already exists." + RESET);
+    process.exit(1);
+  }
+  console.log("");
+  console.log(DIM + "  Creating project..." + RESET);
+  if (projectType === "fullstack") {
+    scaffoldFullstack(projectDir, name, dbChoice);
+  } else if (projectType === "api") {
+    scaffoldApi(projectDir, name, dbChoice);
+  } else if (projectType === "library") {
+    scaffoldLibrary(projectDir, name);
+  } else {
+    scaffoldCli(projectDir, name);
+  }
+  console.log("");
+  console.log(GREEN + "  \u2713" + RESET + " Project " + BOLD + name + RESET + " created!");
+  console.log("");
+  function listDir(dir, prefix) {
+    const entries = fs9.readdirSync(dir, { withFileTypes: true }).sort((a, b) => {
+      if (a.isDirectory() && !b.isDirectory()) {
+        return -1;
+      }
+      if (!a.isDirectory() && b.isDirectory()) {
+        return 1;
+      }
+      return a.name.localeCompare(b.name);
+    });
+    let idx = 0;
+    while (idx < entries.length) {
+      const entry = entries[idx];
+      const isLast = idx === entries.length - 1;
+      const connector = isLast ? "\u2514\u2500\u2500 " : "\u251C\u2500\u2500 ";
+      const childPrefix = isLast ? "    " : "\u2502   ";
+      if (entry.isDirectory()) {
+        console.log(DIM + "  " + prefix + connector + RESET + CYAN + entry.name + "/" + RESET);
+        listDir(path9.join(dir, entry.name), prefix + childPrefix);
+      } else {
+        console.log(DIM + "  " + prefix + connector + RESET + entry.name);
+      }
+      idx = idx + 1;
+    }
+  }
+  listDir(projectDir, "");
+  console.log("");
+  console.log("  Next steps:");
+  console.log("    " + CYAN + "cd " + name + RESET);
+  if (projectType === "fullstack" || projectType === "api") {
+    console.log("    " + CYAN + "nodeon dev" + RESET);
+  } else {
+    console.log("    " + CYAN + "nodeon run src/" + projectType === "cli" ? "main" : "index.no" + RESET);
+  }
+  console.log("");
+}
+
+// dist/cli/commands/generate.js
+var fs10 = require("fs");
+var path10 = require("path");
+function writeFile2(filePath, content) {
+  fs10.mkdirSync(path10.dirname(filePath), { recursive: true });
+  fs10.writeFileSync(filePath, content, "utf8");
+  const rel = path10.relative(process.cwd(), filePath);
+  console.log("  " + GREEN + "+" + RESET + " " + rel);
+}
+function capitalize(str) {
+  if (!str || str.length === 0) {
+    return str;
+  }
+  return str[0].toUpperCase() + str.slice(1);
+}
+function pascalCase(str) {
+  return str.split(/[-_]/).map((s) => capitalize(s)).join("");
+}
+function camelCase(str) {
+  const parts = str.split(/[-_]/);
+  return parts[0] + parts.slice(1).map((s) => capitalize(s)).join("");
+}
+function pluralize(str) {
+  if (str.endsWith("s")) {
+    return str + "es";
+  }
+  if (str.endsWith("y")) {
+    return str.slice(0, -1) + "ies";
+  }
+  return str + "s";
+}
+function generateEntity(name) {
+  const className = pascalCase(name);
+  const tableName = pluralize(name.toLowerCase());
+  const varName = camelCase(name);
+  console.log("");
+  console.log(BOLD + "  Generating entity: " + className + RESET);
+  console.log("");
+  writeFile2(path10.resolve("packages", "db", "src", "models", name + ".no"), '@entity("' + tableName + '")\nexport class ' + className + " {\n  @id @auto id: number\n  @column name: string\n  @column @nullable description: string\n  @timestamps createdAt: Date\n  @timestamps updatedAt: Date\n}\n");
+  const timestamp = Date.now();
+  const migrationNum = String(timestamp).slice(-6);
+  writeFile2(path10.resolve("packages", "db", "src", "migrations", migrationNum + "_create_" + tableName + ".no"), 'import { Migration } from "@nodeon/db"\n\nexport class Create' + capitalize(tableName) + ' extends Migration {\n  async fn up(db) {\n    await db.createTable("' + tableName + '", fn(t) {\n      t.id()\n      t.string("name")\n      t.string("description").nullable()\n      t.timestamps()\n    })\n  }\n\n  async fn down(db) {\n    await db.dropTable("' + tableName + '")\n  }\n}\n');
+  writeFile2(path10.resolve("packages", "shared", "src", "types", name + ".no"), "export type " + className + " = {\n  id: number\n  name: string\n  description: string | null\n  createdAt: Date\n  updatedAt: Date\n}\n\n@validate\nexport type Create" + className + " = {\n  name: string @minLength(1) @maxLength(255)\n  description: string | null\n}\n\n@validate\nexport type Update" + className + " = {\n  name: string @minLength(1) @maxLength(255)\n  description: string | null\n}\n");
+  writeFile2(path10.resolve("apps", "api", "src", "services", name + "-service.no"), "import { " + className + ", Create" + className + ", Update" + className + ' } from "@shared/types/' + name + '"\n\n@service\nexport class ' + className + "Service {\n  @inject db: Database\n  @inject log: Logger\n\n  async fn findAll(): " + className + "[] {\n    return await this.db." + varName + ".findMany()\n  }\n\n  async fn findById(id: number): " + className + " | null {\n    return await this.db." + varName + ".findOne(id)\n  }\n\n  async fn create(data: Create" + className + "): " + className + ' {\n    this.log.info("Creating ' + name + '")\n    return await this.db.' + varName + ".create(data)\n  }\n\n  async fn update(id: number, data: Update" + className + "): " + className + " {\n    return await this.db." + varName + ".update(id, data)\n  }\n\n  async fn delete(id: number): boolean {\n    return await this.db." + varName + ".delete(id)\n  }\n}\n");
+  writeFile2(path10.resolve("apps", "api", "src", "routes", tableName + ".no"), "import { " + className + 'Service } from "../services/' + name + '-service"\nimport { Create' + className + ", Update" + className + ' } from "@shared/types/' + name + '"\n\n@api("/api/' + tableName + '")\nexport class ' + capitalize(tableName) + "API {\n  @inject " + varName + "s: " + className + 'Service\n\n  @get("/")\n  async fn list() {\n    return await this.' + varName + 's.findAll()\n  }\n\n  @get("/:id")\n  async fn show(@param id: number) {\n    const item = await this.' + varName + 's.findById(id)\n    if !item { throw NotFound("' + className + ' not found") }\n    return item\n  }\n\n  @post("/")\n  async fn create(@body data: Create' + className + ") {\n    return await this." + varName + 's.create(data)\n  }\n\n  @put("/:id")\n  async fn update(@param id: number, @body data: Update' + className + ") {\n    return await this." + varName + 's.update(id, data)\n  }\n\n  @delete("/:id")\n  async fn remove(@param id: number) {\n    await this.' + varName + "s.delete(id)\n    return { ok: true }\n  }\n}\n");
+  writeFile2(path10.resolve("tests", "api", "services", name + "-service.test.no"), 'import { describe, it, expect } from "@nodeon/test"\n\ndescribe("' + className + 'Service", fn() {\n  it("should be defined", fn() {\n    expect(true).toBeTruthy()\n  })\n\n  it("findAll returns an array", fn() {\n    // TODO: implement with test database\n    expect([]).toBeArray()\n  })\n})\n');
+  console.log("");
+  console.log(DIM + "  Generated 6 files for entity '" + name + "'." + RESET);
+  console.log(DIM + "  Run 'nodeon db migrate' to create the database table." + RESET);
+  console.log("");
+}
+function generatePage(pagePath) {
+  const parts = pagePath.split("/");
+  const fileName = parts[parts.length - 1];
+  const className = pascalCase(fileName.replace(/\[|\]/g, ""));
+  console.log("");
+  console.log(BOLD + "  Generating page: " + pagePath + RESET);
+  console.log("");
+  const hasDynamicParam = fileName.includes("[");
+  const paramName = hasDynamicParam ? fileName.replace(/\[|\]/g, "").replace(".no", "") : null;
+  let loadFn = "";
+  if (hasDynamicParam) {
+    loadFn = "\n  async fn load(params) {\n    // TODO: fetch data using params." + paramName + "\n    return { " + paramName + ": params." + paramName + " }\n  }\n";
+  } else {
+    loadFn = '\n  fn load() {\n    return { title: "' + className + '" }\n  }\n';
+  }
+  writeFile2(path10.resolve("apps", "web", "src", "pages", pagePath + ".no"), "@page\nexport class " + className + " {" + loadFn + '\n  fn template(data) {\n    return "<h1>' + className + '</h1>"\n  }\n}\n');
+  console.log("");
+}
+function generateComponent(name) {
+  const className = pascalCase(name);
+  console.log("");
+  console.log(BOLD + "  Generating component: " + className + RESET);
+  console.log("");
+  writeFile2(path10.resolve("apps", "web", "src", "components", className + ".no"), "@component\nexport class " + className + ' {\n  @input title: string = ""\n\n  fn template() {\n    return "<div class=\\"' + name.toLowerCase() + '\\">" + this.title + "</div>"\n  }\n\n  fn style() {\n    return ".' + name.toLowerCase() + ' { }"\n  }\n}\n');
+  console.log("");
+}
+function generateIsland(name) {
+  const className = pascalCase(name);
+  console.log("");
+  console.log(BOLD + "  Generating island: " + className + RESET);
+  console.log("");
+  writeFile2(path10.resolve("apps", "web", "src", "islands", className + ".no"), "@island(idle)\nexport class " + className + ' {\n  @signal count: number = 0\n\n  fn increment() {\n    this.count = this.count + 1\n  }\n\n  fn template() {\n    return "<div class=\\"' + name.toLowerCase() + '\\"><button @click={this.increment}>Count: " + this.count + "</button></div>"\n  }\n}\n');
+  console.log("");
+}
+function generateService(name) {
+  const className = pascalCase(name) + "Service";
+  console.log("");
+  console.log(BOLD + "  Generating service: " + className + RESET);
+  console.log("");
+  writeFile2(path10.resolve("apps", "api", "src", "services", name + "-service.no"), "@service\nexport class " + className + ' {\n  @inject log: Logger\n\n  async fn execute(data) {\n    this.log.info("' + className + '.execute called")\n    // TODO: implement business logic\n    return data\n  }\n}\n');
+  writeFile2(path10.resolve("tests", "api", "services", name + "-service.test.no"), 'import { describe, it, expect } from "@nodeon/test"\n\ndescribe("' + className + '", fn() {\n  it("should be defined", fn() {\n    expect(true).toBeTruthy()\n  })\n})\n');
+  console.log("");
+}
+function generateMiddleware(name) {
+  const className = pascalCase(name) + "Middleware";
+  console.log("");
+  console.log(BOLD + "  Generating middleware: " + className + RESET);
+  console.log("");
+  writeFile2(path10.resolve("apps", "api", "src", "middleware", name + ".no"), "@middleware\nexport class " + className + ' {\n  @inject log: Logger\n\n  async fn handle(req, next) {\n    this.log.debug("' + className + ' processing request")\n    const response = await next()\n    return response\n  }\n}\n');
+  console.log("");
+}
+function generateJob(name) {
+  const className = pascalCase(name);
+  console.log("");
+  console.log(BOLD + "  Generating job: " + className + RESET);
+  console.log("");
+  writeFile2(path10.resolve("apps", "api", "src", "jobs", name + ".no"), "@job\nexport class " + className + ' {\n  @inject log: Logger\n\n  async fn execute(payload) {\n    this.log.info("Job ' + className + ' started")\n    // TODO: implement job logic\n    this.log.info("Job ' + className + ' completed")\n  }\n}\n');
+  console.log("");
+}
+function generateModule(name) {
+  console.log("");
+  console.log(BOLD + "  Generating module: " + name + RESET);
+  console.log("");
+  generateEntity(name);
+  writeFile2(path10.resolve("apps", "web", "src", "pages", pluralize(name), "index.no"), "@page\nexport class " + pascalCase(pluralize(name)) + "List {\n  async fn load() {\n    // TODO: fetch " + pluralize(name) + ' from API\n    return { items: [] }\n  }\n\n  fn template(data) {\n    return "<h1>' + capitalize(pluralize(name)) + '</h1>\\n<ul>" + data.items.map((item) => "<li>" + item.name + "</li>").join("") + "</ul>"\n  }\n}\n');
+  writeFile2(path10.resolve("apps", "web", "src", "pages", pluralize(name), "[id].no"), "@page\nexport class " + pascalCase(name) + "Detail {\n  async fn load(params) {\n    // TODO: fetch " + name + ' by id from API\n    return { item: { id: params.id, name: "' + capitalize(name) + ' " + params.id } }\n  }\n\n  fn template(data) {\n    return "<h1>" + data.item.name + "</h1>"\n  }\n}\n');
+  console.log(DIM + "  Generated complete module '" + name + "'." + RESET);
+  console.log("");
+}
+function printGenerateHelp() {
+  console.log("");
+  console.log(BOLD + "  nodeon generate" + RESET + " \u2014 Code scaffolding");
+  console.log("");
+  console.log("  Usage: nodeon generate <type> <name>");
+  console.log("  Alias: nodeon g <type> <name>");
+  console.log("");
+  console.log("  Types:");
+  console.log("    " + CYAN + "entity" + RESET + " <name>      Model + migration + service + API + tests");
+  console.log("    " + CYAN + "page" + RESET + " <path>        Page component with load function");
+  console.log("    " + CYAN + "component" + RESET + " <name>   Server component (zero JS)");
+  console.log("    " + CYAN + "island" + RESET + " <name>      Interactive island component");
+  console.log("    " + CYAN + "service" + RESET + " <name>     Injectable service");
+  console.log("    " + CYAN + "middleware" + RESET + " <name>   Request middleware");
+  console.log("    " + CYAN + "job" + RESET + " <name>         Background job");
+  console.log("    " + CYAN + "module" + RESET + " <name>      Full module (entity + service + API + pages + tests)");
+  console.log("");
+}
+function runGenerate(args) {
+  const genType = args[0];
+  const genName = args[1];
+  if (!genType) {
+    printGenerateHelp();
+    return;
+  }
+  if (!genName) {
+    console.error(RED + "  Missing name. Usage: nodeon generate " + genType + " <name>" + RESET);
+    process.exit(1);
+  }
+  if (genType === "entity") {
+    generateEntity(genName);
+  } else if (genType === "page") {
+    generatePage(genName);
+  } else if (genType === "component") {
+    generateComponent(genName);
+  } else if (genType === "island") {
+    generateIsland(genName);
+  } else if (genType === "service") {
+    generateService(genName);
+  } else if (genType === "middleware") {
+    generateMiddleware(genName);
+  } else if (genType === "job") {
+    generateJob(genName);
+  } else if (genType === "module") {
+    generateModule(genName);
+  } else {
+    console.error(RED + "  Unknown generator type: " + genType + RESET);
+    printGenerateHelp();
+    process.exit(1);
+  }
+}
+
 // dist/cli/index.js
 async function main(argv) {
   const args = argv ?? process.argv.slice(2);
@@ -5516,6 +6034,10 @@ async function main(argv) {
   }
   if (cmd === "version" || cmd === "--version" || cmd === "-v") {
     printVersion();
+    return;
+  }
+  if (cmd === "new") {
+    await runNew(args.slice(1));
     return;
   }
   if (cmd === "init") {
@@ -5530,6 +6052,10 @@ async function main(argv) {
     runRun(args.slice(1));
     return;
   }
+  if (cmd === "test") {
+    await runTest(args.slice(1));
+    return;
+  }
   if (cmd === "repl") {
     startRepl();
     return;
@@ -5542,13 +6068,17 @@ async function main(argv) {
     runFmt(args.slice(1));
     return;
   }
+  if (cmd === "generate" || cmd === "g") {
+    runGenerate(args.slice(1));
+    return;
+  }
   try {
     const resolved = resolveNodeonFile(cmd);
     runRun([resolved, ...args.slice(1)]);
     return;
   } catch (e) {
   }
-  const knownCommands = ["build", "run", "repl", "check", "fmt", "help", "version", "init"];
+  const knownCommands = ["build", "run", "repl", "check", "fmt", "help", "version", "init", "new", "test", "generate"];
   const suggestion = suggestClosest(cmd, knownCommands);
   console.error("Unknown command '" + cmd + "'");
   console.error("See " + CYAN + "'nodeon help'" + RESET + ".");

@@ -1,0 +1,36 @@
+// Queue — FIFO data structure
+
+export class Queue {
+  #items = []
+
+  fn enqueue(value) {
+    this.#items.push(value)
+    return this
+  }
+
+  fn dequeue() {
+    return this.#items.shift()
+  }
+
+  fn peek() {
+    return this.#items[0]
+  }
+
+  fn size() { return this.#items.length }
+
+  fn isEmpty() { return this.#items.length == 0 }
+
+  fn clear() {
+    this.#items = []
+  }
+
+  fn toArray() {
+    return this.#items.slice()
+  }
+
+  fn forEach(callback) {
+    for item in this.#items {
+      callback(item)
+    }
+  }
+}

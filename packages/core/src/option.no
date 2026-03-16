@@ -1,0 +1,38 @@
+// Option type — represents a value that may or may not exist
+// Inspired by Rust's Option<T> but idiomatic Nodeon
+
+export fn Some(value) {
+  return { tag: "Some", value: value }
+}
+
+export fn None() {
+  return { tag: "None" }
+}
+
+export fn isSome(option) {
+  return option && option.tag == "Some"
+}
+
+export fn isNone(option) {
+  return !option || option.tag == "None"
+}
+
+export fn unwrapOption(option) {
+  if option.tag == "Some" { return option.value }
+  throw new Error("unwrapOption() called on None")
+}
+
+export fn unwrapOptionOr(option, defaultValue) {
+  if option.tag == "Some" { return option.value }
+  return defaultValue
+}
+
+export fn mapOption(option, f) {
+  if option.tag == "Some" { return Some(f(option.value)) }
+  return option
+}
+
+export fn flatMapOption(option, f) {
+  if option.tag == "Some" { return f(option.value) }
+  return option
+}

@@ -1,0 +1,58 @@
+// Mock — test doubles for @nodeon/test
+// Provides: mock(), spy(), stub()
+
+export fn spy(originalFn) {
+  const calls = []
+  const spyFn = (...args) => {
+    const result = originalFn ? originalFn(...args) : undefined
+    calls.push({ args: args, result: result, timestamp: Date.now() })
+    return result
+  }
+  spyFn.calls = calls
+  spyFn.callCount = () => { return calls.length }
+  spyFn.calledWith = (...expectedArgs) => {
+    return calls.some((c) => {
+      if c.args.length != expectedArgs.length { return false }
+      let i = 0
+      while i < expectedArgs.length {
+        if c.args[i] !== expectedArgs[i] { return false }
+        i = i + 1
+      }
+      return true
+    })
+  }
+  spyFn.lastCall = () => {
+    if calls.length == 0 { return null }
+    return calls[calls.length - 1]
+  }
+  spyFn.reset = () => {
+    calls.length = 0
+  }
+  spyFn.isSpy = true
+  return spyFn
+}
+
+export fn stub(returnValue) {
+  return spy(() => { return returnValue })
+}
+
+export fn mock(obj) {
+  const mocked = {}
+  const keys = Object.keys(obj)
+  for key in keys {
+    if typeof obj[key] == "function" {
+      mocked[key] = spy(obj[key])
+    } else {
+      mocked[key] = obj[key]
+    }
+  }
+  mocked.__original = obj
+  mocked.__reset = () => {
+    for key in keys {
+      if mocked[key] && mocked[key].isSpy {
+        mocked[key].reset()
+      }
+    }
+  }
+  return mocked
+}

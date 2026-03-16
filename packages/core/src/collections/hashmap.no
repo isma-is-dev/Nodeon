@@ -1,0 +1,102 @@
+// HashMap — typed wrapper around Map with extra utilities
+
+export class HashMap {
+  #map = new Map()
+
+  constructor(entries) {
+    if entries {
+      for entry in entries {
+        this.#map.set(entry[0], entry[1])
+      }
+    }
+  }
+
+  fn get(key) {
+    return this.#map.get(key)
+  }
+
+  fn set(key, value) {
+    this.#map.set(key, value)
+    return this
+  }
+
+  fn has(key) {
+    return this.#map.has(key)
+  }
+
+  fn remove(key) {
+    return this.#map.delete(key)
+  }
+
+  fn clear() {
+    this.#map.clear()
+  }
+
+  fn size() {
+    return this.#map.size
+  }
+
+  fn keys() {
+    return Array.from(this.#map.keys())
+  }
+
+  fn values() {
+    return Array.from(this.#map.values())
+  }
+
+  fn entries() {
+    return Array.from(this.#map.entries())
+  }
+
+  fn forEach(callback) {
+    this.#map.forEach((value, key) => {
+      callback(key, value)
+    })
+  }
+
+  fn map(f) {
+    const result = new HashMap()
+    this.#map.forEach((value, key) => {
+      result.set(key, f(key, value))
+    })
+    return result
+  }
+
+  fn filter(predicate) {
+    const result = new HashMap()
+    this.#map.forEach((value, key) => {
+      if predicate(key, value) {
+        result.set(key, value)
+      }
+    })
+    return result
+  }
+
+  fn getOrDefault(key, defaultValue) {
+    if this.#map.has(key) { return this.#map.get(key) }
+    return defaultValue
+  }
+
+  fn getOrInsert(key, defaultValue) {
+    if this.#map.has(key) { return this.#map.get(key) }
+    this.#map.set(key, defaultValue)
+    return defaultValue
+  }
+
+  fn toObject() {
+    const obj = {}
+    this.#map.forEach((value, key) => {
+      obj[key] = value
+    })
+    return obj
+  }
+
+  static fn from(obj) {
+    const hm = new HashMap()
+    const keys = Object.keys(obj)
+    for key in keys {
+      hm.set(key, obj[key])
+    }
+    return hm
+  }
+}

@@ -1484,3 +1484,6 @@ describe("WebAssembly backend", () => {
     expect(wat).toContain("(func $mul");
   });
 });
+
+// Standard library compilation tests are in scripts/test-stdlib.js
+// They run outside vitest to avoid OOM in the fork worker process.

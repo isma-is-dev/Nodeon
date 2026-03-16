@@ -1,0 +1,38 @@
+// Result type — represents success (Ok) or failure (Err)
+// Inspired by Rust's Result<T, E> but idiomatic Nodeon
+
+export fn Ok(value) {
+  return { tag: "Ok", value: value }
+}
+
+export fn Err(error) {
+  return { tag: "Err", error: error }
+}
+
+export fn isOk(result) {
+  return result && result.tag == "Ok"
+}
+
+export fn isErr(result) {
+  return result && result.tag == "Err"
+}
+
+export fn unwrap(result) {
+  if result.tag == "Ok" { return result.value }
+  throw new Error("unwrap() called on Err: " + String(result.error))
+}
+
+export fn unwrapOr(result, defaultValue) {
+  if result.tag == "Ok" { return result.value }
+  return defaultValue
+}
+
+export fn mapResult(result, f) {
+  if result.tag == "Ok" { return Ok(f(result.value)) }
+  return result
+}
+
+export fn flatMapResult(result, f) {
+  if result.tag == "Ok" { return f(result.value) }
+  return result
+}

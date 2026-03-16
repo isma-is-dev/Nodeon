@@ -1,0 +1,115 @@
+// Utility functions — pipe, compose, memoize, deep operations
+
+export fn pipe(value, ...fns) {
+  let result = value
+  for f in fns {
+    result = f(result)
+  }
+  return result
+}
+
+export fn compose(...fns) {
+  const inner = (value) => {
+    let result = value
+    let i = fns.length - 1
+    while i >= 0 {
+      result = fns[i](result)
+      i = i - 1
+    }
+    return result
+  }
+  return inner
+}
+
+export fn identity(x) = x
+
+export fn noop() {}
+
+export fn memoize(f) {
+  const cache = new Map()
+  const inner = (...args) => {
+    const key = JSON.stringify(args)
+    if cache.has(key) { return cache.get(key) }
+    const result = f(...args)
+    cache.set(key, result)
+    return result
+  }
+  return inner
+}
+
+export fn debounce(f, ms) {
+  let timer = null
+  const inner = (...args) => {
+    if timer { clearTimeout(timer) }
+    timer = setTimeout(() => {
+      f(...args)
+    }, ms)
+  }
+  return inner
+}
+
+export fn throttle(f, ms) {
+  let lastCall = 0
+  const inner = (...args) => {
+    const now = Date.now()
+    if now - lastCall >= ms {
+      lastCall = now
+      return f(...args)
+    }
+  }
+  return inner
+}
+
+export fn deepClone(obj) {
+  if obj == null || typeof obj != "object" { return obj }
+  if Array.isArray(obj) {
+    return obj.map((item) => deepClone(item))
+  }
+  const result = {}
+  const keys = Object.keys(obj)
+  for key in keys {
+    result[key] = deepClone(obj[key])
+  }
+  return result
+}
+
+export fn deepEqual(a, b) {
+  if a === b { return true }
+  if a == null || b == null { return false }
+  if typeof a != "object" || typeof b != "object" { return false }
+
+  if Array.isArray(a) && Array.isArray(b) {
+    if a.length != b.length { return false }
+    let i = 0
+    while i < a.length {
+      if !deepEqual(a[i], b[i]) { return false }
+      i = i + 1
+    }
+    return true
+  }
+
+  const keysA = Object.keys(a)
+  const keysB = Object.keys(b)
+  if keysA.length != keysB.length { return false }
+
+  for key in keysA {
+    if !deepEqual(a[key], b[key]) { return false }
+  }
+  return true
+}
+
+export fn deepMerge(target, source) {
+  if source == null || typeof source != "object" { return target }
+  if target == null || typeof target != "object" { return deepClone(source) }
+
+  const result = deepClone(target)
+  const keys = Object.keys(source)
+  for key in keys {
+    if typeof source[key] == "object" && !Array.isArray(source[key]) && source[key] != null {
+      result[key] = deepMerge(result[key], source[key])
+    } else {
+      result[key] = deepClone(source[key])
+    }
+  }
+  return result
+}

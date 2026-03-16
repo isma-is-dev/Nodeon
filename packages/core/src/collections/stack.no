@@ -1,0 +1,39 @@
+// Stack — LIFO data structure
+
+export class Stack {
+  #items = []
+
+  fn push(value) {
+    this.#items.push(value)
+    return this
+  }
+
+  fn pop() {
+    return this.#items.pop()
+  }
+
+  fn peek() {
+    if this.#items.length == 0 { return undefined }
+    return this.#items[this.#items.length - 1]
+  }
+
+  fn size() { return this.#items.length }
+
+  fn isEmpty() { return this.#items.length == 0 }
+
+  fn clear() {
+    this.#items = []
+  }
+
+  fn toArray() {
+    return this.#items.slice().reverse()
+  }
+
+  fn forEach(callback) {
+    let i = this.#items.length - 1
+    while i >= 0 {
+      callback(this.#items[i])
+      i = i - 1
+    }
+  }
+}

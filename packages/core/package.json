@@ -1,0 +1,9 @@
+{
+  "name": "@nodeon/core",
+  "version": "0.1.0",
+  "description": "Nodeon standard library — core utilities, Result, Option, collections",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist/**/*"],
+  "license": "MIT"
+}

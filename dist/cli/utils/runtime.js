@@ -46,7 +46,7 @@ export function runInSandbox(jsCode, filename) {
     process.exit(1);
   }
 }
-function esmToCjs(code) {
+export function esmToCjs(code) {
   let out = code;
   out = out.replace(~/^[\t ]*import\s+([A-Za-z_$][\w$]*)\s+from\s+["']([^"']+)["'];?/gm, (m, def, src) => `const ${def} = require(${JSON.stringify(src)});`);
   out = out.replace(~/^[\t ]*import\s+\*\s+as\s+([A-Za-z_$][\w$]*)\s+from\s+["']([^"']+)["'];?/gm, (m, ns, src) => `const ${ns} = require(${JSON.stringify(src)});`);
