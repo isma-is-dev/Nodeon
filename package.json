@@ -1,6 +1,6 @@
 {
   "name": "nodeon-lang",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Nodeon programming language — compiles to JavaScript with optional typing and clean syntax",
   "main": "dist/nodeon-compiler.cjs",
   "workspaces": [
@@ -35,13 +35,8 @@
     "nodeon": "./bin/nodeon-self.js",
     "nodeon-ts": "./bin/nodeon.js"
   },
-  "dependencies": {
-    "ts-node": "10.9.2",
-    "tsconfig-paths": "4.2.0",
-    "typescript": "5.3.3"
-  },
+  "dependencies": {},
   "devDependencies": {
-    "@types/node": "20.11.0",
     "vitest": "4.1.0",
     "esbuild": "0.19.12"
   }
