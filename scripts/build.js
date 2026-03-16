@@ -21,6 +21,23 @@ const BUNDLE_PATH = path.resolve(OUT_DIR, "nodeon-compiler.cjs");
 const CLI_BUNDLE_PATH = path.resolve(OUT_DIR, "nodeon-cli.cjs");
 const ENTRY_JS = path.resolve(OUT_DIR, "compiler/compile.js");
 const CLI_ENTRY_JS = path.resolve(OUT_DIR, "cli/index.js");
+const BROWSER_DIR = path.resolve(OUT_DIR, "browser");
+const BROWSER_BUNDLE_PATH = path.resolve(BROWSER_DIR, "nodeon-compiler.browser.js");
+
+const emptyNodeBuiltinPlugin = {
+  name: "empty-node-builtins",
+  setup(build) {
+    build.onResolve({ filter: /^(fs|path)$/ }, (args) => {
+      return { path: args.path, namespace: "empty-node" };
+    });
+    build.onLoad({ filter: /.*/, namespace: "empty-node" }, (args) => {
+      if (args.path === "path") {
+        return { contents: "export function resolve(p){return p}; export function dirname(p){return p}; export function join(...xs){return xs.join('/')};" };
+      }
+      return { contents: "export default {}; export function existsSync(){ return false; }" };
+    });
+  },
+};
 
 const args = process.argv.slice(2);
 const forceBootstrap = args.includes("--bootstrap");
@@ -111,6 +128,26 @@ async function bundle() {
   });
   const size = (fs.statSync(BUNDLE_PATH).size / 1024).toFixed(1);
   console.log(`  Bundled: ${path.relative(process.cwd(), BUNDLE_PATH)}  (${size}kb)`);
+
+  // Bundle browser-friendly IIFE (minified)
+  fs.mkdirSync(BROWSER_DIR, { recursive: true });
+  await esbuild.build({
+    entryPoints: [ENTRY_JS],
+    outfile: BROWSER_BUNDLE_PATH,
+    bundle: true,
+    platform: "browser",
+    format: "iife",
+    globalName: "Nodeon",
+    target: ["es2018"],
+    minify: true,
+    logLevel: "silent",
+    plugins: [emptyNodeBuiltinPlugin],
+    banner: {
+      js: "// Nodeon compiler (browser) — exposes global Nodeon.compile(source, opts)"
+    },
+  });
+  const browserSize = (fs.statSync(BROWSER_BUNDLE_PATH).size / 1024).toFixed(1);
+  console.log(`  Bundled: ${path.relative(process.cwd(), BROWSER_BUNDLE_PATH)}  (${browserSize}kb)`);
 
   // Bundle CLI entry point (async build for plugin support)
   // CLI files use dynamic require('...compile.no') — resolve .no → .js

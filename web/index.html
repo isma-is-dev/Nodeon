@@ -226,6 +226,12 @@
       align-items: start;
     }
 
+    .playground-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 14px;
+    }
+
     .radio-list {
       display: grid;
       gap: 8px;
@@ -265,6 +271,71 @@
       box-shadow: inset 0 0 10px rgba(255, 42, 79, 0.22);
       font-size: 13px;
     }
+
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 77, 106, 0.35);
+      background: rgba(43, 15, 22, 0.35);
+      color: var(--text-dim);
+      font-size: 13px;
+    }
+
+    .btn-ghost {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 77, 106, 0.45);
+      background: rgba(15, 5, 10, 0.8);
+      color: var(--text-main);
+      cursor: pointer;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    .btn-ghost:hover { border-color: var(--red-hot); }
+
+    .output-panel {
+      min-height: 180px;
+      border: 1px solid rgba(255, 77, 106, 0.4);
+      border-radius: 8px;
+      background: #0a0206;
+      padding: 12px;
+      box-shadow: inset 0 0 12px rgba(255, 42, 79, 0.18);
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    .diagnostics {
+      margin-top: 10px;
+      display: grid;
+      gap: 6px;
+    }
+
+    .diag-item {
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 77, 106, 0.45);
+      background: rgba(43, 15, 22, 0.35);
+      color: #ffb6c9;
+      font-size: 13px;
+    }
+
+    .diag-empty { color: var(--text-dim); font-size: 13px; }
 
     .doc-grid {
       display: grid;
@@ -396,9 +467,9 @@ main()</code></pre>
 
   <section id="playground">
     <h2>Playground minimal</h2>
-    <p class="subdued">Sin JavaScript en la página: selecciona un snippet o escribe el tuyo, luego cópialo y ejecútalo con <code>node cli/bin.js run archivo.no</code> o pégalo en tu flujo de trabajo.</p>
-    <div class="playground">
-      <div class="panel">
+    <p class="subdued">Ahora puedes transpilar Nodeon a JavaScript directo en el navegador. Selecciona un snippet o pega el tuyo, pulsa "Transpilar" y mira el JS generado. La misma API que usa la CLI, sin backend.</p>
+    <div class="playground-grid">
+      <div class="panel" aria-label="Selector de snippets">
         <div class="radio-list" role="group" aria-label="Snippets de Nodeon">
           <div class="radio-item">
             <input type="radio" name="snippet" id="s1" checked />
@@ -442,10 +513,23 @@ print(label(82))</code></pre>
           </div>
         </div>
       </div>
-      <div class="panel" aria-label="Editor simple">
-        <p class="subdued">Escribe aquí para copiarlo a tu terminal:</p>
-        <textarea aria-label="Editor de Nodeon" placeholder="fn main() {\n  print(\"Listo para compilar\")\n}\n\nmain()"></textarea>
-        <p class="subdued">Compila y ejecuta localmente: <code>node cli/bin.js run tu-archivo.no</code></p>
+
+      <div class="panel" aria-label="Editor y compilador en vivo">
+        <div class="toolbar">
+          <div class="pill" id="compile-status">Listo</div>
+          <button class="btn-ghost" id="btn-compile">Transpilar</button>
+        </div>
+        <textarea id="editor" aria-label="Editor de Nodeon" placeholder="fn main() {\n  print(\"Listo para compilar\")\n}\n\nmain()"></textarea>
+        <p class="subdued">Compilación en el navegador con <code>compile()</code>. Opcional: <label><input type="checkbox" id="check-types" /> Type-check</label></p>
+      </div>
+
+      <div class="panel" aria-label="Salida JavaScript">
+        <div class="toolbar">
+          <span class="pill">Salida JS</span>
+          <button class="btn-ghost" id="btn-copy">Copiar JS</button>
+        </div>
+        <pre class="output-panel" id="js-output" aria-live="polite"></pre>
+        <div class="diagnostics" id="diagnostics" aria-label="Diagnósticos"></div>
       </div>
     </div>
   </section>
@@ -500,6 +584,85 @@ enum Color { Red, Green, Blue }</code></pre>
     </div>
     <p class="subdued">Más detalles en <code>docs/ARCHITECTURE.md</code> y <code>nodeon-design.md</code> dentro del repo.</p>
   </section>
+
+  <script src="../dist/browser/nodeon-compiler.browser.js"></script>
+  <script>
+    const { compile } = window.Nodeon
+    const editor = document.getElementById("editor")
+    const status = document.getElementById("compile-status")
+    const jsOutput = document.getElementById("js-output")
+    const diagnostics = document.getElementById("diagnostics")
+    const checkTypes = document.getElementById("check-types")
+    const btnCompile = document.getElementById("btn-compile")
+    const btnCopy = document.getElementById("btn-copy")
+
+    function loadSnippetFromRadios() {
+      const selected = document.querySelector('input[name="snippet"]:checked')
+      if (!selected) return
+      const codeEl = selected.parentElement.querySelector(".snippet code")
+      if (codeEl) {
+        editor.value = codeEl.textContent.trim()
+      }
+    }
+
+    function renderDiagnostics(diags) {
+      diagnostics.innerHTML = ""
+      if (!diags || diags.length === 0) {
+        const empty = document.createElement("div")
+        empty.className = "diag-empty"
+        empty.textContent = "Sin diagnósticos"
+        diagnostics.appendChild(empty)
+        return
+      }
+      for (const d of diags) {
+        const item = document.createElement("div")
+        item.className = "diag-item"
+        item.textContent = `[${d.source ?? "parser"}] ${d.message}`
+        diagnostics.appendChild(item)
+      }
+    }
+
+    function setStatus(text, color) {
+      status.textContent = text
+      status.style.color = color ?? ""
+    }
+
+    async function doCompile() {
+      setStatus("Compilando...", "var(--red-neon)")
+      diagnostics.innerHTML = ""
+      jsOutput.textContent = ""
+      try {
+        const { js, diagnostics: diags } = compile(editor.value, { check: checkTypes.checked })
+        jsOutput.textContent = js
+        renderDiagnostics(diags)
+        setStatus("Listo", "")
+      } catch (err) {
+        jsOutput.textContent = ""
+        renderDiagnostics([{ source: "runtime", message: err.message ?? String(err) }])
+        setStatus("Error", "#ff4d6a")
+      }
+    }
+
+    btnCompile.addEventListener("click", doCompile)
+
+    btnCopy.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(jsOutput.textContent)
+        setStatus("JS copiado", "var(--red-neon)")
+        setTimeout(() => setStatus("Listo", ""), 1200)
+      } catch (err) {
+        setStatus("No se pudo copiar", "#ff4d6a")
+      }
+    })
+
+    document.querySelectorAll('input[name="snippet"]').forEach((radio) => {
+      radio.addEventListener("change", loadSnippetFromRadios)
+    })
+
+    // Inicializar con el primer snippet
+    loadSnippetFromRadios()
+    renderDiagnostics([])
+  </script>
 
   <footer>
     <div class="footer-grid">
