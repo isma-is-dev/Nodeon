@@ -35,6 +35,7 @@ import {
   InsertTextFormat,
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
+import { createHash } from 'crypto';
 import { Lexer } from '@lexer/lexer';
 import { Parser } from '@parser/parser';
 import { KEYWORDS } from '@language/keywords';
@@ -44,8 +45,77 @@ import { typeCheck, TypeDiagnostic } from '@compiler/type-checker';
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
 
-// Cache parsed ASTs per document URI
-const astCache = new Map<string, Program>();
+// Cache per document URI to avoid repeated parse/type work
+interface DocCacheEntry {
+  version: number;
+  textHash: string;
+  ast?: Program;
+  symbols?: DocSymbol[];
+  diagnostics?: Diagnostic[];
+  lastAccess: number;
+}
+
+const docCache = new Map<string, DocCacheEntry>();
+const validationTimers = new Map<string, NodeJS.Timeout>();
+const validationQueue: string[] = [];
+let activeValidations = 0;
+const MAX_CONCURRENT_VALIDATIONS = 2;
+
+function computeHash(text: string): string {
+  return createHash('md5').update(text).digest('hex');
+}
+
+function getOrInitEntry(uri: string): DocCacheEntry {
+  let entry = docCache.get(uri);
+  if (!entry) {
+    entry = { version: -1, textHash: '', lastAccess: Date.now() };
+    docCache.set(uri, entry);
+  }
+  entry.lastAccess = Date.now();
+  return entry;
+}
+
+function scheduleValidation(doc: TextDocument): void {
+  const existing = validationTimers.get(doc.uri);
+  if (existing) clearTimeout(existing);
+  validationTimers.set(doc.uri, setTimeout(() => enqueueValidation(doc.uri), 300));
+}
+
+function enqueueValidation(uri: string): void {
+  validationQueue.push(uri);
+  pumpValidationQueue();
+}
+
+function pumpValidationQueue(): void {
+  while (activeValidations < MAX_CONCURRENT_VALIDATIONS && validationQueue.length > 0) {
+    const uri = validationQueue.shift();
+    if (!uri) break;
+    const doc = documents.get(uri);
+    if (!doc) continue;
+
+    activeValidations++;
+    // Offload heavy work so we don't block the LSP event loop
+    setTimeout(() => {
+      try {
+        validateDocument(doc);
+      } finally {
+        activeValidations--;
+        pumpValidationQueue();
+      }
+    }, 0);
+  }
+}
+
+// Periodic cache pruning to control memory
+setInterval(() => {
+  const cutoff = Date.now() - 10 * 60 * 1000; // 10 minutes
+  for (const [uri, entry] of docCache.entries()) {
+    if (entry.lastAccess < cutoff) {
+      docCache.delete(uri);
+      validationTimers.delete(uri);
+    }
+  }
+}, 5 * 60 * 1000); // check every 5 minutes
 
 // ── Initialization ──────────────────────────────────────────────────
 
@@ -89,14 +159,27 @@ connection.onInitialize((_params: InitializeParams): InitializeResult => {
 // ── Diagnostics ─────────────────────────────────────────────────────
 
 documents.onDidChangeContent((change: TextDocumentChangeEvent<TextDocument>) => {
-  validateDocument(change.document);
+  scheduleValidation(change.document);
 });
 
 function validateDocument(doc: TextDocument): void {
   const source = doc.getText();
+  const hash = computeHash(source);
+  const entry = getOrInitEntry(doc.uri);
+
+  if (entry.textHash === hash && entry.diagnostics) {
+    connection.sendDiagnostics({ uri: doc.uri, diagnostics: entry.diagnostics });
+    return;
+  }
+
   const diagnostics: Diagnostic[] = [];
 
   if (source.trim().length === 0) {
+    entry.version = doc.version;
+    entry.textHash = hash;
+    entry.ast = undefined;
+    entry.symbols = [];
+    entry.diagnostics = diagnostics;
     connection.sendDiagnostics({ uri: doc.uri, diagnostics });
     return;
   }
@@ -105,7 +188,6 @@ function validateDocument(doc: TextDocument): void {
     const tokens = new Lexer(source).tokenize();
     const parser = new Parser(tokens);
     const ast = parser.parseProgram();
-    astCache.set(doc.uri, ast);
 
     // Report recovered parse errors (error-tolerant parsing)
     for (const err of parser.errors) {
@@ -149,6 +231,12 @@ function validateDocument(doc: TextDocument): void {
         source: 'nodeon-types'
       });
     }
+
+    entry.version = doc.version;
+    entry.textHash = hash;
+    entry.ast = ast;
+    entry.symbols = extractSymbols(source);
+    entry.diagnostics = diagnostics;
   } catch (err: any) {
     const message = err.message || String(err);
     const match = message.match(/at (\d+):(\d+)$/);
@@ -171,6 +259,12 @@ function validateDocument(doc: TextDocument): void {
       message: message.replace(/\s*at \d+:\d+$/, ''),
       source: 'nodeon'
     });
+
+    entry.version = doc.version;
+    entry.textHash = hash;
+    entry.ast = undefined;
+    entry.symbols = undefined;
+    entry.diagnostics = diagnostics;
   }
 
   connection.sendDiagnostics({ uri: doc.uri, diagnostics });
@@ -1384,8 +1478,14 @@ connection.languages.semanticTokens.on((params: SemanticTokensParams): SemanticT
   const doc = documents.get(params.textDocument.uri);
   if (!doc) return { data: [] };
 
-  const ast = astCache.get(doc.uri);
-  if (!ast) return { data: [] };
+  const entry = docCache.get(doc.uri);
+  let ast = entry?.ast;
+
+  if (!ast) {
+    // Cache miss — trigger validation to refresh caches, but return empty now
+    scheduleValidation(doc);
+    return { data: [] };
+  }
 
   const source = doc.getText();
   const data: number[] = [];
@@ -1498,8 +1598,9 @@ connection.onSignatureHelp((params): SignatureHelp | null => {
   if (!fnNameMatch) return null;
   const fnName = fnNameMatch[1];
 
-  // Look up the function in document symbols
-  const symbols = extractSymbols(source);
+  // Look up the function in document symbols (use cache if available)
+  const entry = docCache.get(doc.uri);
+  const symbols = entry?.symbols ?? extractSymbols(source);
   const fnSym = symbols.find(s => s.name === fnName && s.kind === 'function');
 
   if (!fnSym) {
@@ -1548,8 +1649,12 @@ connection.onDocumentSymbol((params: DocumentSymbolParams): DocumentSymbol[] => 
   const doc = documents.get(params.textDocument.uri);
   if (!doc) return [];
 
-  const ast = astCache.get(doc.uri);
-  if (!ast) return [];
+  const entry = docCache.get(doc.uri);
+  const ast = entry?.ast;
+  if (!ast) {
+    scheduleValidation(doc);
+    return [];
+  }
 
   const result: DocumentSymbol[] = [];
 

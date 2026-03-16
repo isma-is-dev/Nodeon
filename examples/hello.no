@@ -4,7 +4,9 @@ fn greet(name) {
 
 greet("Ismael")
 
-fs.writeFileSync("hello.txt", "Hello World")
+fs = require("fs")
+
+console.log(fs)
 
 x: string | number = 'asdf'
 x = 3
