@@ -4852,7 +4852,7 @@ var CACHE_DIR = process.env.NODEON_CACHE_DIR ? path2.resolve(process.cwd(), proc
 var compilerModule = null;
 function getCompiler() {
   if (!compilerModule) {
-    const candidates = ["../../compiler/compile.js", "../../compiler/compile.no"];
+    const candidates = [path2.resolve(__dirname, "..", "nodeon-compiler.cjs"), path2.resolve(__dirname, "..", "..", "nodeon-compiler.cjs"), path2.resolve(process.cwd(), "dist", "nodeon-compiler.cjs"), path2.resolve(__dirname, "compiler", "compile.js"), path2.resolve(__dirname, "..", "compiler", "compile.js"), path2.resolve(__dirname, "..", "..", "compiler", "compile.js"), path2.resolve(__dirname, "compiler", "compile.no"), path2.resolve(__dirname, "..", "compiler", "compile.no"), path2.resolve(__dirname, "..", "..", "compiler", "compile.no")];
     for (const c of candidates) {
       try {
         compilerModule = require(c);

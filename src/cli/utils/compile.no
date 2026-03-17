@@ -15,7 +15,20 @@ let compilerModule = null
 
 fn getCompiler() {
   if !compilerModule {
-    const candidates = ['../../compiler/compile.js', '../../compiler/compile.no']
+    // When bundled (nodeon-cli.cjs), __dirname points to dist/, so relative
+    // paths like ../../compiler/compile.js no longer resolve. Use absolute
+    // fallbacks anchored at the bundle directory.
+    const candidates = [
+      path.resolve(__dirname, '..', 'nodeon-compiler.cjs'),
+      path.resolve(__dirname, '..', '..', 'nodeon-compiler.cjs'),
+      path.resolve(process.cwd(), 'dist', 'nodeon-compiler.cjs'),
+      path.resolve(__dirname, 'compiler', 'compile.js'),
+      path.resolve(__dirname, '..', 'compiler', 'compile.js'),
+      path.resolve(__dirname, '..', '..', 'compiler', 'compile.js'),
+      path.resolve(__dirname, 'compiler', 'compile.no'),
+      path.resolve(__dirname, '..', 'compiler', 'compile.no'),
+      path.resolve(__dirname, '..', '..', 'compiler', 'compile.no'),
+    ]
     for c in candidates {
       try {
         compilerModule = require(c)

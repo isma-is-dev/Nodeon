@@ -1,3 +1,4 @@
+import mongodb from "mongodb";
 function greet(name) {
   return console.log(`Hello ${name}`);
 }
