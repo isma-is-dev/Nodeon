@@ -8,13 +8,14 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@language": path.resolve(__dirname, "src/language"),
-      "@lexer": path.resolve(__dirname, "src/compiler/lexer"),
-      "@parser": path.resolve(__dirname, "src/compiler/parser"),
-      "@compiler": path.resolve(__dirname, "src/compiler"),
-      "@ast": path.resolve(__dirname, "src/compiler/ast"),
-      "@cli": path.resolve(__dirname, "cli"),
-      "@src": path.resolve(__dirname, "src"),
+      // Use bootstrap (TypeScript) sources for tests instead of self-hosted .no files
+      "@language": path.resolve(__dirname, "bootstrap/language"),
+      "@lexer": path.resolve(__dirname, "bootstrap/compiler/lexer"),
+      "@parser": path.resolve(__dirname, "bootstrap/compiler/parser"),
+      "@compiler": path.resolve(__dirname, "bootstrap/compiler"),
+      "@ast": path.resolve(__dirname, "bootstrap/compiler/ast"),
+      "@cli": path.resolve(__dirname, "bootstrap/cli"),
+      "@src": path.resolve(__dirname, "bootstrap"),
     },
   },
 });
