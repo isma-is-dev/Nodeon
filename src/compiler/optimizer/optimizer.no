@@ -1,0 +1,716 @@
+// ── Nodeon AST Optimizer ─────────────────────────────────────────────
+// Performs compile-time optimizations on the AST before code generation.
+// Targets V8-friendly patterns for maximum runtime performance.
+
+// ── Public API ──────────────────────────────────────────────────────
+
+export fn optimize(ast) {
+  // Pass 1: Expression-level optimizations (constant folding, peephole, etc.)
+  let body = ast.body.map((s) => optimizeStatement(s))
+
+  // Pass 2: let → const promotion (V8 prefers const for stable bindings)
+  body = promoteLetToConst(body)
+
+  // Pass 3: Constant propagation (inline known const values)
+  body = propagateConstants(body)
+
+  // Pass 4: Array method lowering (.forEach → indexed loop)
+  body = lowerArrayMethods(body)
+
+  const program = {
+    type: ast.type,
+    body: body,
+    errors: ast.errors,
+    loc: ast.loc,
+  }
+  return program
+}
+
+// ── Statement Optimization ──────────────────────────────────────────
+
+fn optimizeStatement(stmt) {
+  switch stmt.type {
+    case "VariableDeclaration" {
+      return {
+        ...stmt,
+        value: stmt.value ? optimizeExpression(stmt.value) : stmt.value,
+      }
+    }
+    case "ExpressionStatement" {
+      return {
+        ...stmt,
+        expression: optimizeExpression(stmt.expression),
+      }
+    }
+    case "FunctionDeclaration" {
+      return {
+        ...stmt,
+        body: stmt.body.map((s) => optimizeStatement(s)),
+      }
+    }
+    case "ReturnStatement" {
+      return {
+        ...stmt,
+        value: stmt.value ? optimizeExpression(stmt.value) : stmt.value,
+      }
+    }
+    case "IfStatement" {
+      const cond = optimizeExpression(stmt.condition)
+
+      // Dead branch elimination: if(true) → keep consequent, if(false) → keep alternate
+      if cond.type == "Literal" && cond.literalType == "boolean" {
+        if cond.value == true {
+          // Return a block wrapper that just contains the consequent statements
+          return { type: "_OptimizedBlock", body: stmt.consequent.map((s) => optimizeStatement(s)) }
+        }
+        if cond.value == false && stmt.alternate {
+          return { type: "_OptimizedBlock", body: stmt.alternate.map((s) => optimizeStatement(s)) }
+        }
+        if cond.value == false && !stmt.alternate {
+          return { type: "_OptimizedBlock", body: [] }
+        }
+      }
+
+      return {
+        ...stmt,
+        condition: cond,
+        consequent: stmt.consequent.map((s) => optimizeStatement(s)),
+        alternate: stmt.alternate ? stmt.alternate.map((s) => optimizeStatement(s)) : stmt.alternate,
+      }
+    }
+    case "ForStatement" {
+      return {
+        ...stmt,
+        iterable: optimizeExpression(stmt.iterable),
+        body: stmt.body.map((s) => optimizeStatement(s)),
+      }
+    }
+    case "WhileStatement" {
+      return {
+        ...stmt,
+        condition: optimizeExpression(stmt.condition),
+        body: stmt.body.map((s) => optimizeStatement(s)),
+      }
+    }
+    case "DoWhileStatement" {
+      return {
+        ...stmt,
+        condition: optimizeExpression(stmt.condition),
+        body: stmt.body.map((s) => optimizeStatement(s)),
+      }
+    }
+    case "ExportDeclaration" {
+      if stmt.declaration {
+        return { ...stmt, declaration: optimizeStatement(stmt.declaration) }
+      }
+      return stmt
+    }
+    case "ClassDeclaration" {
+      return {
+        ...stmt,
+        body: stmt.body.map((m) => {
+          if m.type == "ClassMethod" {
+            return { ...m, body: m.body.map((s) => optimizeStatement(s)) }
+          }
+          if m.type == "ClassField" && m.value {
+            return { ...m, value: optimizeExpression(m.value) }
+          }
+          return m
+        }),
+      }
+    }
+    case "TryCatchStatement" {
+      return {
+        ...stmt,
+        tryBlock: stmt.tryBlock.map((s) => optimizeStatement(s)),
+        catchBlock: stmt.catchBlock.map((s) => optimizeStatement(s)),
+        finallyBlock: stmt.finallyBlock ? stmt.finallyBlock.map((s) => optimizeStatement(s)) : stmt.finallyBlock,
+      }
+    }
+    case "SwitchStatement" {
+      return {
+        ...stmt,
+        discriminant: optimizeExpression(stmt.discriminant),
+        cases: stmt.cases.map((c) => ({
+          ...c,
+          test: c.test ? optimizeExpression(c.test) : c.test,
+          consequent: c.consequent.map((s) => optimizeStatement(s)),
+        })),
+      }
+    }
+    case "MatchStatement" {
+      return {
+        ...stmt,
+        discriminant: optimizeExpression(stmt.discriminant),
+        cases: stmt.cases.map((c) => ({
+          ...c,
+          pattern: c.pattern ? optimizeExpression(c.pattern) : c.pattern,
+          guard: c.guard ? optimizeExpression(c.guard) : c.guard,
+          body: c.body.map((s) => optimizeStatement(s)),
+        })),
+      }
+    }
+    case "ThrowStatement" {
+      return { ...stmt, value: optimizeExpression(stmt.value) }
+    }
+    case "LabeledStatement" {
+      return { ...stmt, body: optimizeStatement(stmt.body) }
+    }
+    default {
+      return stmt
+    }
+  }
+}
+
+// ── Expression Optimization ─────────────────────────────────────────
+
+fn optimizeExpression(expr) {
+  if !expr { return expr }
+
+  switch expr.type {
+    case "BinaryExpression" {
+      return optimizeBinaryExpression(expr)
+    }
+    case "UnaryExpression" {
+      return optimizeUnaryExpression(expr)
+    }
+    case "CallExpression" {
+      return {
+        ...expr,
+        callee: optimizeExpression(expr.callee),
+        arguments: expr.arguments.map((a) => optimizeExpression(a)),
+      }
+    }
+    case "MemberExpression" {
+      return {
+        ...expr,
+        object: optimizeExpression(expr.object),
+        property: expr.computed ? optimizeExpression(expr.property) : expr.property,
+      }
+    }
+    case "ArrayExpression" {
+      return {
+        ...expr,
+        elements: expr.elements.map((e) => optimizeExpression(e)),
+      }
+    }
+    case "ObjectExpression" {
+      return {
+        ...expr,
+        properties: expr.properties.map((p) => ({
+          ...p,
+          value: optimizeExpression(p.value),
+          key: p.computed ? optimizeExpression(p.key) : p.key,
+        })),
+      }
+    }
+    case "ArrowFunction" {
+      if Array.isArray(expr.body) {
+        return { ...expr, body: expr.body.map((s) => optimizeStatement(s)) }
+      }
+      return { ...expr, body: optimizeExpression(expr.body) }
+    }
+    case "AssignmentExpression" {
+      return {
+        ...expr,
+        left: optimizeExpression(expr.left),
+        right: optimizeExpression(expr.right),
+      }
+    }
+    case "CompoundAssignmentExpression" {
+      return {
+        ...expr,
+        left: optimizeExpression(expr.left),
+        right: optimizeExpression(expr.right),
+      }
+    }
+    case "TernaryExpression" {
+      const cond = optimizeExpression(expr.condition)
+      const cons = optimizeExpression(expr.consequent)
+      const alt = optimizeExpression(expr.alternate)
+      // Fold: true ? a : b → a,  false ? a : b → b
+      if cond.type == "Literal" && cond.literalType == "boolean" {
+        if cond.value == true { return cons }
+        return alt
+      }
+      return { ...expr, condition: cond, consequent: cons, alternate: alt }
+    }
+    case "AwaitExpression" {
+      return { ...expr, argument: optimizeExpression(expr.argument) }
+    }
+    case "SpreadExpression" {
+      return { ...expr, argument: optimizeExpression(expr.argument) }
+    }
+    case "NewExpression" {
+      return {
+        ...expr,
+        callee: optimizeExpression(expr.callee),
+        arguments: expr.arguments.map((a) => optimizeExpression(a)),
+      }
+    }
+    case "TemplateLiteral" {
+      return optimizeTemplateLiteral(expr)
+    }
+    default {
+      return expr
+    }
+  }
+}
+
+// ── Constant Folding ────────────────────────────────────────────────
+// Evaluates binary operations on known literals at compile time.
+
+fn optimizeBinaryExpression(expr) {
+  const left = optimizeExpression(expr.left)
+  const right = optimizeExpression(expr.right)
+
+  // Don't fold range operator (..) — it's handled by ForStatement
+  if expr.operator == ".." {
+    return { ...expr, left: left, right: right }
+  }
+
+  // Don't fold pipe operator (|>) — it's a function call
+  if expr.operator == "|>" {
+    return { ...expr, left: left, right: right }
+  }
+
+  // Constant folding: both operands are literals
+  if left.type == "Literal" && right.type == "Literal" {
+    const result = evalBinOp(expr.operator, left.value, right.value)
+    if result != undefined {
+      return makeLiteral(result, expr.loc)
+    }
+  }
+
+  // ── Peephole optimizations (algebraic identities) ─────────────
+  // These apply even when one operand is not a literal.
+
+  // x + 0 → x, 0 + x → x
+  if expr.operator == "+" {
+    if isLiteralNumber(right, 0) { return left }
+    if isLiteralNumber(left, 0) { return right }
+  }
+
+  // x - 0 → x
+  if expr.operator == "-" {
+    if isLiteralNumber(right, 0) { return left }
+    // x - x → 0 (when both sides are the same identifier)
+    if left.type == "Identifier" && right.type == "Identifier" && left.name == right.name {
+      return makeLiteral(0, expr.loc)
+    }
+  }
+
+  // x * 1 → x, 1 * x → x
+  if expr.operator == "*" {
+    if isLiteralNumber(right, 1) { return left }
+    if isLiteralNumber(left, 1) { return right }
+    // x * 0 → 0 (safe for numbers, not for side-effect expressions)
+    if isLiteralNumber(right, 0) && isPureExpression(left) { return makeLiteral(0, expr.loc) }
+    if isLiteralNumber(left, 0) && isPureExpression(right) { return makeLiteral(0, expr.loc) }
+  }
+
+  // x / 1 → x
+  if expr.operator == "/" {
+    if isLiteralNumber(right, 1) { return left }
+  }
+
+  // Strength reduction: x ** 2 → x * x
+  if expr.operator == "**" && isLiteralNumber(right, 2) {
+    return {
+      type: "BinaryExpression",
+      operator: "*",
+      left: left,
+      right: left,
+      loc: expr.loc,
+    }
+  }
+
+  // Boolean simplifications
+  // x && true → x, x || false → x
+  if expr.operator == "&&" && isLiteralBoolean(right, true) { return left }
+  if expr.operator == "||" && isLiteralBoolean(right, false) { return left }
+  // true && x → x, false || x → x
+  if expr.operator == "&&" && isLiteralBoolean(left, true) { return right }
+  if expr.operator == "||" && isLiteralBoolean(left, false) { return right }
+  // false && x → false (short-circuit, safe if x is pure)
+  if expr.operator == "&&" && isLiteralBoolean(left, false) && isPureExpression(right) {
+    return makeLiteral(false, expr.loc)
+  }
+  // true || x → true (short-circuit, safe if x is pure)
+  if expr.operator == "||" && isLiteralBoolean(left, true) && isPureExpression(right) {
+    return makeLiteral(true, expr.loc)
+  }
+
+  // x === x → true (for identifiers, safe assumption)
+  if (expr.operator == "===" || expr.operator == "==") && left.type == "Identifier" && right.type == "Identifier" && left.name == right.name {
+    return makeLiteral(true, expr.loc)
+  }
+
+  return { ...expr, left: left, right: right }
+}
+
+fn optimizeUnaryExpression(expr) {
+  const arg = optimizeExpression(expr.argument)
+
+  // Constant folding for unary ops on literals
+  if arg.type == "Literal" {
+    const result = evalUnaryOp(expr.operator, arg.value)
+    if result != undefined {
+      return makeLiteral(result, expr.loc)
+    }
+  }
+
+  // Double negation: !!x → x (when x is known boolean from comparison)
+  if expr.operator == "!" && arg.type == "UnaryExpression" && arg.operator == "!" {
+    // Only safe when the inner value is boolean
+    const inner = arg.argument
+    if inner.type == "BinaryExpression" {
+      const boolOps = ["==", "!=", "===", "!==", "<", ">", "<=", ">=", "instanceof"]
+      if boolOps.includes(inner.operator) {
+        return inner
+      }
+    }
+    if inner.type == "Literal" && inner.literalType == "boolean" {
+      return inner
+    }
+  }
+
+  return { ...expr, argument: arg }
+}
+
+// ── Template Literal Optimization ───────────────────────────────────
+// Collapse adjacent text parts that result from constant folding.
+
+fn optimizeTemplateLiteral(expr) {
+  const parts = expr.parts.map((p) => {
+    if p.kind == "Expression" {
+      return { ...p, expression: optimizeExpression(p.expression) }
+    }
+    return p
+  })
+
+  // Collapse: if all parts are text (no expressions), collapse to a string literal
+  const allText = parts.every((p) => p.kind == "Text")
+  if allText {
+    const text = parts.map((p) => p.value).join("")
+    return { type: "Literal", value: text, literalType: "string", loc: expr.loc }
+  }
+
+  // Inline literal expressions into adjacent text parts
+  const collapsed = []
+  for p in parts {
+    if p.kind == "Expression" && p.expression.type == "Literal" && (p.expression.literalType == "string" || p.expression.literalType == "number") {
+      // Convert literal expression to text
+      const textValue = String(p.expression.value)
+      const last = collapsed.length > 0 ? collapsed[collapsed.length - 1] : null
+      if last && last.kind == "Text" {
+        // Merge with previous text part
+        collapsed[collapsed.length - 1] = { kind: "Text", value: last.value + textValue }
+      } else {
+        collapsed.push({ kind: "Text", value: textValue })
+      }
+    } else {
+      collapsed.push(p)
+    }
+  }
+
+  // After collapsing, if everything became text, return a string literal
+  if collapsed.length == 1 && collapsed[0].kind == "Text" {
+    return { type: "Literal", value: collapsed[0].value, literalType: "string", loc: expr.loc }
+  }
+
+  return { ...expr, parts: collapsed }
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────
+
+fn makeLiteral(value, loc) {
+  let litType = typeof value
+  if value == null { litType = "null" }
+  return { type: "Literal", value: value, literalType: litType, loc: loc }
+}
+
+fn isLiteralNumber(expr, n) {
+  return expr.type == "Literal" && expr.literalType == "number" && expr.value == n
+}
+
+fn isLiteralBoolean(expr, val) {
+  return expr.type == "Literal" && expr.literalType == "boolean" && expr.value == val
+}
+
+fn isPureExpression(expr) {
+  // An expression is pure if evaluating it has no side effects
+  switch expr.type {
+    case "Literal" { return true }
+    case "Identifier" { return true }
+    case "MemberExpression" {
+      // obj.prop is pure if obj is pure (no getter side-effects assumed)
+      return isPureExpression(expr.object)
+    }
+    case "BinaryExpression" {
+      return isPureExpression(expr.left) && isPureExpression(expr.right)
+    }
+    case "UnaryExpression" {
+      if expr.operator == "delete" { return false }
+      return isPureExpression(expr.argument)
+    }
+    case "ArrayExpression" {
+      return expr.elements.every((e) => isPureExpression(e))
+    }
+    case "TemplateLiteral" { return true }
+    default { return false }
+  }
+}
+
+fn evalBinOp(op, left, right) {
+  switch op {
+    case "+" { return left + right }
+    case "-" { return left - right }
+    case "*" { return left * right }
+    case "/" {
+      if right == 0 { return undefined }
+      return left / right
+    }
+    case "%" {
+      if right == 0 { return undefined }
+      return left % right
+    }
+    case "**" { return left ** right }
+    case "==" { return left === right }
+    case "===" { return left === right }
+    case "!=" { return left !== right }
+    case "!==" { return left !== right }
+    case "<" { return left < right }
+    case ">" { return left > right }
+    case "<=" { return left <= right }
+    case ">=" { return left >= right }
+    case "&&" { return left && right }
+    case "||" { return left || right }
+    case "??" { return left ?? right }
+    case "&" { return left & right }
+    case "|" { return left | right }
+    case "^" { return left ^ right }
+    case "<<" { return left << right }
+    case ">>" { return left >> right }
+    case ">>>" { return left >>> right }
+    default { return undefined }
+  }
+}
+
+fn evalUnaryOp(op, arg) {
+  switch op {
+    case "-" { return -arg }
+    case "+" { return +arg }
+    case "!" { return !arg }
+    case "~" { return ~arg }
+    case "typeof" { return typeof arg }
+    default { return undefined }
+  }
+}
+
+// ── Phase 1.5 Optimizations ──────────────────────────────────────────
+
+// 1. let → const promotion
+fn promoteLetToConst(body) {
+  const mutated = new Set()
+  walkForMutations(body, mutated)
+  return walkForLetPromotion(body, mutated)
+}
+
+// Collect every identifier that is ever assigned to, updated, or passed by
+// reference. The generic key walk must NOT stop at assignments: an assignment
+// can sit inside a loop body, a function body or a switch case, and the binding
+// it targets is still mutated no matter how deeply nested it is.
+fn walkForMutations(nodes, mutated) {
+  if !nodes { return }
+  if Array.isArray(nodes) {
+    for n in nodes { walkForMutations(n, mutated) }
+    return
+  }
+
+  if nodes.type == "AssignmentExpression" || nodes.type == "CompoundAssignmentExpression" {
+    if nodes.left && nodes.left.type == "Identifier" { mutated.add(nodes.left.name) }
+    // Keep descending: the RHS may contain a nested assignment, and the
+    // enclosing structure still needs walking.
+    walkForMutations(nodes.left, mutated)
+    walkForMutations(nodes.right, mutated)
+    return
+  }
+  if nodes.type == "UpdateExpression" {
+    if nodes.argument && nodes.argument.type == "Identifier" { mutated.add(nodes.argument.name) }
+    return
+  }
+  // A `for (x of xs)` / `for (x in xs)` loop variable is bound, never mutated.
+  // Declaring one is fine, so it does not disqualify const promotion.
+
+  const keys = ["body", "consequent", "alternate", "cases", "expression", "left", "right", "argument", "value", "callee", "arguments", "object", "property", "elements", "properties", "condition", "iterable", "variable", "tryBlock", "catchBlock", "finallyBlock", "declaration", "consequent", "consequent"]
+  for key in keys {
+    if nodes[key] { walkForMutations(nodes[key], mutated) }
+  }
+}
+
+fn walkForLetPromotion(nodes, mutated) {
+  if !nodes { return nodes }
+  if Array.isArray(nodes) {
+    return nodes.map((n) => walkForLetPromotion(n, mutated))
+  }
+  
+  if nodes.type == "VariableDeclaration" && nodes.kind == "let" {
+    if !mutated.has(nodes.name.name) {
+      nodes.kind = "const"
+    }
+  }
+  
+  const keys = ["body", "consequent", "alternate", "cases", "expression", "left", "right", "argument", "value", "callee", "arguments", "object", "property", "elements", "properties", "condition", "iterable", "tryBlock", "catchBlock", "finallyBlock", "declaration"]
+  for key in keys {
+    if nodes[key] {
+      nodes[key] = walkForLetPromotion(nodes[key], mutated)
+    }
+  }
+  return nodes
+}
+
+// 2. Constant Propagation
+fn propagateConstants(body) {
+  // Bindings that are ever reassigned must never be replaced by their
+  // initialiser: `let t = 0; for (...) { t = t + v }` would otherwise become
+  // `const t = 0 + v`, silently discarding every previous iteration.
+  const mutated = new Set()
+  walkForMutations(body, mutated)
+  return walkForConstProp(body, {}, mutated)
+}
+
+fn walkForConstProp(nodes, constants, mutated) {
+  if !nodes { return nodes }
+  if Array.isArray(nodes) {
+    return nodes.map((n) => walkForConstProp(n, constants, mutated))
+  }
+
+  if nodes.type == "Identifier" && constants[nodes.name] != undefined && !(mutated && mutated.has(nodes.name)) {
+    return constants[nodes.name]
+  }
+
+  // Only dive into value positions to avoid replacing declarations/keys
+  if nodes.type == "ExpressionStatement" {
+    nodes.expression = walkForConstProp(nodes.expression, constants, mutated)
+  }
+  if nodes.type == "VariableDeclaration" {
+    nodes.value = walkForConstProp(nodes.value, constants, mutated)
+    if nodes.kind == "const" && nodes.value && nodes.value.type == "Literal" {
+      constants[nodes.name.name] = nodes.value
+    }
+  }
+  if nodes.type == "ReturnStatement" || nodes.type == "ThrowStatement" {
+    nodes.value = walkForConstProp(nodes.value, constants, mutated)
+  }
+  if nodes.type == "IfStatement" || nodes.type == "TernaryExpression" {
+    nodes.condition = walkForConstProp(nodes.condition, constants, mutated)
+    nodes.consequent = walkForConstProp(nodes.consequent, constants, mutated)
+    nodes.alternate = walkForConstProp(nodes.alternate, constants, mutated)
+  }
+  if nodes.type == "ForStatement" {
+    nodes.iterable = walkForConstProp(nodes.iterable, constants, mutated)
+    nodes.body = walkForConstProp(nodes.body, constants, mutated)
+  }
+  if nodes.type == "WhileStatement" || nodes.type == "DoWhileStatement" {
+    nodes.condition = walkForConstProp(nodes.condition, constants, mutated)
+    nodes.body = walkForConstProp(nodes.body, constants, mutated)
+  }
+  if nodes.type == "FunctionDeclaration" || nodes.type == "ArrowFunction" {
+    // Basic scoping clone
+    nodes.body = walkForConstProp(nodes.body, Object.assign({}, constants), mutated)
+  }
+  if nodes.type == "BinaryExpression" || nodes.type == "AssignmentExpression" || nodes.type == "CompoundAssignmentExpression" {
+    if nodes.type != "AssignmentExpression" && nodes.type != "CompoundAssignmentExpression" {
+      nodes.left = walkForConstProp(nodes.left, constants, mutated)
+    }
+    nodes.right = walkForConstProp(nodes.right, constants, mutated)
+  }
+  if nodes.type == "UnaryExpression" || nodes.type == "UpdateExpression" || nodes.type == "SpreadExpression" || nodes.type == "AwaitExpression" {
+    if nodes.type != "UpdateExpression" {
+      nodes.argument = walkForConstProp(nodes.argument, constants, mutated)
+    }
+  }
+  if nodes.type == "CallExpression" || nodes.type == "NewExpression" {
+    nodes.callee = walkForConstProp(nodes.callee, constants, mutated)
+    nodes.arguments = walkForConstProp(nodes.arguments, constants, mutated)
+  }
+  if nodes.type == "ArrayExpression" {
+    nodes.elements = walkForConstProp(nodes.elements, constants, mutated)
+  }
+  if nodes.type == "ObjectExpression" {
+    nodes.properties = nodes.properties.map((p) => {
+      const newP = { ...p, value: walkForConstProp(p.value, constants, mutated) }
+      if p.computed { newP.key = walkForConstProp(p.key, constants, mutated) }
+      return newP
+    })
+  }
+  if nodes.type == "MemberExpression" {
+    nodes.object = walkForConstProp(nodes.object, constants, mutated)
+    if nodes.computed {
+      nodes.property = walkForConstProp(nodes.property, constants, mutated)
+    }
+  }
+  if nodes.type == "SwitchStatement" {
+    nodes.discriminant = walkForConstProp(nodes.discriminant, constants, mutated)
+    nodes.cases = walkForConstProp(nodes.cases, constants, mutated)
+  }
+  if nodes.type == "SwitchCase" {
+    nodes.test = walkForConstProp(nodes.test, constants, mutated)
+    nodes.consequent = walkForConstProp(nodes.consequent, constants, mutated)
+  }
+  if nodes.type == "MatchStatement" {
+    nodes.discriminant = walkForConstProp(nodes.discriminant, constants, mutated)
+    nodes.cases = walkForConstProp(nodes.cases, constants, mutated)
+  }
+  if nodes.type == "MatchCase" {
+    nodes.guard = walkForConstProp(nodes.guard, constants, mutated)
+    nodes.body = walkForConstProp(nodes.body, constants, mutated)
+  }
+  if nodes.type == "_OptimizedBlock" || nodes.type == "BlockStatement" {
+    nodes.body = walkForConstProp(nodes.body, constants, mutated)
+  }
+  if nodes.type == "TryCatchStatement" {
+    nodes.tryBlock = walkForConstProp(nodes.tryBlock, constants, mutated)
+    nodes.catchBlock = walkForConstProp(nodes.catchBlock, constants, mutated)
+    nodes.finallyBlock = walkForConstProp(nodes.finallyBlock, constants, mutated)
+  }
+  return nodes
+}
+
+// 3. Array Method Lowering
+fn lowerArrayMethods(nodes) {
+  if !nodes { return nodes }
+  if Array.isArray(nodes) {
+    return nodes.map((n) => lowerArrayMethods(n))
+  }
+  
+  if nodes.type == "ExpressionStatement" && nodes.expression.type == "CallExpression" {
+    const call = nodes.expression
+    if call.callee.type == "MemberExpression" && call.callee.object.type == "Identifier" && !call.callee.computed {
+      const method = call.callee.property.name
+      // Convert arr.forEach(x => { ... }) into a for...in loop (which Nodeon generates as an indexed loop array optimization)
+      if method == "forEach" && call.arguments.length == 1 {
+        const arg = call.arguments[0]
+        if arg.type == "ArrowFunction" && arg.params.length == 1 {
+           return {
+             type: "ForStatement",
+             kind: "in",
+             variable: arg.params[0],
+             iterable: call.callee.object,
+             body: Array.isArray(arg.body) ? lowerArrayMethods(arg.body) : [{ type: "ExpressionStatement", expression: lowerArrayMethods(arg.body) }],
+             loc: nodes.loc
+           }
+        }
+      }
+    }
+  }
+  
+  const keys = ["body", "consequent", "alternate", "cases", "expression", "left", "right", "argument", "value", "callee", "arguments", "object", "property", "elements", "properties", "condition", "iterable", "tryBlock", "catchBlock", "finallyBlock", "declaration"]
+  for key in keys {
+    if nodes[key] {
+      nodes[key] = lowerArrayMethods(nodes[key])
+    }
+  }
+  return nodes
+}

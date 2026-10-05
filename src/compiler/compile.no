@@ -5,6 +5,7 @@ import { typeCheck } from "./type-checker.no"
 import { SourceMapBuilder } from "./generator/source-map.no"
 import { format } from "./formatter/formatter.no"
 import { PluginRegistry, defaultRegistry } from "./plugin.no"
+import { optimize } from "./optimizer/optimizer.no"
 
 // Compile Nodeon source to JavaScript
 export fn compile(source, options) {
@@ -31,6 +32,13 @@ export fn compile(source, options) {
   // Plugin: beforeGenerate
   ast = registry.runBeforeGenerate(ast, ctx)
 
+  // AST optimizer (constant folding, dead branch elimination, peephole).
+  // Runs after plugins so it sees the final decorated AST. Opt out with
+  // { optimize: false } when a plugin needs the unoptimized tree.
+  if opts.optimize != false {
+    ast = optimize(ast)
+  }
+
   let js = generateJS(ast, opts.minify ?? false)
 
   // Plugin: afterGenerate
@@ -49,6 +57,9 @@ export fn compileWithSourceMap(source, sourceFile, outputFile, options) {
   let ast = compileToAST(transformedSource)
   ast = registry.runAfterParse(ast, ctx)
   ast = registry.runBeforeGenerate(ast, ctx)
+  if opts.optimize != false {
+    ast = optimize(ast)
+  }
 
   const result = generateJSWithSourceMap(ast, sourceFile, transformedSource, outputFile, opts.minify ?? false)
 
@@ -69,4 +80,5 @@ export { generateJS, generateJSWithSourceMap } from "./generator/js-generator.no
 export { SourceMapBuilder } from "./generator/source-map.no"
 export { typeCheck } from "./type-checker.no"
 export { format } from "./formatter/formatter.no"
+export { optimize } from "./optimizer/optimizer.no"
 export { PluginRegistry, defaultRegistry } from "./plugin.no"

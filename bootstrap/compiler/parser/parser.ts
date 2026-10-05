@@ -78,6 +78,33 @@ import {
 
 // PRECEDENCE and COMPOUND_ASSIGN imported from @language/precedence
 
+/**
+ * Build a numeric literal from a Number token.
+ *
+ * The lexer normalises `value` to a plain base-10 string for every literal, so
+ * `Number(value)` is correct for hex, binary, octal, legacy octal and
+ * underscore-separated numbers. BigInt is the exception: the `n` suffix cannot
+ * survive `Number()`, and `Number("123n")` is NaN — a silently wrong constant
+ * with no diagnostic. For those, parse from `raw` and mark the literal so the
+ * generator re-emits the suffix.
+ */
+function numberLiteral(token: any): { type: "Literal"; value: number | bigint; literalType: string; bigint?: boolean } {
+  if (token.bigint) {
+    try {
+      return {
+        type: "Literal",
+        value: BigInt(String(token.raw ?? token.value).replace(/n$/, "")),
+        literalType: "bigint",
+        bigint: true,
+      } as any;
+    } catch {
+      // Malformed BigInt: fall through to the numeric reading so the error
+      // surfaces as a value rather than throwing out of the parser.
+    }
+  }
+  return { type: "Literal", value: Number(token.value), literalType: "number" } as any;
+}
+
 export class Parser extends ParserBase {
   constructor(tokens: Token[], source?: string) {
     super(tokens, source);
@@ -85,9 +112,14 @@ export class Parser extends ParserBase {
 
   public errors: SyntaxError[] = [];
 
+  // Names bound by a declaration seen so far. A bare `x = v` declares on
+  // first use and assigns afterwards; this is what distinguishes the two.
+  private boundNames = new Set<string>();
+
   parseProgram(): Program {
     const body: Statement[] = [];
     while (!this.isAtEnd()) {
+      const before = this.current;
       try {
         body.push(this.parseStatement());
       } catch (err: any) {
@@ -95,6 +127,19 @@ export class Parser extends ParserBase {
           this.errors.push(err);
           // Skip to next statement boundary for recovery
           this.recover();
+          // recover() may legitimately stop *without* consuming a token (it hands
+          // control back at a `}` or a statement keyword). If the failed statement
+          // is what sits at that boundary, the next iteration would fail at the
+          // same position forever, pushing identical errors until the heap dies.
+          // Force progress so a syntax error can never hang or OOM the compiler.
+          if (this.current === before) {
+            this.advance();
+          }
+          // Keep a placeholder so the enclosing function is not silently
+          // deleted. Without this, one bad statement inside `fn f() { ... }`
+          // unwound every nested frame and the whole function vanished from
+          // the output while the error was only recorded, not enforced.
+          body.push({ type: "ErrorStatement", message: err.message } as any);
         } else {
           throw err;
         }
@@ -275,6 +320,14 @@ export class Parser extends ParserBase {
     if (next?.type === TokenType.Operator && next.value === "=") {
       const afterEq = this.peekAt(2);
       if (afterEq?.type !== TokenType.Operator || (afterEq.value !== "=" && afterEq.value !== ">")) {
+        // `x = v` declares `x` the FIRST time and assigns on every later use.
+        // Modelling a re-assignment as a declaration would make every AST
+        // consumer (optimizer, type checker, linter) believe the binding is
+        // being redeclared — and the optimizer would promote the accumulated
+        // variable to const and drop the accumulation.
+        if (this.isNameAlreadyBound(tok.value)) {
+          return this.parseExpressionStatement();
+        }
         return this.parseVariableDeclaration("let");
       }
     }
@@ -283,6 +336,16 @@ export class Parser extends ParserBase {
       return this.parseVariableDeclaration("let");
     }
     return this.parseExpressionStatement();
+  }
+
+  // Names bound so far in the enclosing function scope (or any outer scope).
+  // Used to tell a first-use declaration from a re-assignment.
+  private isNameAlreadyBound(name: string): boolean {
+    return this.boundNames.has(name);
+  }
+
+  private declareName(name: string): void {
+    this.boundNames.add(name);
   }
 
   private parseAsync(): Statement {
@@ -302,6 +365,7 @@ export class Parser extends ParserBase {
       this.advance();
     }
     const name = this.consumeIdentifier("Expected function name");
+    this.declareName(name.name);
     // Optional generic type parameters: fn identity<T>(x: T): T
     const typeParams = this.parseTypeParams();
     this.consumeDelimiter("(", "Expected '('");
@@ -327,6 +391,54 @@ export class Parser extends ParserBase {
     return { type: "FunctionDeclaration", name, params, body, async: isAsync, generator: isGenerator, returnType, typeParams };
   }
 
+  // Anonymous function expression: fn(a, b) { ... } (and fn*(a) { ... }).
+  // Reuses the declaration's parameter/type/body grammar, but produces a
+  // FunctionExpression — no name to bind, and valid wherever an expression is.
+  private parseFunctionExpression(isGenerator = false): Expression {
+    this.consumeKeyword("fn");
+    if (isGenerator && this.checkOperator("*")) {
+      this.advance();
+    }
+    return this.parseFunctionExpressionTail(isGenerator);
+  }
+
+  // The `(params) [: T] (=|{ ... })` tail shared by the anonymous and the
+  // named-function-as-a-value forms, so both cannot drift apart.
+  private parseFunctionExpressionTail(isGenerator: boolean): Expression {
+    this.consumeDelimiter("(", "Expected '('");
+    const params = this.parseParamList();
+    this.consumeDelimiter(")", "Expected ')'");
+
+    let returnType: TypeAnnotation | undefined;
+    if (this.checkDelimiter(":")) {
+      this.advance();
+      returnType = this.parseTypeAnnotation();
+    }
+
+    // expression-style body: fn(a) = a * 2
+    if (this.checkOperator("=")) {
+      this.advance();
+      const expr = this.parseExpression();
+      const body: Statement[] = [{ type: "ExpressionStatement", expression: expr }];
+      // implicitReturn: the single expression IS the return value. Without this
+      // flag the generator emits a bare `a * 2;` and the function returns
+      // undefined — the same rule a named `fn f(a) = expr` already follows.
+      return {
+        type: "FunctionExpression", params, body, async: false,
+        generator: isGenerator, returnType, implicitReturn: true,
+      } as any;
+    }
+
+    const body = this.parseBlock();
+    // A block body whose last statement is a bare expression returns it
+    // implicitly, matching named `fn f(a) { a * 2 }`.
+    const implicitReturn = body.length > 0 && body[body.length - 1].type === "ExpressionStatement";
+    return {
+      type: "FunctionExpression", params, body, async: false,
+      generator: isGenerator, returnType, implicitReturn,
+    } as any;
+  }
+
   private parseParamList(): Param[] {
     const params: Param[] = [];
     if (this.checkDelimiter(")")) return params;
@@ -346,6 +458,7 @@ export class Parser extends ParserBase {
           defaultValue = this.parseExpression();
         }
         params.push({ type: "Param", name: "__destructured", pattern, defaultValue, rest });
+        this.declarePatternNames(pattern);
         continue;
       }
       if (this.checkDelimiter("[")) {
@@ -356,6 +469,7 @@ export class Parser extends ParserBase {
           defaultValue = this.parseExpression();
         }
         params.push({ type: "Param", name: "__destructured", pattern, defaultValue, rest });
+        this.declarePatternNames(pattern);
         continue;
       }
       const tok = this.peek();
@@ -373,6 +487,7 @@ export class Parser extends ParserBase {
         defaultValue = this.parseExpression();
       }
       params.push({ type: "Param", name: tok.value, typeAnnotation, defaultValue, rest });
+      this.declareName(tok.value);
     } while (this.matchDelimiter(","));
     return params;
   }
@@ -412,6 +527,11 @@ export class Parser extends ParserBase {
       variable = this.parseArrayPattern();
     } else {
       variable = this.consumeIdentifier("Expected loop variable");
+    }
+    // The loop variable is bound for the body, so register it before parsing
+    // the body: `for v in xs { v = 1 }` is a re-assignment, not a new binding.
+    if (variable.type === "Identifier") {
+      this.declareName(variable.name);
     }
     // Support both 'for x in expr' and 'for x of expr'
     let kind: "in" | "of" = "in";
@@ -741,15 +861,43 @@ export class Parser extends ParserBase {
       const pattern = this.parseObjectPattern();
       this.consumeOperator("=", "Expected '=' after destructuring pattern");
       const value = this.parseExpression();
+      this.declarePatternNames(pattern);
       return { type: "DestructuringDeclaration", pattern, value, kind };
     }
     if (this.checkDelimiter("[")) {
       const pattern = this.parseArrayPattern();
       this.consumeOperator("=", "Expected '=' after destructuring pattern");
       const value = this.parseExpression();
+      this.declarePatternNames(pattern);
       return { type: "DestructuringDeclaration", pattern, value, kind };
     }
     return this.parseVariableDeclaration(kind);
+  }
+
+  // Register every identifier a destructuring pattern binds.
+  private declarePatternNames(pattern: ObjectPattern | ArrayPattern): void {
+    const walk = (p: any): void => {
+      if (!p) return;
+      if (p.type === "ObjectPattern") {
+        for (const prop of p.properties ?? []) {
+          // ObjectPatternProperty binds the *value*; `key` is the source key.
+          const bound = prop.value ?? prop.name;
+          if (bound && bound.type === "Identifier") this.declareName(bound.name);
+          else if (bound) walk(bound);
+        }
+        if (p.rest) this.declareName(p.rest.name);
+      } else if (p.type === "ArrayPattern") {
+        for (const el of p.elements ?? []) {
+          if (!el) continue;
+          if (el.type === "Identifier") this.declareName(el.name);
+          else walk(el);
+        }
+        if (p.rest) this.declareName(p.rest.name);
+      } else if (p.type === "Identifier") {
+        this.declareName(p.name);
+      }
+    };
+    walk(pattern);
   }
 
   private parseVariableDeclaration(kind: "let" | "const" | "var"): VariableDeclaration {
@@ -762,6 +910,7 @@ export class Parser extends ParserBase {
     }
     this.consumeOperator("=", "Expected '=' in assignment");
     const value = this.parseExpression();
+    this.declareName(name.name);
     return { type: "VariableDeclaration", name, value, kind, typeAnnotation };
   }
 
@@ -810,9 +959,10 @@ export class Parser extends ParserBase {
       if (this.checkKeyword("case")) {
         this.advance();
         const pattern = this.parseExpression();
-        // Optional guard: case x if x > 0 { ... }
+        // Optional guard. `when` is the documented spelling; `if` is accepted
+        // too because it was the only form the parser used to understand.
         let guard: Expression | undefined;
-        if (this.checkKeyword("if")) {
+        if (this.checkContextualKeyword("when") || this.checkKeyword("if")) {
           this.advance();
           guard = this.parseExpression();
         }
@@ -820,8 +970,14 @@ export class Parser extends ParserBase {
         cases.push({ type: "MatchCase", pattern, guard, body });
       } else if (this.checkKeyword("default")) {
         this.advance();
+        // A `default` may also carry a guard: `default when x > 0 { ... }`
+        let guard: Expression | undefined;
+        if (this.checkContextualKeyword("when") || this.checkKeyword("if")) {
+          this.advance();
+          guard = this.parseExpression();
+        }
         const body = this.parseBlock();
-        cases.push({ type: "MatchCase", pattern: null, body });
+        cases.push({ type: "MatchCase", pattern: null, guard, body });
       } else {
         this.error(this.peek(), "Expected 'case' or 'default' in match");
       }
@@ -1263,6 +1419,13 @@ export class Parser extends ParserBase {
         }
       }
 
+      // Bare-parameter arrow: `x => body`, where `x` parsed as an identifier.
+      if (tok.type === TokenType.Operator && tok.value === "=>" && left.type === "Identifier") {
+        this.advance(); // consume '=>'
+        left = this.parseArrowBody([{ type: "Param", name: (left as Identifier).name }], false);
+        continue;
+      }
+
       break;
     }
 
@@ -1339,6 +1502,30 @@ export class Parser extends ParserBase {
       return this.parseCallArguments({ type: "Identifier", name: "import" } as Identifier, false);
     }
 
+    // Anonymous function expression: fn(a, b) { ... }
+    // `fn` is a statement keyword too, so it is only an expression when it is
+    // immediately followed by a parameter list — `fn(x) { ... }`. This is what
+    // makes the idiomatic `items.filter(fn(f) { return f.ok })` work, which is
+    // otherwise indistinguishable from a function *declaration*.
+    if (token.type === TokenType.Keyword && token.value === "fn") {
+      const next = this.peekNext();
+      const isGenerator = next?.type === TokenType.Operator && next?.value === "*";
+      const afterStar = isGenerator ? this.peekAt(2) : next;
+      if (afterStar?.type === TokenType.Delimiter && afterStar?.value === "(") {
+        return this.parseFunctionExpression(isGenerator);
+      }
+      // A NAMED function used as a value: `return fn testRequire(src) { ... }`.
+      // The name is only in scope inside the body, so it is dropped — this is
+      // the shape used for closures that need a stack trace name in source.
+      const afterName = isGenerator ? this.peekAt(3) : this.peekAt(2);
+      if (afterName?.type === TokenType.Delimiter && afterName?.value === "(") {
+        this.advance(); // fn
+        if (isGenerator) this.advance(); // *
+        this.advance(); // name
+        return this.parseFunctionExpressionTail(isGenerator);
+      }
+    }
+
     // Comptime expression: comptime { ... } or comptime expr
     if (token.type === TokenType.Identifier && token.value === "comptime") {
       this.advance(); // consume 'comptime'
@@ -1360,7 +1547,7 @@ export class Parser extends ParserBase {
     // Number literal
     if (token.type === TokenType.Number) {
       this.advance();
-      return { type: "Literal", value: Number(token.value), literalType: "number" } as Literal;
+      return numberLiteral(token) as Literal;
     }
 
     // Raw string literal (single-quoted, no interpolation)
@@ -1452,6 +1639,23 @@ export class Parser extends ParserBase {
     if (!this.checkDelimiter("}")) {
       do {
         if (this.checkDelimiter("}")) break; // trailing comma
+
+        // Object spread: { ...src, key: value }
+        // This is a property whose key is a spread marker, not a real key.
+        if (this.checkOperator("...")) {
+          this.advance();
+          const spreadValue = this.parseExpression();
+          properties.push({
+            type: "ObjectProperty",
+            key: { type: "Identifier", name: "..." },
+            value: spreadValue,
+            shorthand: false,
+            computed: false,
+            spread: true,
+          } as any);
+          continue;
+        }
+
         const keyTok = this.peek();
         let key: Identifier | Literal | Expression;
         let computed = false;
@@ -1469,7 +1673,7 @@ export class Parser extends ParserBase {
           key = { type: "Literal", value: keyTok.value, literalType: "string" };
           this.advance();
         } else if (keyTok.type === TokenType.Number) {
-          key = { type: "Literal", value: Number(keyTok.value), literalType: "number" };
+          key = numberLiteral(keyTok) as Literal;
           this.advance();
         } else {
           this.error(keyTok, "Expected property key");
@@ -1519,13 +1723,55 @@ export class Parser extends ParserBase {
     this.consumeDelimiter(")", "Expected ')'");
     this.consumeOperator("=>", "Expected '=>'");
 
+    // `(x) => ({ ...x, k: v })` — object literal wrapped in parentheses.
+    if (this.checkDelimiter("(")) {
+      const inner = this.peekAt(1);
+      if (inner && inner.type === TokenType.Delimiter && inner.value === "{") {
+        this.advance(); // (
+        const obj = this.parseObjectExpression();
+        this.consumeDelimiter(")", "Expected ')'");
+        return { type: "ArrowFunction", params, body: obj, async: isAsync };
+      }
+    }
+
+    return this.parseArrowBody(params, isAsync);
+  }
+
+  private parseArrowBody(params: Param[], isAsync: boolean): ArrowFunction {
     if (this.checkDelimiter("{")) {
+      // `(x) => { ...x, k: v }` is an object literal, not a block body.
+      // A block body starts with a statement (a keyword, an identifier being
+      // assigned, a call, ...) — a spread or a `key:` can only be an object.
+      if (this.arrowBodyIsObjectLiteral()) {
+        const obj = this.parseObjectExpression();
+        return { type: "ArrowFunction", params, body: obj, async: isAsync };
+      }
       const body = this.parseBlock();
       return { type: "ArrowFunction", params, body, async: isAsync };
     }
 
     const expr = this.parseExpression();
     return { type: "ArrowFunction", params, body: expr, async: isAsync };
+  }
+
+  // After `=>` and an opening `{`, decide block-body vs object-literal by
+  // looking at what follows. Conservative: only claim "object" for shapes
+  // that cannot start a statement.
+  private arrowBodyIsObjectLiteral(): boolean {
+    const next = this.peekAt(1);
+    if (!next) return false;
+    // { ...spread }  /  { ...spread, k: v }
+    if (next.type === TokenType.Operator && next.value === "...") return true;
+    // { "str": v }  /  { 123: v }  /  { [computed]: v }
+    if (next.type === TokenType.String || next.type === TokenType.RawString || next.type === TokenType.Number) return true;
+    if (next.type === TokenType.Delimiter && next.value === "[") return true;
+    // { ident: v } — but `{ ident }` and `{ ident(...) }` are blocks, so only
+    // treat it as an object when an explicit `:` follows the identifier.
+    if (next.type === TokenType.Identifier) {
+      const after = this.peekAt(2);
+      return !!after && after.type === TokenType.Delimiter && after.value === ":";
+    }
+    return false;
   }
 
   // Nodeon-style string interpolation: "Hello {name}" → template literal
@@ -1726,6 +1972,37 @@ export class Parser extends ParserBase {
     return type;
   }
 
+  // One member of an object type literal: `name: T`, `name?: T`, or a
+  // shorthand nested type. The key and the value are separate tokens, so this
+  // cannot be parsed as a plain type annotation.
+  private parseTypeProperty(): TypeAnnotation {
+    const tok = this.peek();
+    let name: string;
+    if (this.isIdentifierLike(tok) || (tok.type === TokenType.String && tok.value)) {
+      name = String(tok.value);
+      this.advance();
+    } else {
+      // Computed or otherwise unusual key: parse it as an index signature.
+      return this.parseTypeAnnotation();
+    }
+
+    let optional = false;
+    if (this.checkExactOperator("?")) {
+      this.advance();
+      optional = true;
+    }
+
+    if (!this.checkDelimiter(":")) {
+      // Shorthand member such as nested `Foo` or a method signature omitted
+      // for now; treat it as a named type reference.
+      return { kind: "property", name, optional, type: { kind: "named", name } } as any;
+    }
+
+    this.advance(); // consume ':'
+    const value = this.parseTypeAnnotation();
+    return { kind: "property", name, optional, type: value } as any;
+  }
+
   private parseTypePrimary(): TypeAnnotation {
     const tok = this.peek();
 
@@ -1763,6 +2040,33 @@ export class Parser extends ParserBase {
       }
 
       return { kind: "named", name };
+    }
+
+    // Object type literal: { a: number, b?: string }
+    // Tuple type: [string, number]
+    // Neither was parseable before, so `type P = { a: number }` and
+    // `type Pair<A,B> = [A, B]` were hard syntax errors — and a type alias is
+    // the most idiomatic way to name a shape, so the whole idiom was missing.
+    if (tok.type === TokenType.Delimiter && tok.value === "{") {
+      this.advance();
+      const properties: TypeAnnotation[] = [];
+      while (!this.checkDelimiter("}") && !this.isAtEnd()) {
+        properties.push(this.parseTypeProperty());
+        if (!this.matchDelimiter(",")) break;
+      }
+      this.consumeDelimiter("}", "Expected '}' in object type");
+      return { kind: "object", properties } as any;
+    }
+
+    if (tok.type === TokenType.Delimiter && tok.value === "[") {
+      this.advance();
+      const elements: TypeAnnotation[] = [];
+      while (!this.checkDelimiter("]") && !this.isAtEnd()) {
+        elements.push(this.parseTypeAnnotation());
+        if (!this.matchDelimiter(",")) break;
+      }
+      this.consumeDelimiter("]", "Expected ']' in tuple type");
+      return { kind: "tuple", elements } as any;
     }
 
     this.error(tok, "Expected type annotation");

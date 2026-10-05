@@ -1,6 +1,25 @@
 // Nodeon Source Code Formatter
 // Takes a Program AST and emits consistently-formatted Nodeon source code.
 
+// BUG-WASM-90. **What the formatter threads through every function.** NOT the generator's
+// `ctx`: that one carries `minify`, `nl`, `sp`, `indentLevel`, `indentSize` and
+// `declaredVars`, and this one carries `indent` and a nested `options`. The same NAME in
+// two files and two types — one shared interface would promise each file fields it does not
+// have, and a promise a file does not keep is how a wrong annotation becomes a wrong answer.
+//
+// `maxLineWidth` is set on the object and read by nobody: the census of the READS finds only
+// `indentSize`. It is declared anyway, because an interface documents the shape the object HAS —
+// omitting a field nobody reads would be the same kind of lie in the other direction.
+interface FormatOptions {
+  indentSize: number
+  maxLineWidth: number
+}
+
+interface FormatContext {
+  indent: number
+  options: FormatOptions
+}
+
 export fn format(program, opts) {
   const options = { indentSize: opts?.indentSize ?? 2, maxLineWidth: opts?.maxLineWidth ?? 100 }
   const ctx = { indent: 0, options: options }
@@ -8,17 +27,94 @@ export fn format(program, opts) {
   return lines.join("\n") + "\n"
 }
 
-fn pad(ctx) {
+fn pad(ctx: FormatContext) {
   return " ".repeat(ctx.indent * ctx.options.indentSize)
 }
 
-fn indented(ctx) {
+fn indented(ctx: FormatContext) {
   return { indent: ctx.indent + 1, options: ctx.options }
+}
+
+// ── Parentheses ─────────────────────────────────────────────────────────
+//
+// The AST records structure, not the parentheses that were written, so they
+// must be re-derived from operator precedence: `(a + b) * c` and `a + b * c`
+// are different trees and must not collapse into the same text. Constructs
+// the shared binary table does not cover get the levels below, all of them
+// looser than every binary operator so they are always parenthesised when
+// used as an operand.
+
+// Same table as bootstrap/language/precedence.ts
+const PRECEDENCE = {
+  "|>": 1,
+  "..": 1,
+  "??": 2,
+  "||": 3,
+  "&&": 4,
+  "|": 5,
+  "^": 6,
+  "&": 7,
+  "==": 8, "!=": 8, "===": 8, "!==": 8,
+  "<": 9, ">": 9, "<=": 9, ">=": 9, "instanceof": 9, "in": 9,
+  "<<": 10, ">>": 10, ">>>": 10,
+  "+": 11, "-": 11,
+  "*": 12, "/": 12, "%": 12,
+  "**": 13,
+}
+
+const PREC_ASSIGN = 0       // `a = b`, `yield e`, `(a, b) => e`, `fn(a) {}`
+const PREC_TERNARY = 0.5    // `a ? b : c`
+const PREC_UNARY = 15       // `-a`, `!a`, `typeof a`, `await a`
+const PREC_ATOM = 100       // identifiers, literals, calls, members, `[]`, `{}`
+
+fn binPrec(op) {
+  const p = PRECEDENCE[op]
+  if p == undefined { return PREC_TERNARY }
+  return p
+}
+
+fn exprPrecedence(expr) {
+  switch expr.type {
+    case "BinaryExpression" { return binPrec(expr.operator) }
+    case "TernaryExpression" { return PREC_TERNARY }
+    case "IfExpression" { return PREC_TERNARY }
+    case "AssignmentExpression" { return PREC_ASSIGN }
+    case "CompoundAssignmentExpression" { return PREC_ASSIGN }
+    case "ArrowFunction" { return PREC_ASSIGN }
+    case "FunctionExpression" { return PREC_ASSIGN }
+    case "YieldExpression" { return PREC_ASSIGN }
+    case "ComptimeExpression" { return PREC_ASSIGN }
+    default { return PREC_ATOM }
+  }
+}
+
+// `**` is the only right-associative binary operator.
+fn isRightAssociative(op) {
+  return op == "**"
+}
+
+// `??` may not be mixed with `||` / `&&` without parentheses (JS SyntaxError).
+fn isNullish(op) {
+  return op == "??"
+}
+
+// Emit `expr` inside an operator context, parenthesising it when precedence
+// alone would not rebuild the same tree. `tieBreak` selects whether a child
+// that binds exactly as tightly still needs parentheses: that is the case on
+// the right of a left-associative operator (`a - (b - c)`) and in the leading
+// position of a ternary (`(a ? b : c) ? d : e`).
+fn fmtChild(expr, minPrec, tieBreak, ctx: FormatContext) {
+  const text = fmtExpression(expr, ctx)
+  const prec = exprPrecedence(expr)
+  if prec < minPrec || (tieBreak && prec == minPrec) {
+    return '(' + text + ')'
+  }
+  return text
 }
 
 // ── Statements ────────────────────────────────────────────────────
 
-fn fmtStatement(stmt, ctx) {
+fn fmtStatement(stmt, ctx: FormatContext) {
   switch stmt.type {
     case "FunctionDeclaration" { return fmtFunction(stmt, ctx) }
     case "VariableDeclaration" { return fmtVariable(stmt, ctx) }
@@ -41,15 +137,15 @@ fn fmtStatement(stmt, ctx) {
     case "TypeAliasDeclaration" { return fmtTypeAlias(stmt, ctx) }
     case "ADTDeclaration" { return fmtADT(stmt, ctx) }
     case "GoStatement" { return fmtGo(stmt, ctx) }
-    case "BreakStatement" { return pad(ctx) + "break" + (stmt.label ? " " + stmt.label : "") }
-    case "ContinueStatement" { return pad(ctx) + "continue" + (stmt.label ? " " + stmt.label : "") }
+    case "BreakStatement" { return pad(ctx) + "break" + labelSuffix(stmt.label) }
+    case "ContinueStatement" { return pad(ctx) + "continue" + labelSuffix(stmt.label) }
     case "DebuggerStatement" { return pad(ctx) + "debugger" }
     case "LabeledStatement" { return pad(ctx) + stmt.label + ":\n" + fmtStatement(stmt.body, ctx) }
     default { return pad(ctx) + "/* unsupported: " + stmt.type + " */" }
   }
 }
 
-fn fmtFunction(f, ctx) {
+fn fmtFunction(f, ctx: FormatContext) {
   const inner = indented(ctx)
   const prefix = f.async ? "async " : ""
   const gen = f.generator ? "*" : ""
@@ -80,19 +176,19 @@ fn fmtParam(p) {
   return out
 }
 
-fn fmtVariable(v, ctx) {
+fn fmtVariable(v, ctx: FormatContext) {
   const typeStr = v.typeAnnotation ? ": " + fmtType(v.typeAnnotation) : ""
   return pad(ctx) + v.kind + " " + v.name.name + typeStr + " = " + fmtExpression(v.value, ctx)
 }
 
-fn fmtDestructuring(d, ctx) {
+fn fmtDestructuring(d, ctx: FormatContext) {
   const pat = fmtPattern(d.pattern)
   return pad(ctx) + d.kind + " " + pat + " = " + fmtExpression(d.value, ctx)
 }
 
-fn fmtIf(stmt, ctx) {
+fn fmtIf(stmt, ctx: FormatContext) {
   const inner = indented(ctx)
-  const cond = fmtExpression(stmt.condition, ctx)
+  const cond = fmtCondition(stmt.condition, ctx)
   const body = stmt.consequent.map((s) => fmtStatement(s, inner)).join("\n")
   let out = pad(ctx) + "if " + cond + ` {\n` + body + "\n" + pad(ctx) + '}'
   if stmt.alternate && stmt.alternate.length > 0 {
@@ -107,7 +203,26 @@ fn fmtIf(stmt, ctx) {
   return out
 }
 
-fn fmtFor(stmt, ctx) {
+// An `if` / `while` / `switch` head ends at the block's `{`.
+fn fmtCondition(expr, ctx: FormatContext) {
+  return fmtChild(expr, PREC_TERNARY, false, ctx)
+}
+
+// A ternary must never be an operand of `+` in Nodeon source: the code
+// generator does not parenthesise a TernaryExpression used as a binary
+// operand, so `a + (x ? y : z)` would be emitted as `(a + x) ? y : z`.
+// These helpers keep the ternary out of the concatenation.
+fn labelSuffix(label) {
+  if label { return " " + label }
+  return ""
+}
+
+fn memberDot(chain) {
+  if chain { return "" }
+  return "."
+}
+
+fn fmtFor(stmt, ctx: FormatContext) {
   const inner = indented(ctx)
   let variable = ""
   if stmt.variable.type == "Identifier" {
@@ -117,7 +232,9 @@ fn fmtFor(stmt, ctx) {
   }
   let iterable = ""
   if stmt.iterable.type == "BinaryExpression" && stmt.iterable.operator == ".." {
-    iterable = fmtExpression(stmt.iterable.left, ctx) + ".." + fmtExpression(stmt.iterable.right, ctx)
+    const from = fmtChild(stmt.iterable.left, PREC_ATOM, false, ctx)
+    const to = fmtChild(stmt.iterable.right, PREC_ATOM, false, ctx)
+    iterable = from + ".." + to
   } else {
     iterable = fmtExpression(stmt.iterable, ctx)
   }
@@ -125,24 +242,24 @@ fn fmtFor(stmt, ctx) {
   return pad(ctx) + "for " + variable + " " + stmt.kind + " " + iterable + ` {\n` + body + "\n" + pad(ctx) + '}'
 }
 
-fn fmtWhile(stmt, ctx) {
+fn fmtWhile(stmt, ctx: FormatContext) {
   const inner = indented(ctx)
   const body = stmt.body.map((s) => fmtStatement(s, inner)).join("\n")
-  return pad(ctx) + "while " + fmtExpression(stmt.condition, ctx) + ` {\n` + body + "\n" + pad(ctx) + '}'
+  return pad(ctx) + "while " + fmtCondition(stmt.condition, ctx) + ` {\n` + body + "\n" + pad(ctx) + '}'
 }
 
-fn fmtDoWhile(stmt, ctx) {
+fn fmtDoWhile(stmt, ctx: FormatContext) {
   const inner = indented(ctx)
   const body = stmt.body.map((s) => fmtStatement(s, inner)).join("\n")
-  return pad(ctx) + `do {\n` + body + "\n" + pad(ctx) + '} while ' + fmtExpression(stmt.condition, ctx)
+  return pad(ctx) + `do {\n` + body + "\n" + pad(ctx) + '} while ' + fmtCondition(stmt.condition, ctx)
 }
 
-fn fmtReturn(stmt, ctx) {
+fn fmtReturn(stmt, ctx: FormatContext) {
   if !stmt.value { return pad(ctx) + "return" }
   return pad(ctx) + "return " + fmtExpression(stmt.value, ctx)
 }
 
-fn fmtImport(stmt, ctx) {
+fn fmtImport(stmt, ctx: FormatContext) {
   const src = "'" + stmt.source + "'"
   if stmt.namedImports.length > 0 {
     const specs = stmt.namedImports.map((s) => s.alias ? s.name + " as " + s.alias : s.name).join(", ")
@@ -154,7 +271,7 @@ fn fmtImport(stmt, ctx) {
   return pad(ctx) + "import " + stmt.defaultImport + " from " + src
 }
 
-fn fmtExport(stmt, ctx) {
+fn fmtExport(stmt, ctx: FormatContext) {
   if stmt.exportAll {
     const alias = stmt.exportAllAlias ? " as " + stmt.exportAllAlias : ""
     return pad(ctx) + "export *" + alias + " from '" + stmt.source + "'"
@@ -171,7 +288,7 @@ fn fmtExport(stmt, ctx) {
   return pad(ctx) + "export " + def
 }
 
-fn fmtClass(cls, ctx) {
+fn fmtClass(cls, ctx: FormatContext) {
   const inner = indented(ctx)
   const typeParams = cls.typeParams ? "<" + cls.typeParams.join(", ") + ">" : ""
   const ext = cls.superClass ? " extends " + cls.superClass.name : ""
@@ -186,7 +303,7 @@ fn fmtClass(cls, ctx) {
   return decs + pad(ctx) + "class " + cls.name.name + typeParams + ext + ` {\n` + members + "\n" + pad(ctx) + '}'
 }
 
-fn fmtClassMember(member, ctx) {
+fn fmtClassMember(member, ctx: FormatContext) {
   if member.type == "ClassField" {
     const s = member.static ? "static " : ""
     const key = member.computed ? "[" + fmtExpression(member.name, ctx) + "]" : member.name.name
@@ -208,10 +325,16 @@ fn fmtClassMember(member, ctx) {
   if member.kind == "constructor" {
     return pad(ctx) + "constructor(" + params + `) {\n` + body + "\n" + pad(ctx) + '}'
   }
-  return pad(ctx) + s + a + kindPrefix + "fn" + gen + " " + key + "(" + params + ")" + ret + ` {\n` + body + "\n" + pad(ctx) + '}'
+  // `get` / `set` are only recognised when the token right after them is the
+  // member name: `get fn label()` re-parses as a field `get` plus a method
+  // `label`, which silently turns every access into `undefined`.
+  if kindPrefix {
+    return pad(ctx) + s + a + kindPrefix + gen + key + "(" + params + ")" + ret + ` {\n` + body + "\n" + pad(ctx) + '}'
+  }
+  return pad(ctx) + s + a + "fn" + gen + " " + key + "(" + params + ")" + ret + ` {\n` + body + "\n" + pad(ctx) + '}'
 }
 
-fn fmtTryCatch(stmt, ctx) {
+fn fmtTryCatch(stmt, ctx: FormatContext) {
   const inner = indented(ctx)
   const tryBody = stmt.tryBlock.map((s) => fmtStatement(s, inner)).join("\n")
   const catchParam = stmt.catchParam ? " (" + stmt.catchParam.name + ")" : ""
@@ -224,26 +347,26 @@ fn fmtTryCatch(stmt, ctx) {
   return out
 }
 
-fn fmtSwitch(stmt, ctx) {
+fn fmtSwitch(stmt, ctx: FormatContext) {
   const inner = indented(ctx)
   const cases = stmt.cases.map((c) => fmtSwitchCase(c, inner)).join("\n")
-  return pad(ctx) + "switch " + fmtExpression(stmt.discriminant, ctx) + ` {\n` + cases + "\n" + pad(ctx) + '}'
+  return pad(ctx) + "switch " + fmtCondition(stmt.discriminant, ctx) + ` {\n` + cases + "\n" + pad(ctx) + '}'
 }
 
-fn fmtSwitchCase(c, ctx) {
+fn fmtSwitchCase(c, ctx: FormatContext) {
   const inner = indented(ctx)
   const header = c.test ? "case " + fmtExpression(c.test, ctx) : "default"
   const body = c.consequent.map((s) => fmtStatement(s, inner)).join("\n")
   return pad(ctx) + header + ` {\n` + body + "\n" + pad(ctx) + '}'
 }
 
-fn fmtMatch(stmt, ctx) {
+fn fmtMatch(stmt, ctx: FormatContext) {
   const inner = indented(ctx)
   const cases = stmt.cases.map((c) => fmtMatchCase(c, inner)).join("\n")
   return pad(ctx) + "match " + fmtExpression(stmt.discriminant, ctx) + ` {\n` + cases + "\n" + pad(ctx) + '}'
 }
 
-fn fmtMatchCase(c, ctx) {
+fn fmtMatchCase(c, ctx: FormatContext) {
   const inner = indented(ctx)
   const header = c.pattern ? "case " + fmtExpression(c.pattern, ctx) : "default"
   const guard = c.guard ? " if " + fmtExpression(c.guard, ctx) : ""
@@ -251,7 +374,7 @@ fn fmtMatchCase(c, ctx) {
   return pad(ctx) + header + guard + ` {\n` + body + "\n" + pad(ctx) + '}'
 }
 
-fn fmtEnum(stmt, ctx) {
+fn fmtEnum(stmt, ctx: FormatContext) {
   const inner = indented(ctx)
   const members = stmt.members.map((m) => {
     if m.value { return pad(inner) + m.name.name + " = " + fmtExpression(m.value, inner) }
@@ -260,7 +383,7 @@ fn fmtEnum(stmt, ctx) {
   return pad(ctx) + "enum " + stmt.name.name + ` {\n` + members + "\n" + pad(ctx) + '}'
 }
 
-fn fmtInterface(stmt, ctx) {
+fn fmtInterface(stmt, ctx: FormatContext) {
   const inner = indented(ctx)
   const ext = stmt.extends ? " extends " + stmt.extends.map((e) => e.name).join(", ") : ""
   const props = stmt.properties.map((p) => {
@@ -274,12 +397,12 @@ fn fmtInterface(stmt, ctx) {
   return pad(ctx) + "interface " + stmt.name.name + ext + ` {\n` + props + "\n" + pad(ctx) + '}'
 }
 
-fn fmtTypeAlias(stmt, ctx) {
+fn fmtTypeAlias(stmt, ctx: FormatContext) {
   const typeParams = stmt.typeParams ? "<" + stmt.typeParams.join(", ") + ">" : ""
   return pad(ctx) + "type " + stmt.name.name + typeParams + " = " + fmtType(stmt.value)
 }
 
-fn fmtADT(stmt, ctx) {
+fn fmtADT(stmt, ctx: FormatContext) {
   const typeParams = stmt.typeParams ? "<" + stmt.typeParams.join(", ") + ">" : ""
   const variants = stmt.variants.map((v) => {
     if v.fields.length == 0 { return v.name.name }
@@ -292,7 +415,7 @@ fn fmtADT(stmt, ctx) {
   return pad(ctx) + "type " + stmt.name.name + typeParams + " = " + variants
 }
 
-fn fmtGo(stmt, ctx) {
+fn fmtGo(stmt, ctx: FormatContext) {
   if stmt.body {
     const inner = indented(ctx)
     const body = stmt.body.map((s) => fmtStatement(s, inner)).join("\n")
@@ -303,38 +426,39 @@ fn fmtGo(stmt, ctx) {
 
 // ── Expressions ────────────────────────────────────────────────────
 
-fn fmtExpression(expr, ctx) {
+fn fmtExpression(expr, ctx: FormatContext) {
   switch expr.type {
     case "Identifier" { return expr.name }
     case "Literal" { return fmtLiteral(expr) }
     case "CallExpression" { return fmtCall(expr, ctx) }
     case "BinaryExpression" { return fmtBinary(expr, ctx) }
-    case "UnaryExpression" { return expr.operator + fmtExpression(expr.argument, ctx) }
+    case "UnaryExpression" { return expr.operator + fmtChild(expr.argument, PREC_UNARY, false, ctx) }
     case "UpdateExpression" {
-      if expr.prefix { return expr.operator + fmtExpression(expr.argument, ctx) }
-      return fmtExpression(expr.argument, ctx) + expr.operator
+      if expr.prefix { return expr.operator + fmtChild(expr.argument, PREC_UNARY, false, ctx) }
+      return fmtChild(expr.argument, PREC_UNARY, false, ctx) + expr.operator
     }
     case "TemplateLiteral" { return fmtTemplate(expr, ctx) }
     case "MemberExpression" { return fmtMember(expr, ctx) }
     case "ArrayExpression" { return fmtArray(expr, ctx) }
     case "ObjectExpression" { return fmtObject(expr, ctx) }
     case "ArrowFunction" { return fmtArrow(expr, ctx) }
+    case "FunctionExpression" { return fmtFunctionExpr(expr, ctx) }
     case "AssignmentExpression" { return fmtExpression(expr.left, ctx) + " = " + fmtExpression(expr.right, ctx) }
     case "CompoundAssignmentExpression" { return fmtExpression(expr.left, ctx) + " " + expr.operator + " " + fmtExpression(expr.right, ctx) }
     case "NewExpression" {
       const args = expr.arguments.map((a) => fmtExpression(a, ctx)).join(", ")
-      return "new " + fmtExpression(expr.callee, ctx) + "(" + args + ")"
+      return "new " + fmtChild(expr.callee, PREC_ATOM, false, ctx) + "(" + args + ")"
     }
-    case "AwaitExpression" { return "await " + fmtExpression(expr.argument, ctx) }
-    case "SpreadExpression" { return "..." + fmtExpression(expr.argument, ctx) }
-    case "TernaryExpression" { return fmtExpression(expr.condition, ctx) + " ? " + fmtExpression(expr.consequent, ctx) + " : " + fmtExpression(expr.alternate, ctx) }
-    case "TypeofExpression" { return "typeof " + fmtExpression(expr.argument, ctx) }
-    case "VoidExpression" { return "void " + fmtExpression(expr.argument, ctx) }
-    case "DeleteExpression" { return "delete " + fmtExpression(expr.argument, ctx) }
+    case "AwaitExpression" { return "await " + fmtChild(expr.argument, PREC_UNARY, false, ctx) }
+    case "SpreadExpression" { return "..." + fmtChild(expr.argument, PREC_ATOM, false, ctx) }
+    case "TernaryExpression" { return fmtTernary(expr, ctx) }
+    case "TypeofExpression" { return "typeof " + fmtChild(expr.argument, PREC_UNARY, false, ctx) }
+    case "VoidExpression" { return "void " + fmtChild(expr.argument, PREC_UNARY, false, ctx) }
+    case "DeleteExpression" { return "delete " + fmtChild(expr.argument, PREC_UNARY, false, ctx) }
     case "YieldExpression" {
       const del = expr.delegate ? "*" : ""
       if !expr.argument { return "yield" + del }
-      return "yield" + del + " " + fmtExpression(expr.argument, ctx)
+      return "yield" + del + " " + fmtChild(expr.argument, PREC_ASSIGN, false, ctx)
     }
     case "AsExpression" { return fmtExpression(expr.expression, ctx) + " as " + fmtType(expr.typeAnnotation) }
     case "ComptimeExpression" {
@@ -365,8 +489,14 @@ fn fmtLiteral(lit) {
   switch lit.literalType {
     case "number" { return String(lit.value) }
     case "string" {
-      const escaped = String(lit.value).replace(/"/g, '\\"')
-      return '"' + escaped + '"'
+      const value = String(lit.value)
+      // A double-quoted Nodeon string interpolates `{...}`, so any literal
+      // whose value contains `{` is re-emitted single-quoted: single quotes
+      // are raw, so it parses back to the very same Literal. Emitting it
+      // double-quoted would turn it into a template literal — and the literal
+      // `$1`, a backtick or a quote in it would corrupt the output.
+      if value.includes("{") { return "'" + escapeString(value).replace(/'/g, "\\'") + "'" }
+      return '"' + escapeString(value) + '"'
     }
     case "boolean" { return String(lit.value) }
     case "null" { return "null" }
@@ -375,8 +505,47 @@ fn fmtLiteral(lit) {
   }
 }
 
-fn fmtCall(call, ctx) {
-  const callee = fmtExpression(call.callee, ctx)
+// A Nodeon string literal carries escapes, and a double-quoted one also
+// carries `{` interpolation. The value has to be re-escaped on the way out: a
+// lone `\` would swallow the next character, and the control characters that
+// are invisible in the source still have to survive the round trip.
+fn escapeString(value) {
+  let out = ""
+  let i = 0
+  while i < value.length {
+    const ch = value.charAt(i)
+    if ch == "\\" {
+      out = out + "\\\\"
+    } else if ch == '"' {
+      out = out + '\\"'
+    } else if ch == "\n" {
+      out = out + "\\n"
+    } else if ch == "\r" {
+      out = out + "\\r"
+    } else if ch == "\t" {
+      out = out + "\\t"
+    } else {
+      const code = value.charCodeAt(i)
+      let piece = ch
+      if code < 32 || code == 127 {
+        piece = "\\x" + code.toString(16).padStart(2, "0")
+      }
+      out = out + piece
+    }
+    i = i + 1
+  }
+  return out
+}
+
+// Template text is JavaScript template text: `\`, a backtick and `$` all have
+// to be escaped, `$` unconditionally so that a following `{` can never open an
+// interpolation that was not in the AST.
+fn escapeTemplateText(text) {
+  return text.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$/g, "\\$")
+}
+
+fn fmtCall(call, ctx: FormatContext) {
+  const callee = fmtChild(call.callee, PREC_ATOM, false, ctx)
   const chain = call.optional ? "?." : ""
   const parts = call.arguments.map((a) => fmtExpression(a, ctx))
   if call.namedArgs && call.namedArgs.length > 0 {
@@ -387,34 +556,57 @@ fn fmtCall(call, ctx) {
   return callee + chain + "(" + parts.join(", ") + ")"
 }
 
-fn fmtBinary(bin, ctx) {
-  const left = fmtExpression(bin.left, ctx)
-  const right = fmtExpression(bin.right, ctx)
+fn fmtBinary(bin, ctx: FormatContext) {
+  const parentPrec = binPrec(bin.operator)
+  // `a || (b ?? c)` is a JavaScript SyntaxError, and `a - (b - c)` is not
+  // `a - b - c`, so an operand is parenthesised whenever precedence alone
+  // cannot rebuild this exact tree.
+  let left = ""
+  if bin.left.type == "BinaryExpression" && isNullish(bin.left.operator) != isNullish(bin.operator) {
+    left = '(' + fmtExpression(bin.left, ctx) + ')'
+  } else {
+    left = fmtChild(bin.left, parentPrec, false, ctx)
+  }
+  let right = ""
+  if bin.right.type == "BinaryExpression" && isNullish(bin.right.operator) != isNullish(bin.operator) {
+    right = '(' + fmtExpression(bin.right, ctx) + ')'
+  } else {
+    right = fmtChild(bin.right, parentPrec, !isRightAssociative(bin.operator), ctx)
+  }
   return left + " " + bin.operator + " " + right
 }
 
-fn fmtMember(mem, ctx) {
-  const obj = fmtExpression(mem.object, ctx)
+fn fmtTernary(t, ctx: FormatContext) {
+  const cond = fmtChild(t.condition, PREC_TERNARY, true, ctx)
+  const consequent = fmtChild(t.consequent, PREC_TERNARY, true, ctx)
+  const alternate = fmtChild(t.alternate, PREC_TERNARY, false, ctx)
+  return cond + " ? " + consequent + " : " + alternate
+}
+
+fn fmtMember(mem, ctx: FormatContext) {
+  const obj = fmtChild(mem.object, PREC_ATOM, false, ctx)
   const chain = mem.optional ? "?." : ""
   if mem.computed {
     return obj + chain + "[" + fmtExpression(mem.property, ctx) + "]"
   }
   const prop = fmtExpression(mem.property, ctx)
-  return obj + chain + (chain ? "" : ".") + prop
+  return obj + chain + memberDot(chain) + prop
 }
 
-fn fmtArray(arr, ctx) {
+fn fmtArray(arr, ctx: FormatContext) {
   const els = arr.elements.map((e) => fmtExpression(e, ctx)).join(", ")
   return "[" + els + "]"
 }
 
-fn fmtObject(obj, ctx) {
+fn fmtObject(obj, ctx: FormatContext) {
   if obj.properties.length == 0 { return '{}' }
   const props = obj.properties.map((p) => fmtObjectProp(p, ctx)).join(", ")
   return '{ ' + props + ' }'
 }
 
-fn fmtObjectProp(prop, ctx) {
+fn fmtObjectProp(prop, ctx: FormatContext) {
+  // Object spread `{ ...src }` — the key is a marker, never a real key.
+  if prop.spread { return "..." + fmtExpression(prop.value, ctx) }
   if prop.shorthand { return fmtExpression(prop.key, ctx) }
   let keyStr = ""
   if prop.computed {
@@ -425,7 +617,7 @@ fn fmtObjectProp(prop, ctx) {
   return keyStr + ": " + fmtExpression(prop.value, ctx)
 }
 
-fn fmtArrow(f, ctx) {
+fn fmtArrow(f, ctx: FormatContext) {
   const prefix = f.async ? "async " : ""
   const params = f.params.map((p) => fmtParam(p)).join(", ")
   const ret = f.returnType ? ": " + fmtType(f.returnType) : ""
@@ -434,14 +626,36 @@ fn fmtArrow(f, ctx) {
     const body = f.body.map((s) => fmtStatement(s, inner)).join("\n")
     return prefix + "(" + params + ")" + ret + ` => {\n` + body + "\n" + pad(ctx) + '}'
   }
+  // `=> {` starts a block in JavaScript, so an object literal body has to be
+  // wrapped in parentheses or it turns into (and silently loses) a block.
+  if f.body && f.body.type == "ObjectExpression" {
+    return prefix + "(" + params + ")" + ret + " => (" + fmtExpression(f.body, ctx) + ")"
+  }
   return prefix + "(" + params + ")" + ret + " => " + fmtExpression(f.body, ctx)
 }
 
-fn fmtTemplate(tmpl, ctx) {
+// Anonymous `fn(a, b) { ... }` used where an expression is expected.
+// The block form is only safe when the body cannot be mistaken for a block;
+// an implicitly returned single expression uses the `fn(a) = expr` form.
+fn fmtFunctionExpr(f, ctx: FormatContext) {
+  const prefix = f.async ? "async " : ""
+  const gen = f.generator ? "*" : ""
+  const params = f.params.map((p) => fmtParam(p)).join(", ")
+  const ret = f.returnType ? ": " + fmtType(f.returnType) : ""
+  const body = f.body ?? []
+  if f.implicitReturn && body.length == 1 && body[0].type == "ExpressionStatement" {
+    return prefix + "fn" + gen + "(" + params + ")" + ret + " = " + fmtExpression(body[0].expression, ctx)
+  }
+  const inner = indented(ctx)
+  const text = body.map((s) => fmtStatement(s, inner)).join("\n")
+  return prefix + "fn" + gen + "(" + params + ")" + ret + ` {\n` + text + "\n" + pad(ctx) + '}'
+}
+
+fn fmtTemplate(tmpl, ctx: FormatContext) {
   let out = '`'
   for part in tmpl.parts {
     if part.kind == "Text" {
-      out = out + part.value
+      out = out + escapeTemplateText(part.value)
     } else {
       out = out + '${' + fmtExpression(part.expression, ctx) + '}'
     }
@@ -455,11 +669,10 @@ fn fmtTemplate(tmpl, ctx) {
 fn fmtPattern(pat) {
   if pat.type == "ObjectPattern" {
     const props = pat.properties.map((p) => {
-      if p.shorthand { return p.key.name }
+      const dflt = p.defaultValue ? " = " + fmtExpression(p.defaultValue, { indent: 0, options: { indentSize: 2, maxLineWidth: 100 } }) : ""
+      if p.shorthand { return p.key.name + dflt }
       const val = p.value.type == "Identifier" ? p.value.name : fmtPattern(p.value)
-      let out = p.key.name + ": " + val
-      if p.defaultValue { out = out + " = " + fmtExpression(p.defaultValue, { indent: 0, options: { indentSize: 2, maxLineWidth: 100 } }) }
-      return out
+      return p.key.name + ": " + val + dflt
     })
     if pat.rest { props.push("..." + pat.rest.name) }
     return '{ ' + props.join(", ") + ' }'

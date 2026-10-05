@@ -59,19 +59,19 @@ export function runCheck(args) {
   }
   console.log();
   if (totalErrors === 0 && totalWarnings === 0) {
-    const plural = totalFiles > 1 ? "s" : "";
+    const plural = (totalFiles > 1) ? "s" : "";
     console.log(GREEN + "✓ " + totalFiles + " file" + plural + " checked — no issues found" + RESET);
   } else {
     const parts = [];
     if (totalErrors > 0) {
-      const ep = totalErrors > 1 ? "s" : "";
+      const ep = (totalErrors > 1) ? "s" : "";
       parts.push(RED + totalErrors + " error" + ep + RESET);
     }
     if (totalWarnings > 0) {
-      const wp = totalWarnings > 1 ? "s" : "";
+      const wp = (totalWarnings > 1) ? "s" : "";
       parts.push(YELLOW + totalWarnings + " warning" + wp + RESET);
     }
-    const plural = totalFiles > 1 ? "s" : "";
+    const plural = (totalFiles > 1) ? "s" : "";
     console.log(totalFiles + " file" + plural + " checked — " + parts.join(", "));
     if (totalErrors > 0) {
       process.exit(1);

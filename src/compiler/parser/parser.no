@@ -7,17 +7,34 @@ export class Parser extends ParserStatements {
   constructor(tokens, source) {
     super(tokens, source)
     this.errors = []
+    // Names bound by a declaration seen so far. A bare `x = v` declares on
+    // first use and assigns afterwards; this is what distinguishes the two.
+    this.boundNames = new Set()
   }
 
   fn parseProgram() {
     const body = []
     while !this.isAtEnd() {
+      const before = this.current
       try {
         body.push(this.parseStatement())
       } catch (err) {
         if err instanceof SyntaxError {
           this.errors.push(err)
           this.recover()
+          // recover() may stop WITHOUT consuming a token (at a `}` or a
+          // statement keyword). If the failed statement is what sits there, the
+          // next iteration fails identically forever, growing errors[] until the
+          // heap dies. Force progress so a syntax error can never hang the
+          // compiler.
+          if this.current == before {
+            this.advance()
+          }
+          // Keep a placeholder so the enclosing function is not silently
+          // deleted. Without this, one bad statement inside `fn f() { ... }`
+          // unwound every nested frame and the whole function vanished from the
+          // output while the error was only recorded, not enforced.
+          body.push({ type: "ErrorStatement", message: err.message })
         } else {
           throw err
         }
@@ -200,6 +217,13 @@ export class Parser extends ParserStatements {
     if next?.type == "Operator" && next.value == "=" {
       const afterEq = this.peekAt(2)
       if afterEq?.type != "Operator" || (afterEq.value != "=" && afterEq.value != ">") {
+        // `x = v` declares `x` the first time and assigns on every later use.
+        // Modelling a re-assignment as a declaration makes every AST consumer
+        // think the binding is redeclared — the optimizer would then promote the
+        // accumulated variable to const and drop the accumulation.
+        if this.boundNames.has(tok.value) {
+          return this.parseExpressionStatement()
+        }
         return this.parseVariableDeclaration("let")
       }
     }

@@ -12,14 +12,25 @@ const UNDEFINED = { kind: "primitive", name: "undefined" }
 
 class TypeEnv {
   constructor() {
-    this.scopes = [{ bindings: new Map(), typeParams: new Map() }]
+    this.scopes = [newScope()]
     // Interface registry (global — interfaces are hoisted)
     this.interfaces = new Map()
+    // Type-alias registry (global — aliases are hoisted so forward references work)
+    this.typeAliases = new Map()
+    // Names currently being expanded for a structural comparison
+    this.resolveStack = new Set()
+    // Memoised expansions of non-generic aliases (per typeCheck run)
+    this.aliasCache = new Map()
+    // Hard cap on structural resolutions per run — guarantees termination
+    this.resolveBudget = 20000
+    this.filePath = null
   }
-  fn push() { this.scopes.push({ bindings: new Map(), typeParams: new Map() }) }
+  fn push() { this.scopes.push(newScope()) }
   fn pop() { this.scopes.pop() }
-  fn define(name, type) {
-    this.scopes[this.scopes.length - 1].bindings.set(name, type)
+  fn define(name, type, annotated) {
+    const scope = this.scopes[this.scopes.length - 1]
+    scope.bindings.set(name, type)
+    if annotated { scope.annotated.add(name) }
   }
   fn defineTypeParam(name, constraint) {
     const tp = { kind: "typeParam", name: name, constraint: constraint }
@@ -44,6 +55,18 @@ class TypeEnv {
     }
     return null
   }
+  fn isAnnotated(name) {
+    let i = this.scopes.length - 1
+    while i >= 0 {
+      if this.scopes[i].bindings.has(name) { return this.scopes[i].annotated.has(name) }
+      i = i - 1
+    }
+    return false
+  }
+}
+
+fn newScope() {
+  return { bindings: new Map(), typeParams: new Map(), annotated: new Set() }
 }
 
 // ── TypeAnnotation -> NType ───────────────────────────────────────
@@ -113,47 +136,6 @@ fn typeToString(t) {
   }
 }
 
-// ── Type Compatibility ───────────────────────────────────────────
-
-fn isAssignableTo(source, target) {
-  if target.kind == "any" || source.kind == "any" { return true }
-  if source.kind == "never" { return true }
-  if source.kind == "primitive" && target.kind == "primitive" { return source.name == target.name }
-  if source.kind == "primitive" && (source.name == "null" || source.name == "undefined") { return true }
-  if source.kind == "named" && target.kind == "named" { return source.name == target.name }
-  if source.kind == "array" && target.kind == "array" { return isAssignableTo(source.element, target.element) }
-  if target.kind == "union" { return target.types.some((t) => isAssignableTo(source, t)) }
-  if source.kind == "union" { return source.types.every((t) => isAssignableTo(t, target)) }
-  if target.kind == "intersection" { return target.types.every((t) => isAssignableTo(source, t)) }
-  if source.kind == "function" && target.kind == "function" {
-    if source.params.length != target.params.length { return false }
-    let i = 0
-    while i < source.params.length {
-      const ok = isAssignableTo(target.params[i], source.params[i])
-      if !ok { return false }
-      i = i + 1
-    }
-    return isAssignableTo(source.returnType, target.returnType)
-  }
-  // Type parameters
-  if source.kind == "typeParam" {
-    if target.kind == "typeParam" && source.name == target.name { return true }
-    if source.constraint { return isAssignableTo(source.constraint, target) }
-    return true
-  }
-  if target.kind == "typeParam" {
-    if target.constraint { return isAssignableTo(source, target.constraint) }
-    return true
-  }
-  // Generic types
-  if source.kind == "generic" && target.kind == "generic" {
-    if source.base != target.base { return false }
-    if source.args.length != target.args.length { return false }
-    return source.args.every((arg, i) => isAssignableTo(arg, target.args[i]))
-  }
-  return false
-}
-
 // ── Generic Type Instantiation ───────────────────────────────────
 
 fn substituteTypeParams(type, subs) {
@@ -177,10 +159,282 @@ fn substituteTypeParams(type, subs) {
     case "object" {
       const props = new Map()
       for entry in Array.from(type.properties) { props.set(entry[0], substituteTypeParams(entry[1], subs)) }
-      return { kind: "object", properties: props }
+      return { kind: "object", properties: props, optional: type.optional }
     }
     default { return type }
   }
+}
+
+// ── Named-Type Resolution (aliases + interfaces) ─────────────────
+
+// Rewrite { kind: "named", name: X } into { kind: "typeParam", name: X }
+// when X is one of the declared alias type parameters.
+fn markTypeParams(t, names) {
+  if names.length == 0 { return t }
+  switch t.kind {
+    case "named" {
+      if names.includes(t.name) { return { kind: "typeParam", name: t.name } }
+      return t
+    }
+    case "array" { return { kind: "array", element: markTypeParams(t.element, names) } }
+    case "tuple" { return { kind: "tuple", elements: t.elements.map((e) => markTypeParams(e, names)) } }
+    case "union" { return { kind: "union", types: t.types.map((x) => markTypeParams(x, names)) } }
+    case "intersection" { return { kind: "intersection", types: t.types.map((x) => markTypeParams(x, names)) } }
+    case "function" {
+      return {
+        kind: "function",
+        params: t.params.map((p) => markTypeParams(p, names)),
+        returnType: markTypeParams(t.returnType, names),
+      }
+    }
+    case "generic" { return { kind: "generic", base: t.base, args: t.args.map((a) => markTypeParams(a, names)) } }
+    case "object" {
+      const props = new Map()
+      for entry in Array.from(t.properties) { props.set(entry[0], markTypeParams(entry[1], names)) }
+      return { kind: "object", properties: props, optional: t.optional }
+    }
+    default { return t }
+  }
+}
+
+// Expand the alias `name` into a structural NType. Returns null when the name
+// is not a registered alias, when it is already being expanded (cycle), or when
+// the resolution budget is exhausted.
+fn expandAlias(name, env) {
+  const def = env.typeAliases.get(name)
+  if !def { return null }
+  if env.resolveStack.has(name) { return null }
+  if env.resolveBudget <= 0 { return null }
+
+  if def.typeParams.length == 0 {
+    const cached = env.aliasCache.get(name)
+    if cached { return cached }
+  }
+
+  env.resolveBudget = env.resolveBudget - 1
+  env.resolveStack.add(name)
+  const subs = new Map()
+  for tp in def.typeParams {
+    const bound = env.lookupTypeParam(tp)
+    if bound { subs.set(tp, bound) }
+  }
+  const raw = markTypeParams(annotationToType(def.annotation), def.typeParams)
+  const result = resolveNamedNodes(substituteTypeParams(raw, subs), env)
+  env.resolveStack.delete(name)
+
+  if def.typeParams.length == 0 && result.kind != "named" { env.aliasCache.set(name, result) }
+  return result
+}
+
+// Instantiate a registered generic alias: Pair<number, string>.
+fn instantiateGenericAlias(t, env) {
+  const def = env.typeAliases.get(t.base)
+  if !def { return null }
+  if env.resolveStack.has(t.base) { return null }
+  if env.resolveBudget <= 0 { return null }
+  if t.args.length != def.typeParams.length { return null }
+
+  env.resolveBudget = env.resolveBudget - 1
+  env.resolveStack.add(t.base)
+  const subs = new Map()
+  let gi = 0
+  while gi < def.typeParams.length {
+    subs.set(def.typeParams[gi], resolveNamedNodes(t.args[gi], env))
+    gi = gi + 1
+  }
+  const raw = markTypeParams(annotationToType(def.annotation), def.typeParams)
+  const result = resolveNamedNodes(substituteTypeParams(raw, subs), env)
+  env.resolveStack.delete(t.base)
+  return result
+}
+
+// Replace named references to aliases / generic aliases by their structural
+// form, recursively.
+fn resolveNamedNodes(t, env) {
+  switch t.kind {
+    case "named" {
+      const expanded = expandAlias(t.name, env)
+      if expanded { return expanded }
+      return t
+    }
+    case "generic" {
+      const inst = instantiateGenericAlias(t, env)
+      if inst { return inst }
+      return { kind: "generic", base: t.base, args: t.args.map((a) => resolveNamedNodes(a, env)) }
+    }
+    case "array" { return { kind: "array", element: resolveNamedNodes(t.element, env) } }
+    case "tuple" { return { kind: "tuple", elements: t.elements.map((e) => resolveNamedNodes(e, env)) } }
+    case "union" { return { kind: "union", types: t.types.map((x) => resolveNamedNodes(x, env)) } }
+    case "intersection" { return { kind: "intersection", types: t.types.map((x) => resolveNamedNodes(x, env)) } }
+    case "function" {
+      return {
+        kind: "function",
+        params: t.params.map((p) => resolveNamedNodes(p, env)),
+        returnType: resolveNamedNodes(t.returnType, env),
+      }
+    }
+    case "object" {
+      const props = new Map()
+      for entry in Array.from(t.properties) { props.set(entry[0], resolveNamedNodes(entry[1], env)) }
+      return { kind: "object", properties: props, optional: t.optional }
+    }
+    default { return t }
+  }
+}
+
+// Structural form of a registered interface, merged across `extends`.
+// Returns null when the name is not an interface (classes/enums stay nominal).
+fn interfaceToObject(name, env) {
+  if !env.interfaces.has(name) { return null }
+  if env.resolveStack.has(name) { return null }
+  if env.resolveBudget <= 0 { return null }
+
+  env.resolveBudget = env.resolveBudget - 1
+  env.resolveStack.add(name)
+  const members = collectInterfaceMembers(name, env)
+  const props = new Map()
+  const optional = new Set()
+  for entry in Array.from(members) {
+    props.set(entry[0], entry[1].type)
+    if entry[1].optional { optional.add(entry[0]) }
+  }
+  env.resolveStack.delete(name)
+  return { kind: "object", properties: props, optional: optional }
+}
+
+// ── Type Compatibility ───────────────────────────────────────────
+
+// Structural object compatibility: every property required by `target` must be
+// present on `source` and assignable to it. Extra properties are allowed.
+fn isObjectAssignableTo(source, target, env) {
+  for entry in Array.from(target.properties) {
+    const key = entry[0]
+    const targetType = entry[1]
+    const sourceType = source.properties.get(key)
+    if sourceType === undefined {
+      if target.optional && target.optional.has(key) { continue }
+      return false
+    }
+    if !isAssignableTo(sourceType, targetType, env) { return false }
+  }
+  return true
+}
+
+// A union arm that names an alias/interface we are already expanding (a
+// recursive type such as `type node = string | node[]`) cannot be resolved, so
+// it is skipped rather than accepted — otherwise one recursive arm would mask
+// every other arm. The union is only accepted when *all* arms are cyclic.
+fn isAssignableToUnion(source, target, env) {
+  let cyclicOnly = true
+  for arm in target.types {
+    let cyclic = false
+    if env && arm.kind == "named" && env.resolveStack.has(arm.name) {
+      if env.typeAliases.has(arm.name) || env.interfaces.has(arm.name) { cyclic = true }
+    }
+    if !cyclic { cyclicOnly = false }
+    if cyclic { continue }
+    if isAssignableTo(source, arm, env) { return true }
+  }
+  return cyclicOnly
+}
+// NB: each `while` loop below uses a *distinct* counter name. The JS generator
+// emits a repeated `let x = ...` inside one function as a bare assignment
+// (`x = ...`), which would reference an undeclared variable.
+fn isAssignableTo(source, target, env) {
+  if target.kind == "any" || source.kind == "any" { return true }
+  if source.kind == "never" { return true }
+
+  // Resolve named references so aliases and interfaces compare structurally.
+  if env {
+    if target.kind == "named" && (env.typeAliases.has(target.name) || env.interfaces.has(target.name)) {
+      if env.resolveStack.has(target.name) { return true }
+      let expanded = null
+      if env.typeAliases.has(target.name) { expanded = expandAlias(target.name, env) }
+      else { expanded = interfaceToObject(target.name, env) }
+      if !expanded { return true }
+      env.resolveStack.add(target.name)
+      const ok = isAssignableTo(source, expanded, env)
+      env.resolveStack.delete(target.name)
+      return ok
+    }
+    if source.kind == "named" && (env.typeAliases.has(source.name) || env.interfaces.has(source.name)) {
+      if env.resolveStack.has(source.name) { return true }
+      let expanded = null
+      if env.typeAliases.has(source.name) { expanded = expandAlias(source.name, env) }
+      else { expanded = interfaceToObject(source.name, env) }
+      if !expanded { return true }
+      env.resolveStack.add(source.name)
+      const ok = isAssignableTo(expanded, target, env)
+      env.resolveStack.delete(source.name)
+      return ok
+    }
+    if source.kind == "generic" && env.typeAliases.has(source.base) {
+      const inst = instantiateGenericAlias(source, env)
+      if !inst { return true }
+      env.resolveStack.add(source.base)
+      const ok = isAssignableTo(inst, target, env)
+      env.resolveStack.delete(source.base)
+      return ok
+    }
+    if target.kind == "generic" && env.typeAliases.has(target.base) {
+      const inst = instantiateGenericAlias(target, env)
+      if !inst { return true }
+      env.resolveStack.add(target.base)
+      const ok = isAssignableTo(source, inst, env)
+      env.resolveStack.delete(target.base)
+      return ok
+    }
+  }
+
+  if source.kind == "primitive" && (source.name == "null" || source.name == "undefined") { return true }
+  if source.kind == "primitive" && target.kind == "primitive" { return source.name == target.name }
+  if source.kind == "named" && target.kind == "named" { return source.name == target.name }
+  if source.kind == "array" && target.kind == "array" { return isAssignableTo(source.element, target.element, env) }
+  if source.kind == "array" && target.kind == "tuple" {
+    return source.element.kind == "any"
+  }
+  if source.kind == "tuple" && target.kind == "tuple" {
+    if source.elements.length != target.elements.length { return false }
+    let ti = 0
+    let tupleOk = true
+    while ti < target.elements.length {
+      if !isAssignableTo(source.elements[ti], target.elements[ti], env) { tupleOk = false }
+      ti = ti + 1
+    }
+    return tupleOk
+  }
+  if source.kind == "object" && target.kind == "object" { return isObjectAssignableTo(source, target, env) }
+  if target.kind == "union" { return isAssignableToUnion(source, target, env) }
+  if source.kind == "union" { return source.types.every((t) => isAssignableTo(t, target, env)) }
+  if target.kind == "intersection" { return target.types.every((t) => isAssignableTo(source, t, env)) }
+  if source.kind == "intersection" { return source.types.some((t) => isAssignableTo(target, t, env)) }
+  if source.kind == "function" && target.kind == "function" {
+    if source.params.length != target.params.length { return false }
+    let fi = 0
+    while fi < source.params.length {
+      const ok = isAssignableTo(target.params[fi], source.params[fi], env)
+      if !ok { return false }
+      fi = fi + 1
+    }
+    return isAssignableTo(source.returnType, target.returnType, env)
+  }
+  // Type parameters
+  if source.kind == "typeParam" {
+    if target.kind == "typeParam" && source.name == target.name { return true }
+    if source.constraint { return isAssignableTo(source.constraint, target, env) }
+    return true
+  }
+  if target.kind == "typeParam" {
+    if target.constraint { return isAssignableTo(source, target.constraint, env) }
+    return true
+  }
+  // Generic types
+  if source.kind == "generic" && target.kind == "generic" {
+    if source.base != target.base { return false }
+    if source.args.length != target.args.length { return false }
+    return source.args.every((arg, i) => isAssignableTo(arg, target.args[i], env))
+  }
+  return false
 }
 
 // ── Expression Type Inference ────────────────────────────────────
@@ -240,6 +494,14 @@ fn inferExpression(expr, env) {
     case "TernaryExpression" { return inferExpression(expr.consequent, env) }
     case "AsExpression" { return annotationToType(expr.typeAnnotation) }
     case "AwaitExpression" { return inferExpression(expr.argument, env) }
+    case "AssignmentExpression" {
+      const rhsType = inferExpression(expr.right, env)
+      if expr.left.type == "Identifier" {
+        const declared = env.lookup(expr.left.name)
+        if declared { return declared }
+      }
+      return rhsType
+    }
     case "IfExpression" {
       if expr.consequent.length > 0 {
         const last = expr.consequent[expr.consequent.length - 1]
@@ -270,6 +532,13 @@ const TYPEOF_MAP = {
   "function": { kind: "function", params: [], returnType: ANY },
 }
 
+fn isTypeofNode(node) {
+  if !node { return false }
+  if node.type == "TypeofExpression" { return true }
+  if node.type == "UnaryExpression" && node.operator == "typeof" { return true }
+  return false
+}
+
 fn extractTypeGuard(cond) {
   // Truthiness check: if (x) -> narrows out null/undefined
   if cond.type == "Identifier" {
@@ -287,12 +556,12 @@ fn extractTypeGuard(cond) {
 
   // typeof x === "string"
   if cond.operator == "===" || cond.operator == "==" {
-    if cond.left.type == "UnaryExpression" && cond.left.operator == "typeof" && cond.left.argument && cond.left.argument.type == "Identifier" && cond.right.type == "Literal" && typeof cond.right.value == "string" {
+    if isTypeofNode(cond.left) && cond.left.argument && cond.left.argument.type == "Identifier" && cond.right.type == "Literal" && typeof cond.right.value == "string" {
       const mapped = TYPEOF_MAP[cond.right.value]
       if mapped { return { name: cond.left.argument.name, narrowedType: mapped, guardKind: "positive" } }
     }
     // "string" === typeof x (reversed)
-    if cond.right.type == "UnaryExpression" && cond.right.operator == "typeof" && cond.right.argument && cond.right.argument.type == "Identifier" && cond.left.type == "Literal" && typeof cond.left.value == "string" {
+    if isTypeofNode(cond.right) && cond.right.argument && cond.right.argument.type == "Identifier" && cond.left.type == "Literal" && typeof cond.left.value == "string" {
       const mapped = TYPEOF_MAP[cond.left.value]
       if mapped { return { name: cond.right.argument.name, narrowedType: mapped, guardKind: "positive" } }
     }
@@ -308,7 +577,7 @@ fn extractTypeGuard(cond) {
 
   // typeof x !== "string" -> narrow negatively
   if cond.operator == "!==" || cond.operator == "!=" {
-    if cond.left.type == "UnaryExpression" && cond.left.operator == "typeof" && cond.left.argument && cond.left.argument.type == "Identifier" && cond.right.type == "Literal" && typeof cond.right.value == "string" {
+    if isTypeofNode(cond.left) && cond.left.argument && cond.left.argument.type == "Identifier" && cond.right.type == "Literal" && typeof cond.right.value == "string" {
       const mapped = TYPEOF_MAP[cond.right.value]
       if mapped { return { name: cond.left.argument.name, narrowedType: mapped, guardKind: "negative" } }
     }
@@ -329,73 +598,92 @@ fn extractTypeGuard(cond) {
   return null
 }
 
-fn applyGuard(guard, env) {
-  if guard.guardKind == "positive" {
-    env.define(guard.name, guard.narrowedType)
-  } else {
-    // Negative: remove type from union
-    const current = env.lookup(guard.name)
-    if !current || current.kind == "any" { return }
-    if current.kind == "union" {
-      const remaining = current.types.filter((t) => !isAssignableTo(t, guard.narrowedType))
-      if remaining.length == 1 {
-        env.define(guard.name, remaining[0])
-      } else {
-        if remaining.length > 1 {
-          env.define(guard.name, { kind: "union", types: remaining })
-        }
+fn applyPositiveNarrowing(name, narrowedType, env) {
+  env.define(name, narrowedType, env.isAnnotated(name))
+}
+
+fn applyNegativeNarrowing(name, excludeType, env) {
+  const current = env.lookup(name)
+  if !current || current.kind == "any" { return }
+  if current.kind == "union" {
+    const remaining = current.types.filter((t) => !isAssignableTo(t, excludeType, env))
+    if remaining.length == 0 { return }
+    if remaining.length == 1 {
+      env.define(name, remaining[0], env.isAnnotated(name))
+    } else {
+      if remaining.length > 1 {
+        env.define(name, { kind: "union", types: remaining }, env.isAnnotated(name))
       }
     }
   }
 }
 
+fn applyGuard(guard, env) {
+  if guard.guardKind == "positive" {
+    applyPositiveNarrowing(guard.name, guard.narrowedType, env)
+  } else {
+    applyNegativeNarrowing(guard.name, guard.narrowedType, env)
+  }
+}
+
 fn applyInverseGuard(guard, env) {
   if guard.guardKind == "positive" {
-    // Inverse of positive: remove the narrowed type
-    const current = env.lookup(guard.name)
-    if !current || current.kind == "any" { return }
-    if current.kind == "union" {
-      const remaining = current.types.filter((t) => !isAssignableTo(t, guard.narrowedType))
-      if remaining.length == 1 {
-        env.define(guard.name, remaining[0])
-      } else {
-        if remaining.length > 1 {
-          env.define(guard.name, { kind: "union", types: remaining })
-        }
-      }
-    }
+    applyNegativeNarrowing(guard.name, guard.narrowedType, env)
   } else {
-    // Inverse of negative: the type IS the narrowed type
-    env.define(guard.name, guard.narrowedType)
+    applyPositiveNarrowing(guard.name, guard.narrowedType, env)
   }
 }
 
 // ── Cross-File Type Resolution ──────────────────────────────────
 
 const moduleTypeCache = new Map()
+let crossFileDeps = null
+let crossFileDepsProbed = false
+
+// Cross-file type resolution needs ./resolver.js and ./compile.js, which only
+// exist next to the compiled checker. Probe once, explicitly, instead of
+// throwing MODULE_NOT_FOUND inside every import statement.
+fn getCrossFileDeps() {
+  if crossFileDepsProbed { return crossFileDeps }
+  crossFileDepsProbed = true
+  try {
+    const resolver = require('./resolver.js')
+    const compiler = require('./compile.js')
+    if typeof resolver?.resolveImport == 'function' && typeof compiler?.compileToAST == 'function' {
+      crossFileDeps = { resolveImport: resolver.resolveImport, compileToAST: compiler.compileToAST }
+    }
+  } catch (e) {
+    crossFileDeps = null
+  }
+  return crossFileDeps
+}
 
 fn extractExportedTypes(stmts) {
   const exports = new Map()
   for stmt in stmts {
     if stmt.type == "ExportDeclaration" {
       const decl = stmt.declaration
-      if !decl { continue }
-      if decl.type == "FunctionDeclaration" {
-        const paramTypes = decl.params.map((p) => annotationToType(p.typeAnnotation))
-        const retType = annotationToType(decl.returnType)
-        exports.set(decl.name.name, { kind: "function", params: paramTypes, returnType: retType })
-      } else {
-        if decl.type == "VariableDeclaration" {
-          if decl.name {
-            const t = decl.typeAnnotation ? annotationToType(decl.typeAnnotation) : ANY
-            exports.set(decl.name.name, t)
-          }
+      if decl {
+        if decl.type == "FunctionDeclaration" {
+          const paramTypes = decl.params.map((p) => annotationToType(p.typeAnnotation))
+          exports.set(decl.name.name, { kind: "function", params: paramTypes, returnType: annotationToType(decl.returnType) })
         } else {
-          if decl.type == "ClassDeclaration" {
-            exports.set(decl.name.name, { kind: "named", name: decl.name.name })
+          if decl.type == "VariableDeclaration" {
+            if decl.name {
+              const t = decl.typeAnnotation ? annotationToType(decl.typeAnnotation) : ANY
+              exports.set(decl.name.name, t)
+            }
           } else {
-            if decl.type == "InterfaceDeclaration" {
+            if decl.type == "ClassDeclaration" {
               exports.set(decl.name.name, { kind: "named", name: decl.name.name })
+            } else {
+              if decl.type == "InterfaceDeclaration" {
+                exports.set(decl.name.name, { kind: "named", name: decl.name.name })
+              } else {
+                if decl.type == "TypeAliasDeclaration" {
+                  exports.set(decl.name.name, { kind: "named", name: decl.name.name })
+                }
+              }
             }
           }
         }
@@ -416,31 +704,144 @@ fn resolveModuleTypes(source, env) {
   if !source || (!source.startsWith("./") && !source.startsWith("../")) {
     return new Map()
   }
-  if moduleTypeCache.has(source) {
-    return moduleTypeCache.get(source)
-  }
+  // Without the importing file the specifier cannot be resolved at all.
+  if !env.filePath { return new Map() }
+
+  const deps = getCrossFileDeps()
+  if !deps { return new Map() }
+
+  // Cache key is (importing file, specifier) — keying on the bare specifier
+  // collides as soon as two files import the same relative name.
+  const key = env.filePath + "" + source
+  const cached = moduleTypeCache.get(key)
+  if cached { return cached }
+
+  let types = new Map()
   try {
     const fs = require('fs')
-    const resolver = require('./resolver.js')
-    const compiler = require('./compile.js')
-    if !env.filePath {
-      moduleTypeCache.set(source, new Map())
-      return new Map()
+    const resolved = deps.resolveImport(source, env.filePath)
+    if resolved && fs.existsSync(resolved) {
+      const fileSource = fs.readFileSync(resolved, 'utf8')
+      types = extractExportedTypes(deps.compileToAST(fileSource).body)
     }
-    const resolved = resolver.resolveImport(source, env.filePath)
-    if !resolved || !fs.existsSync(resolved) {
-      moduleTypeCache.set(source, new Map())
-      return new Map()
-    }
-    const fileSource = fs.readFileSync(resolved, 'utf8')
-    const ast = compiler.compileToAST(fileSource)
-    const types = extractExportedTypes(ast.body)
-    moduleTypeCache.set(source, types)
-    return types
   } catch (e) {
-    moduleTypeCache.set(source, new Map())
-    return new Map()
+    types = new Map()
   }
+  moduleTypeCache.set(key, types)
+  return types
+}
+
+// Register an interface's members for conformance *and* structural checking.
+fn registerInterface(iface, env) {
+  env.define(iface.name.name, { kind: "named", name: iface.name.name })
+  const members = new Map()
+  for prop in iface.properties {
+    let propType = annotationToType(prop.valueType)
+    if prop.method {
+      const mParams = (prop.params || []).map(annotationToType)
+      propType = { kind: "function", params: mParams, returnType: annotationToType(prop.valueType) }
+    }
+    members.set(prop.name.name, { type: propType, optional: prop.optional, method: prop.method })
+  }
+  // NB: do not write `(iface.extends || []).map(...)` here — the JS generator
+  // emits that as `iface.extends || [].map(...)`, which yields Identifier
+  // objects instead of names whenever `extends` is present.
+  let extendNames = []
+  if iface.extends {
+    extendNames = iface.extends.map((id) => id.name)
+  }
+  env.interfaces.set(iface.name.name, { name: iface.name.name, members: members, extends: extendNames })
+}
+
+// Hoist top-level type aliases and interfaces so forward references resolve.
+fn collectTypeDeclarations(stmts, env) {
+  for stmt in stmts {
+    if stmt.type == "TypeAliasDeclaration" {
+      env.typeAliases.set(stmt.name.name, { annotation: stmt.value, typeParams: stmt.typeParams || [] })
+      env.define(stmt.name.name, { kind: "named", name: stmt.name.name })
+    } else {
+      if stmt.type == "InterfaceDeclaration" {
+        registerInterface(stmt, env)
+      } else {
+        if stmt.type == "ExportDeclaration" && stmt.declaration {
+          collectTypeDeclarations([stmt.declaration], env)
+        }
+      }
+    }
+  }
+}
+
+// Check an `x = value` re-assignment. Nodeon has no redeclaration concept — the
+// first `x = v` parses as a VariableDeclaration, every later one as an
+// ExpressionStatement — so only *annotated* bindings are enforced, and there is
+// no "already declared" diagnostic of any kind.
+fn checkAssignment(expr, env, diags, line, column) {
+  if !expr || expr.type != "AssignmentExpression" { return }
+  if expr.right && expr.right.type == "AssignmentExpression" {
+    checkAssignment(expr.right, env, diags, line, column)
+  }
+  const lhs = expr.left
+  if !lhs || lhs.type != "Identifier" {
+    inferExpression(expr, env)
+    return
+  }
+  const declared = env.lookup(lhs.name)
+  if !declared || declared.kind == "any" || !env.isAnnotated(lhs.name) {
+    inferExpression(expr, env)
+    return
+  }
+  const valueType = inferExpression(expr.right, env)
+  if valueType.kind == "any" { return }
+  if !isAssignableTo(valueType, declared, env) {
+    diags.push({
+      line: line, column: column,
+      message: "Type '" + typeToString(valueType) + "' is not assignable to type '" + typeToString(declared) + "'",
+      severity: "error",
+    })
+  }
+}
+
+fn checkExpressionStatement(stmt, env, diags) {
+  const expr = stmt.expression
+  if expr && expr.type == "AssignmentExpression" {
+    checkAssignment(expr, env, diags, getLine(stmt), getCol(stmt))
+    return
+  }
+  if expr && (expr.type == "ArrowFunction" || expr.type == "FunctionExpression") {
+    checkFunctionExpressionReturns(expr, env, diags, getLine(stmt), getCol(stmt))
+    return
+  }
+  inferExpression(expr, env)
+}
+
+// Check the declared return type of an arrow / anonymous function, whether its
+// body is a block (`{ return x }`) or a bare expression (`=> x`).
+fn checkFunctionExpressionReturns(value, env, diags, line, column) {
+  if !value || (value.type != "ArrowFunction" && value.type != "FunctionExpression") { return }
+  const retType = annotationToType(value.returnType)
+  if retType.kind == "any" { return }
+
+  env.push()
+  for tp in (value.typeParams || []) { env.defineTypeParam(tp) }
+  for p in (value.params || []) {
+    const ann = annotationToType(p.typeAnnotation)
+    env.define(p.name, ann, !!p.typeAnnotation && ann.kind != "any")
+  }
+  if Array.isArray(value.body) {
+    if retType.kind != "typeParam" { checkReturnTypes(value.body, retType, env, diags) }
+  } else {
+    if value.body && value.body.type {
+      const actual = inferExpression(value.body, env)
+      if actual.kind != "any" && !isAssignableTo(actual, retType, env) {
+        diags.push({
+          line: line, column: column,
+          message: "Type '" + typeToString(actual) + "' is not assignable to return type '" + typeToString(retType) + "'",
+          severity: "error",
+        })
+      }
+    }
+  }
+  env.pop()
 }
 
 fn checkStatements(stmts, env, diags) {
@@ -453,7 +854,7 @@ fn checkStatement(stmt, env, diags) {
       const declaredType = annotationToType(stmt.typeAnnotation)
       const initType = inferExpression(stmt.value, env)
       if declaredType.kind != "any" && initType.kind != "any" {
-        const assignable = isAssignableTo(initType, declaredType)
+        const assignable = isAssignableTo(initType, declaredType, env)
         if !assignable {
           diags.push({
             line: getLine(stmt), column: getCol(stmt),
@@ -463,7 +864,8 @@ fn checkStatement(stmt, env, diags) {
         }
       }
       const resolvedType = declaredType.kind != "any" ? declaredType : initType
-      if stmt.name { env.define(stmt.name.name, resolvedType) }
+      if stmt.name { env.define(stmt.name.name, resolvedType, !!stmt.typeAnnotation && declaredType.kind != "any") }
+      checkFunctionExpressionReturns(stmt.value, env, diags, getLine(stmt), getCol(stmt))
     }
     case "FunctionDeclaration" {
       env.push()
@@ -488,7 +890,7 @@ fn checkStatement(stmt, env, diags) {
       for tp in tpNames { env.defineTypeParam(tp) }
       let pi = 0
       while pi < stmt.params.length {
-        env.define(stmt.params[pi].name, paramTypes[pi])
+        env.define(stmt.params[pi].name, paramTypes[pi], !!stmt.params[pi].typeAnnotation && paramTypes[pi].kind != "any")
         pi = pi + 1
       }
       checkStatements(stmt.body, env, diags)
@@ -502,17 +904,15 @@ fn checkStatement(stmt, env, diags) {
       }
     }
     case "ExpressionStatement" {
-      inferExpression(stmt.expression, env)
+      checkExpressionStatement(stmt, env, diags)
     }
     case "IfStatement" {
       inferExpression(stmt.condition, env)
       const guard = extractTypeGuard(stmt.condition)
-      // Consequent: apply guard
       env.push()
       if guard { applyGuard(guard, env) }
       checkStatements(stmt.consequent, env, diags)
       env.pop()
-      // Alternate: apply inverse guard
       if stmt.alternate {
         env.push()
         if guard { applyInverseGuard(guard, env) }
@@ -521,14 +921,15 @@ fn checkStatement(stmt, env, diags) {
       }
     }
     case "MatchStatement" {
-      const matchExpr = stmt.expression
+      const matchExpr = stmt.discriminant ?? stmt.expression
       if matchExpr {
         const exprType = inferExpression(matchExpr, env)
         const cases = stmt.cases || []
         let hasDefault = false
         for c in cases {
-          if c.isDefault { hasDefault = true }
+          if c.isDefault || !c.pattern { hasDefault = true }
           env.push()
+          if c.guard { inferExpression(c.guard, env) }
           checkStatements(c.body || [], env, diags)
           env.pop()
         }
@@ -603,32 +1004,39 @@ fn checkStatement(stmt, env, diags) {
     case "EnumDeclaration" {
       env.define(stmt.name.name, { kind: "named", name: stmt.name.name })
     }
-    case "InterfaceDeclaration" {
+    case "TypeAliasDeclaration" {
+      env.typeAliases.set(stmt.name.name, { annotation: stmt.value, typeParams: stmt.typeParams || [] })
       env.define(stmt.name.name, { kind: "named", name: stmt.name.name })
-      // Register interface members for conformance checking
-      const members = new Map()
-      for prop in stmt.properties {
-        let propType = annotationToType(prop.valueType)
-        if prop.method {
-          const mParams = (prop.params || []).map(annotationToType)
-          propType = { kind: "function", params: mParams, returnType: annotationToType(prop.valueType) }
-        }
-        members.set(prop.name.name, { type: propType, optional: prop.optional, method: prop.method })
+    }
+    case "LabeledStatement" {
+      checkStatement(stmt.body, env, diags)
+    }
+    case "GoStatement" {
+      if stmt.expression { inferExpression(stmt.expression, env) }
+      if stmt.body {
+        env.push()
+        checkStatements(stmt.body, env, diags)
+        env.pop()
       }
-      const extendNames = (stmt.extends || []).map((id) => id.name)
-      env.interfaces.set(stmt.name.name, { name: stmt.name.name, members: members, extends: extendNames })
+    }
+    case "InterfaceDeclaration" {
+      registerInterface(stmt, env)
     }
   }
 }
 
 // ── Interface Conformance ────────────────────────────────────────
 
-fn collectInterfaceMembers(ifaceName, env) {
+fn collectInterfaceMembers(ifaceName, env, seen) {
+  if !seen { seen = new Set() }
   const iface = env.interfaces.get(ifaceName)
   if !iface { return new Map() }
+  if seen.has(ifaceName) { return new Map() }
+  seen.add(ifaceName)
+
   const all = new Map()
   for parent in iface.extends {
-    const parentMembers = collectInterfaceMembers(parent, env)
+    const parentMembers = collectInterfaceMembers(parent, env, seen)
     for entry in Array.from(parentMembers) { all.set(entry[0], entry[1]) }
   }
   for entry in Array.from(iface.members) { all.set(entry[0], entry[1]) }
@@ -655,10 +1063,12 @@ fn checkImplements(cls, env, diags) {
         if mName && member.kind != "constructor" {
           classMembers.set(mName, { isMethod: true })
         }
-      } else if member.type == "ClassField" {
-        const fName = member.name.name || member.name.value
-        if fName {
-          classMembers.set(fName, { isMethod: false })
+      } else {
+        if member.type == "ClassField" {
+          const fName = member.name.name || member.name.value
+          if fName {
+            classMembers.set(fName, { isMethod: false })
+          }
         }
       }
     }
@@ -679,22 +1089,93 @@ fn checkImplements(cls, env, diags) {
   }
 }
 
+// Walk every statement form that can contain a `return` and verify it against
+// `expected`. Narrowing guards are re-applied inside branches, and each
+// recursion gets its own scope so narrowing never leaks.
 fn checkReturnTypes(body, expected, env, diags) {
   for stmt in body {
-    if stmt.type == "ReturnStatement" && stmt.value {
-      const actual = inferExpression(stmt.value, env)
-      const assignOk = isAssignableTo(actual, expected)
-      if actual.kind != "any" && !assignOk {
-        diags.push({
-          line: getLine(stmt), column: getCol(stmt),
-          message: "Type '" + typeToString(actual) + "' is not assignable to return type '" + typeToString(expected) + "'",
-          severity: "error",
-        })
+    switch stmt.type {
+      case "ReturnStatement" {
+        if stmt.value {
+          const actual = inferExpression(stmt.value, env)
+          const assignOk = isAssignableTo(actual, expected, env)
+          if actual.kind != "any" && !assignOk {
+            diags.push({
+              line: getLine(stmt), column: getCol(stmt),
+              message: "Type '" + typeToString(actual) + "' is not assignable to return type '" + typeToString(expected) + "'",
+              severity: "error",
+            })
+          }
+        }
       }
-    }
-    if stmt.type == "IfStatement" {
-      checkReturnTypes(stmt.consequent, expected, env, diags)
-      if stmt.alternate { checkReturnTypes(stmt.alternate, expected, env, diags) }
+      case "IfStatement" {
+        const guard = extractTypeGuard(stmt.condition)
+        env.push()
+        if guard { applyGuard(guard, env) }
+        checkReturnTypes(stmt.consequent, expected, env, diags)
+        env.pop()
+        if stmt.alternate {
+          env.push()
+          if guard { applyInverseGuard(guard, env) }
+          checkReturnTypes(stmt.alternate, expected, env, diags)
+          env.pop()
+        }
+      }
+      case "ForStatement" {
+        env.push()
+        if stmt.variable && stmt.variable.type == "Identifier" { env.define(stmt.variable.name, ANY) }
+        checkReturnTypes(stmt.body || [], expected, env, diags)
+        env.pop()
+      }
+      case "WhileStatement" {
+        env.push()
+        checkReturnTypes(stmt.body || [], expected, env, diags)
+        env.pop()
+      }
+      case "DoWhileStatement" {
+        env.push()
+        checkReturnTypes(stmt.body || [], expected, env, diags)
+        env.pop()
+      }
+      case "SwitchStatement" {
+        for c in (stmt.cases || []) {
+          env.push()
+          checkReturnTypes(c.consequent || c.body || [], expected, env, diags)
+          env.pop()
+        }
+      }
+      case "MatchStatement" {
+        for c in (stmt.cases || []) {
+          env.push()
+          checkReturnTypes(c.body || [], expected, env, diags)
+          env.pop()
+        }
+      }
+      case "TryCatchStatement" {
+        env.push()
+        checkReturnTypes(stmt.tryBlock || [], expected, env, diags)
+        env.pop()
+        env.push()
+        if stmt.catchParam { env.define(stmt.catchParam.name, ANY) }
+        checkReturnTypes(stmt.catchBlock || [], expected, env, diags)
+        env.pop()
+        if stmt.finallyBlock {
+          env.push()
+          checkReturnTypes(stmt.finallyBlock, expected, env, diags)
+          env.pop()
+        }
+      }
+      case "LabeledStatement" {
+        if stmt.body { checkReturnTypes([stmt.body], expected, env, diags) }
+      }
+      case "GoStatement" {
+        if Array.isArray(stmt.body) {
+          env.push()
+          checkReturnTypes(stmt.body, expected, env, diags)
+          env.pop()
+        }
+      }
+      default { }
     }
   }
 }
@@ -705,6 +1186,10 @@ export fn typeCheck(ast, filePath) {
   const diags = []
   const env = new TypeEnv()
   if filePath { env.filePath = filePath }
+  // Imported-module types are cached per (importing file, specifier); a new run
+  // must not reuse another run's view of the filesystem.
+  moduleTypeCache.clear()
+  collectTypeDeclarations(ast.body, env)
   checkStatements(ast.body, env, diags)
   return diags
 }

@@ -6,6 +6,32 @@ export type IRModule = {
   type: "IRModule";
   functions: IRFunction[];
   globals: IRInstruction[];
+  /**
+   * Which kind of value each array holds: "number" (f64 slots) or "address"
+   * (i32 slots holding records). And which kind each `for` variable receives.
+   * The emitter needs it to pick the right load, and guessing f64 for a record
+   * address made `for o in records { t = t + o.v }` accumulate 0.
+   */
+  arrayKinds?: Record<string, "number" | "address">;
+  loopVarKinds?: Record<string, "number" | "address">;
+  /**
+   * Names the CALLER knows hold a string, per function. STRING-SEED-75.
+   *
+   * `stringNames` is a fixpoint over the IR and can only learn a string from a
+   * string literal, so a PARAMETER is never one of them — and the element width is
+   * decided by exactly that set. A helper built from source is given its two
+   * parameters here, because the caller is the only side that knows.
+   */
+  stringSeeds?: Record<string, string[]>;
+  /**
+   * Problems found while lowering, in the language of the source.
+   *
+   * A lambda that reads a name from the scope around it is a CLOSURE, and this
+   * backend cannot make one yet. Reporting it here is the difference between a
+   * program that says what is missing and one that quietly reads a global of the
+   * same name and returns a plausible wrong number.
+   */
+  diagnostics?: string[];
 };
 
 export type IRFunction = {
@@ -36,6 +62,7 @@ export type IRInstruction =
   | IRLiteral
   | IRDeclare
   | IRExprStmt;
+
 
 export type IRAssign = {
   op: "assign";
@@ -123,6 +150,37 @@ export type IRBranch = {
   condition: IRValue;
   thenLabel: string;
   elseLabel: string;
+  /**
+   * The label the ELSE ARM starts at, when there is one.
+   *
+   * `elseLabel` names the MERGE, so on its own it says nothing about where the
+   * else arm is. The emitter used to infer that from POSITION — the else arm
+   * begins one block after the last block of the then arm — and position is not
+   * knowable: an arm holding a nested `if` ends at the nested arm's jump, not at
+   * the end of the outer arm. So the emitter read a block from the MIDDLE of the
+   * then arm as the else arm, emitted it a second time, and the code after a
+   * nested `if` inside a `case` ran when the case did not match.
+   *
+   * The lowering knows the label because it is the one that created the block.
+   * An arm that runs to the merge is expressed by naming the merge.
+   */
+  elseArm?: string;
+  /**
+   * Set on the FIRST branch of a `switch` chain, and only there: the label every
+   * case body and every `break` leaves to.
+   *
+   * A `switch` lowers to the same chain of comparisons an `if`/`else if` does,
+   * and the chain needs nothing extra — what it lacks is a TARGET for the jump
+   * that leaves a case. In wasm a jump out is a `br` to the Nth enclosing
+   * construct, and with no `block` around the chain that construct is the case's
+   * own `if`. So the emitter has to know which branch opens a `switch`, and the
+   * exit label is what lets a `break` two levels down find the right depth.
+   *
+   * It is a field rather than a `swend_` label prefix because the emitter
+   * already reasons about block GRAPH, and a name it has to pattern-match is a
+   * second, silent copy of the same fact.
+   */
+  switchExit?: string;
 };
 
 export type IRJump = {

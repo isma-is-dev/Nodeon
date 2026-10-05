@@ -9,6 +9,15 @@ node_modules/
 # Build output
 *.tsbuildinfo
 *.vsix
+dist/
+dist-no/
+
+# Local diagnostic scratch
+.mavis-probe/
+# Green copies of the working tree, so "restore the base before each attempt" has
+# something to restore FROM. Never source: they are byte copies, and a stale one is
+# worse than none.
+.mavis-bk/
 
 # IDE
 .idea/

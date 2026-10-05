@@ -99,6 +99,20 @@ function buildAll(compiler, label) {
       const source = fs.readFileSync(file, "utf8");
       const result = compiler.compile(source);
 
+      // A file that reported parse errors was only partially compiled: the
+      // broken statement — and, before the ErrorStatement fix, often the whole
+      // enclosing function — is missing from the output. Writing that as a
+      // success is how broken code reached dist/. Treat it as a failure.
+      const diagnostics = result.diagnostics || [];
+      if (diagnostics.length > 0) {
+        fail++;
+        console.error(`  \u2717 ${rel}: ${diagnostics.length} diagnostic(s)`);
+        for (const d of diagnostics.slice(0, 5)) {
+          console.error(`      ${d.message}`);
+        }
+        continue;
+      }
+
       fs.writeFileSync(outPath, result.js, "utf8");
       ok++;
       const kb = (result.js.length / 1024).toFixed(1);

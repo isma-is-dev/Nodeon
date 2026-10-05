@@ -55,4 +55,7 @@ export const CONTEXTUAL_KEYWORDS = new Set([
   "as",
   "implements",
   "comptime",
+  // `when` introduces a match guard: `case x when x > 0 { ... }`.
+  // Contextual so `when` stays usable as an ordinary identifier elsewhere.
+  "when",
 ]);

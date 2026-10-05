@@ -213,7 +213,7 @@ export async function runBuildProd(args) {
   const elapsedSec = elapsedRaw.toFixed(2);
   console.log("");
   console.log("  " + BOLD + GREEN + "Build complete" + RESET + " in " + elapsedSec + "s");
-  console.log("  " + DIM + stats.compiled + " compiled, " + stats.pages + " pages, " + stats.islands + " islands" + stats.errors > 0 ? ", " + RED + stats.errors + " errors" + RESET : "" + RESET);
+  console.log("  " + DIM + stats.compiled + " compiled, " + stats.pages + " pages, " + stats.islands + " islands" + (stats.errors > 0) ? ", " + RED + stats.errors + " errors" + RESET : "" + RESET);
   console.log("  " + DIM + "Output: " + path.relative(projectDir, outDir) + "/" + RESET);
   console.log("");
   if (stats.errors > 0) {

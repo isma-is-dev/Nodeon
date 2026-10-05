@@ -2,6 +2,22 @@ import { PRECEDENCE as BIN_PRECEDENCE } from "../../language/precedence.no"
 import { rewriteImportSource } from "../resolver.no"
 import { SourceMapBuilder } from "./source-map.no"
 
+// BUG-WASM-90. **What the generator threads through every function.** The fields are the
+// ones this file actually READS — `minify`, `indentLevel`, `indentSize`, `nl`, `sp`,
+// `declaredVars` — measured with a census rather than listed from a guess, because a
+// promise the file does not keep is how a wrong annotation becomes a wrong answer.
+//
+// The formatter has a `ctx` too and it is a DIFFERENT type (`indent`, `options`), and the two
+// must not share this: naming a field a caller does not set is a lie the lowering believes.
+interface EmitContext {
+  minify: boolean
+  nl: string
+  sp: string
+  indentLevel: number
+  indentSize: number
+  declaredVars: Set<string>
+}
+
 // ── Public API ─────────────────────────────────────────────────────
 
 export fn generateJS(program, minify) {
@@ -114,12 +130,12 @@ fn collectInnerLocs(stmt) {
 
 // ── Helpers ─────────────────────────────────────────────────────
 
-fn pad(ctx) {
+fn pad(ctx: EmitContext) {
   if ctx.minify { return "" }
   return " ".repeat(ctx.indentLevel * ctx.indentSize)
 }
 
-fn indented(ctx) {
+fn indented(ctx: EmitContext) {
   return {
     minify: ctx.minify, nl: ctx.nl, sp: ctx.sp,
     indentLevel: ctx.indentLevel + 1, indentSize: ctx.indentSize,
@@ -127,7 +143,7 @@ fn indented(ctx) {
   }
 }
 
-fn childScope(ctx) {
+fn childScope(ctx: EmitContext) {
   return {
     minify: ctx.minify, nl: ctx.nl, sp: ctx.sp,
     indentLevel: ctx.indentLevel, indentSize: ctx.indentSize,
@@ -137,7 +153,7 @@ fn childScope(ctx) {
 
 // ── Statements ─────────────────────────────────────────────────────
 
-fn emitStatement(stmt, ctx) {
+fn emitStatement(stmt, ctx: EmitContext) {
   switch stmt.type {
     case "FunctionDeclaration" { return emitFunction(stmt, ctx) }
     case "VariableDeclaration" { return emitVariable(stmt, ctx) }
@@ -152,6 +168,13 @@ fn emitStatement(stmt, ctx) {
     case "ClassDeclaration" { return emitClass(stmt, ctx) }
     case "TryCatchStatement" { return emitTryCatch(stmt, ctx) }
     case "ThrowStatement" { return "throw " + emitExpression(stmt.value, ctx) + ";" }
+    case "ErrorStatement" {
+      // A statement that failed to parse. Emitting a throw here means a syntax
+      // error can never pass silently through a code path that ignores
+      // diagnostics — it fails loudly at the exact place instead of quietly
+      // dropping a function.
+      return "throw new Error(" + JSON.stringify("Nodeon syntax error: " + stmt.message) + ");"
+    }
     case "SwitchStatement" { return emitSwitch(stmt, ctx) }
     case "BreakStatement" { return stmt.label ? "break " + stmt.label + ";" : "break;" }
     case "ContinueStatement" { return stmt.label ? "continue " + stmt.label + ";" : "continue;" }
@@ -164,11 +187,16 @@ fn emitStatement(stmt, ctx) {
     case "GoStatement" { return emitGo(stmt, ctx) }
     case "DebuggerStatement" { return "debugger;" }
     case "LabeledStatement" { return stmt.label + ": " + emitStatement(stmt.body, ctx) }
+    case "_OptimizedBlock" {
+      // Produced by the optimizer when a dead branch is eliminated: the
+      // surviving statements inlined in place of the original `if`.
+      return stmt.body.map((s) => pad(ctx) + emitStatement(s, ctx)).join(ctx.nl)
+    }
     default { throw new Error("Unsupported statement type: " + stmt.type) }
   }
 }
 
-fn emitFunction(f, ctx) {
+fn emitFunction(f, ctx: EmitContext) {
   const asyncPrefix = f.async ? "async " : ""
   const star = f.generator ? "*" : ""
   const params = f.params.map((p) => emitParam(p, ctx)).join("," + ctx.sp)
@@ -200,7 +228,7 @@ fn emitFunction(f, ctx) {
   return result
 }
 
-fn emitParam(p, ctx) {
+fn emitParam(p, ctx: EmitContext) {
   let out = ""
   if p.rest { out = out + "..." }
   if p.pattern {
@@ -212,7 +240,7 @@ fn emitParam(p, ctx) {
   return out
 }
 
-fn emitVariable(v, ctx) {
+fn emitVariable(v, ctx: EmitContext) {
   const name = v.name.name
   const keyword = v.kind
   if keyword == "let" && ctx.declaredVars.has(name) {
@@ -222,7 +250,7 @@ fn emitVariable(v, ctx) {
   return keyword + " " + name + ctx.sp + "=" + ctx.sp + emitExpression(v.value, ctx) + ";"
 }
 
-fn emitIf(stmt, ctx) {
+fn emitIf(stmt, ctx: EmitContext) {
   const inner = indented(ctx)
   const cond = emitExpression(stmt.condition, ctx)
   const body = stmt.consequent.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl)
@@ -239,7 +267,7 @@ fn emitIf(stmt, ctx) {
   return out
 }
 
-fn emitFor(stmt, ctx) {
+fn emitFor(stmt, ctx: EmitContext) {
   const forScope = childScope(indented(ctx))
   const iter = stmt.iterable
   const varStr = stmt.variable.type == "Identifier" ? stmt.variable.name : emitPattern(stmt.variable, ctx)
@@ -262,26 +290,26 @@ fn emitFor(stmt, ctx) {
   return "for" + ctx.sp + "(const " + varStr + " " + jsKind + " " + emitExpression(iter, ctx) + ")" + ctx.sp + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '}'
 }
 
-fn emitWhile(stmt, ctx) {
+fn emitWhile(stmt, ctx: EmitContext) {
   const whileScope = childScope(indented(ctx))
   const cond = emitExpression(stmt.condition, ctx)
   const body = stmt.body.map((s) => pad(whileScope) + emitStatement(s, whileScope)).join(ctx.nl)
   return "while" + ctx.sp + "(" + cond + ")" + ctx.sp + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '}'
 }
 
-fn emitDoWhile(stmt, ctx) {
+fn emitDoWhile(stmt, ctx: EmitContext) {
   const inner = childScope(indented(ctx))
   const body = stmt.body.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl)
   const cond = emitExpression(stmt.condition, ctx)
   return "do" + ctx.sp + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '}' + ctx.sp + "while" + ctx.sp + "(" + cond + ");"
 }
 
-fn emitReturn(stmt, ctx) {
+fn emitReturn(stmt, ctx: EmitContext) {
   if !stmt.value { return "return;" }
   return "return " + emitExpression(stmt.value, ctx) + ";"
 }
 
-fn emitImport(stmt, ctx) {
+fn emitImport(stmt, ctx: EmitContext) {
   const src = rewriteImportSource(stmt.source)
   if stmt.namedImports.length > 0 {
     const names = stmt.namedImports.map((s) => s.alias ? s.name + " as " + s.alias : s.name).join("," + ctx.sp)
@@ -293,7 +321,7 @@ fn emitImport(stmt, ctx) {
   return "import " + stmt.defaultImport + ctx.sp + "from" + ctx.sp + JSON.stringify(src) + ";"
 }
 
-fn emitExport(stmt, ctx) {
+fn emitExport(stmt, ctx: EmitContext) {
   if stmt.exportAll {
     const alias = stmt.exportAllAlias ? " as " + stmt.exportAllAlias : ""
     const src = rewriteImportSource(stmt.source)
@@ -310,7 +338,7 @@ fn emitExport(stmt, ctx) {
   return kw + " " + emitStatement(stmt.declaration, ctx)
 }
 
-fn emitClass(cls, ctx) {
+fn emitClass(cls, ctx: EmitContext) {
   const inner = indented(ctx)
   const ext = cls.superClass ? " extends " + cls.superClass.name : ""
   const members = cls.body.map((m) => {
@@ -334,7 +362,7 @@ fn emitClass(cls, ctx) {
   return result
 }
 
-fn emitClassField(f, ctx) {
+fn emitClassField(f, ctx: EmitContext) {
   const staticPrefix = f.static ? "static " : ""
   const name = f.computed ? "[" + emitExpression(f.name, ctx) + "]" : f.name.name
   if f.value {
@@ -343,7 +371,7 @@ fn emitClassField(f, ctx) {
   return staticPrefix + name + ";"
 }
 
-fn emitMethod(m, ctx) {
+fn emitMethod(m, ctx: EmitContext) {
   const parts = []
   if m.static { parts.push("static") }
   if m.async { parts.push("async") }
@@ -368,7 +396,7 @@ fn emitMethod(m, ctx) {
   return prefix + star + name + "(" + params + ")" + ctx.sp + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '}'
 }
 
-fn emitTryCatch(stmt, ctx) {
+fn emitTryCatch(stmt, ctx: EmitContext) {
   const inner = indented(ctx)
   const tryBody = stmt.tryBlock.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl)
   let out = "try" + ctx.sp + '{' + ctx.nl + tryBody + ctx.nl + pad(ctx) + '}'
@@ -387,7 +415,7 @@ fn emitTryCatch(stmt, ctx) {
   return out
 }
 
-fn emitSwitch(stmt, ctx) {
+fn emitSwitch(stmt, ctx: EmitContext) {
   const inner = indented(ctx)
   const caseInner = indented(inner)
   const disc = emitExpression(stmt.discriminant, ctx)
@@ -403,7 +431,7 @@ fn emitSwitch(stmt, ctx) {
   return "switch" + ctx.sp + "(" + disc + ")" + ctx.sp + '{' + ctx.nl + cases + ctx.nl + pad(ctx) + '}'
 }
 
-fn emitMatch(stmt, ctx) {
+fn emitMatch(stmt, ctx: EmitContext) {
   const inner = indented(ctx)
   const disc = emitExpression(stmt.discriminant, ctx)
   const parts = []
@@ -442,6 +470,17 @@ fn emitMatch(stmt, ctx) {
       const body = c.body.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl)
       const keyword = i == 0 ? "if" : ctx.sp + "else if"
       parts.push(keyword + ctx.sp + "(" + cond + ")" + ctx.sp + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '}')
+    } else if c.pattern.type == "Identifier" {
+      // Binding pattern: `case m when m > 10 { ... }` means "if the guard holds,
+      // let m be the matched value" — NOT `disc === m`. Emitting a comparison
+      // here produced `n === m`, a ReferenceError, with no diagnostic.
+      const binder = c.pattern.name
+      const inner2 = indented(ctx)
+      const binding = pad(inner2) + "const " + binder + ctx.sp + "=" + ctx.sp + disc + ";"
+      const cond = c.guard ? emitExpression(c.guard, inner2) : "true"
+      const body = c.body.map((s) => pad(inner2) + emitStatement(s, inner2)).join(ctx.nl)
+      const keyword = i == 0 ? "if" : ctx.sp + "else if"
+      parts.push(keyword + ctx.sp + "(" + cond + ")" + ctx.sp + '{' + ctx.nl + binding + ctx.nl + body + ctx.nl + pad(ctx) + '}')
     } else {
       let cond = disc + ctx.sp + "===" + ctx.sp + emitExpression(c.pattern, ctx)
       if c.guard {
@@ -457,7 +496,7 @@ fn emitMatch(stmt, ctx) {
   return parts.join("")
 }
 
-fn emitEnum(stmt, ctx) {
+fn emitEnum(stmt, ctx: EmitContext) {
   const inner = indented(ctx)
   const entries = []
   let autoValue = 0
@@ -481,7 +520,7 @@ fn emitEnum(stmt, ctx) {
   return "const " + stmt.name.name + ctx.sp + "=" + ctx.sp + "Object.freeze(" + '{' + ctx.nl + body + ctx.nl + pad(ctx) + '})' + ";"
 }
 
-fn emitADT(stmt, ctx) {
+fn emitADT(stmt, ctx: EmitContext) {
   const parts = []
   const variantNames = []
 
@@ -519,7 +558,7 @@ fn emitADT(stmt, ctx) {
   return parts.join(ctx.nl)
 }
 
-fn emitGo(stmt, ctx) {
+fn emitGo(stmt, ctx: EmitContext) {
   if stmt.body {
     const inner = indented(ctx)
     const body = stmt.body.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl)
@@ -529,17 +568,17 @@ fn emitGo(stmt, ctx) {
   return "queueMicrotask(()" + ctx.sp + "=>" + ctx.sp + expr + ");"
 }
 
-fn emitDestructuring(stmt, ctx) {
+fn emitDestructuring(stmt, ctx: EmitContext) {
   const pat = emitPattern(stmt.pattern, ctx)
   return stmt.kind + " " + pat + ctx.sp + "=" + ctx.sp + emitExpression(stmt.value, ctx) + ";"
 }
 
-fn emitPattern(pattern, ctx) {
+fn emitPattern(pattern, ctx: EmitContext) {
   if pattern.type == "ObjectPattern" { return emitObjectPattern(pattern, ctx) }
   return emitArrayPattern(pattern, ctx)
 }
 
-fn emitObjectPattern(pat, ctx) {
+fn emitObjectPattern(pat, ctx: EmitContext) {
   const props = pat.properties.map((p) => {
     let out = ""
     if p.shorthand {
@@ -557,7 +596,7 @@ fn emitObjectPattern(pat, ctx) {
   return '{' + ctx.sp + props.join("," + ctx.sp) + ctx.sp + '}'
 }
 
-fn emitArrayPattern(pat, ctx) {
+fn emitArrayPattern(pat, ctx: EmitContext) {
   const els = pat.elements.map((e) => {
     if e == null { return "" }
     if e.type == "Identifier" { return e.name }
@@ -569,7 +608,7 @@ fn emitArrayPattern(pat, ctx) {
 
 // ── Expressions ────────────────────────────────────────────────────
 
-fn emitExpression(expr, ctx) {
+fn emitExpression(expr, ctx: EmitContext) {
   switch expr.type {
     case "Identifier" { return expr.name }
     case "Literal" { return emitLiteral(expr) }
@@ -592,7 +631,7 @@ fn emitExpression(expr, ctx) {
     case "NewExpression" { return emitNew(expr, ctx) }
     case "AwaitExpression" { return "await " + emitExpression(expr.argument, ctx) }
     case "SpreadExpression" { return "..." + emitExpression(expr.argument, ctx) }
-    case "TernaryExpression" { return emitExpression(expr.condition, ctx) + ctx.sp + "?" + ctx.sp + emitExpression(expr.consequent, ctx) + ctx.sp + ":" + ctx.sp + emitExpression(expr.alternate, ctx) }
+    case "TernaryExpression" { return emitTernaryOperand(expr.condition, ctx) + ctx.sp + "?" + ctx.sp + emitTernaryArm(expr.consequent, ctx) + ctx.sp + ":" + ctx.sp + emitTernaryArm(expr.alternate, ctx) }
     case "TypeofExpression" { return "typeof " + emitExpression(expr.argument, ctx) }
     case "VoidExpression" { return "void " + emitExpression(expr.argument, ctx) }
     case "DeleteExpression" { return "delete " + emitExpression(expr.argument, ctx) }
@@ -671,7 +710,7 @@ fn comptimeSerialize(result) {
   return String(result)
 }
 
-fn emitCall(call, ctx) {
+fn emitCall(call, ctx: EmitContext) {
   let callee = ""
   if call.callee.type == "Identifier" && call.callee.name == "print" {
     callee = "console.log"
@@ -688,7 +727,7 @@ fn emitCall(call, ctx) {
   return callee + "(" + argsStr + ")"
 }
 
-fn emitBinary(bin, ctx) {
+fn emitBinary(bin, ctx: EmitContext) {
   // Pipe operator: a |> fn  -> fn(a)
   if bin.operator == "|>" {
     const arg = emitExpression(bin.left, ctx)
@@ -717,20 +756,52 @@ fn emitBinary(bin, ctx) {
   if op == "==" { op = "===" }
   if op == "!=" { op = "!==" }
 
-  const left = parenthesizeIfNeeded(bin.left, bin.operator, ctx)
-  const right = parenthesizeIfNeeded(bin.right, bin.operator, ctx)
+  const left = parenthesizeIfNeeded(bin.left, bin.operator, "left", ctx)
+  const right = parenthesizeIfNeeded(bin.right, bin.operator, "right", ctx)
   return left + ctx.sp + op + ctx.sp + right
 }
 
-fn parenthesizeIfNeeded(expr, parentOp, ctx) {
+// Operators whose right operand must keep its parentheses even at EQUAL
+// precedence, because they are left-associative: `a - (b - c)` is not
+// `a - b - c`.
+const RIGHT_ASSOC_OPS = new Set(["-", "/", "%", "**"])
+
+fn parenthesizeIfNeeded(expr, parentOp, side, ctx: EmitContext) {
   if expr.type != "BinaryExpression" { return emitExpression(expr, ctx) }
   const parentPrec = BIN_PRECEDENCE[parentOp] ?? 0
   const childPrec = BIN_PRECEDENCE[expr.operator] ?? 0
   const inner = emitBinary(expr, ctx)
-  return childPrec < parentPrec ? "(" + inner + ")" : inner
+
+  // `??` may not be mixed with `||`/`&&` without parentheses: `a || b ?? c`
+  // is a JavaScript SyntaxError, not a slow path.
+  if (parentOp == "??" && (expr.operator == "||" || expr.operator == "&&")) {
+    return "(" + inner + ")"
+  }
+  if expr.operator == "??" && (parentOp == "||" || parentOp == "&&") {
+    return "(" + inner + ")"
+  }
+
+  const needsParens = childPrec < parentPrec || (side == "right" && childPrec == parentPrec && RIGHT_ASSOC_OPS.has(parentOp))
+  return needsParens ? "(" + inner + ")" : inner
 }
 
-fn emitTemplate(t, ctx) {
+// A ternary condition needs parens around any binary/logical expression:
+// `(a || b) ?? c` emitted as `a || b ?? c` is a JavaScript SyntaxError.
+fn emitTernaryOperand(e, ctx: EmitContext) {
+  const inner = emitExpression(e, ctx)
+  if e.type == "BinaryExpression" || e.type == "AssignmentExpression" || e.type == "CompoundAssignmentExpression" {
+    return "(" + inner + ")"
+  }
+  return inner
+}
+
+// A ternary arm is right-associative; only a nested ternary needs parens.
+fn emitTernaryArm(e, ctx: EmitContext) {
+  const inner = emitExpression(e, ctx)
+  return e.type == "TernaryExpression" ? "(" + inner + ")" : inner
+}
+
+fn emitTemplate(t, ctx: EmitContext) {
   const body = t.parts.map((p) => {
     if p.kind == "Text" { return p.value.replace(/`/g, '\\`').replace(/\$/g, '\\$') }
     return '${' + emitExpression(p.expression, ctx) + '}'
@@ -738,7 +809,7 @@ fn emitTemplate(t, ctx) {
   return '`' + body + '`'
 }
 
-fn emitMember(m, ctx) {
+fn emitMember(m, ctx: EmitContext) {
   const obj = emitExpression(m.object, ctx)
   if m.computed {
     // Array slicing: arr[1..3] → arr.slice(1, 3)
@@ -755,12 +826,12 @@ fn emitMember(m, ctx) {
   return obj + dot + emitExpression(m.property, ctx)
 }
 
-fn emitArray(arr, ctx) {
+fn emitArray(arr, ctx: EmitContext) {
   const els = arr.elements.map((e) => emitExpression(e, ctx)).join("," + ctx.sp)
   return "[" + els + "]"
 }
 
-fn emitObject(obj, ctx) {
+fn emitObject(obj, ctx: EmitContext) {
   if obj.properties.length == 0 { return '{' + '}' }
   const props = obj.properties.map((p) => {
     if p.shorthand { return p.key.name }
@@ -779,7 +850,7 @@ fn emitObject(obj, ctx) {
   return '{' + ctx.sp + props + ctx.sp + '}'
 }
 
-fn emitArrow(f, ctx) {
+fn emitArrow(f, ctx: EmitContext) {
   const asyncPrefix = f.async ? "async " : ""
   const params = f.params.map((p) => emitParam(p, ctx)).join("," + ctx.sp)
   const paramStr = f.params.length == 1 && !f.params[0].rest && !f.params[0].defaultValue ? f.params[0].name : "(" + params + ")"
@@ -793,7 +864,7 @@ fn emitArrow(f, ctx) {
   return asyncPrefix + paramStr + ctx.sp + "=>" + ctx.sp + emitExpression(f.body, ctx)
 }
 
-fn emitNew(n, ctx) {
+fn emitNew(n, ctx: EmitContext) {
   const callee = emitExpression(n.callee, ctx)
   const args = n.arguments.map((a) => emitExpression(a, ctx)).join("," + ctx.sp)
   return "new " + callee + "(" + args + ")"
