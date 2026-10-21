@@ -14,12 +14,12 @@
  * into. The workflow runs, it is green, and the trunk is still unverified. So
  * this check asserts two things, not one.
  *
- * It is not a theory. A workflow that triggers on a branch the repository
- * does not have never starts, and never fails either: the gates it was
- * supposed to run stay "green" for ever, because nothing ran them and
- * nothing reported the absence. The same shape is possible in any repository
- * that has a workflow, which is why the check is here, next to the workflows
- * it protects, and why the workflow that runs it has no branch filter at all.
+ * It was not a theory. `Zemios/ecosystem` shipped workflows that triggered on
+ * `main` while the branch of the repository was `master`: the eight quality
+ * gates of the ecosystem never ran, and the workflow never failed. The same
+ * shape is possible in any of the repositories that have a workflow, which is
+ * why the check is here, next to the workflows it protects, and why the
+ * workflow that runs it has no branch filter at all.
  *
  * WHAT IT CHECKS
  * --------------
@@ -32,19 +32,19 @@
  *
  * WHY NO YAML PARSER
  * ------------------
- * A gate that needs a dependency is a gate that gets skipped, and this one only
- * has to read an `on:` block. So the block is read with a small
- * indentation-aware scanner instead of a parser. The scanner is exercised by
- * `check-workflow-branches.test.mjs`, which plants real workflows and asserts
- * what this file does with them.
+ * The repository has no dependencies, on purpose, and a gate that needs a
+ * dependency is a gate that gets skipped. So the `on:` block is read with a
+ * small indentation-aware scanner instead of a parser. The scanner is
+ * exercised by `check-workflow-branches.test.mjs`, which plants real workflows
+ * and asserts what this file does with them.
  *
  * Bracket patterns (`+`, `[]`) are not interpreted; only `*` and `?` are
  * treated as wildcards. GitHub supports more, and a branch name that contains
  * them is rare enough that reading them literally is the safer error.
  *
  * USAGE
- *   node scripts/check-workflow-branches.mjs
- *   node scripts/check-workflow-branches.test.mjs
+ *   node tools/check-workflow-branches.mjs
+ *   node tools/check-workflow-branches.test.mjs
  */
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
@@ -352,6 +352,9 @@ export function pickRemote(cwd = ROOT) {
  *
  * When the remote cannot be asked, the tracking refs of that remote are used
  * instead, scoped to it for the same reason.
+ *
+ * The remote is an explicit argument, so asking about another one is a
+ * decision, not an accident.
  */
 export function existingBranches(remote, cwd = ROOT) {
   const branches = new Set();
@@ -398,12 +401,19 @@ export function trunkBranch(remote, cwd = ROOT) {
   return null;
 }
 
-/** Every workflow in the repository. */
+/**
+ * Every workflow in the repository.
+ *
+ * An empty list when the repository has no `.github/workflows/`. A function
+ * that kills the process it is called from is a landmine: it took the whole
+ * test file down with it, and the test file was the only thing that could
+ * have said so.
+ *
+ * What "there is no CI to check" means is the **command's** decision, not the
+ * library's: the command exits with code 2 and says it in words.
+ */
 export function readWorkflows() {
-  if (!existsSync(WORKFLOW_DIR)) {
-    console.error(`workflow-branches: ${WORKFLOW_DIR} does not exist — there is no CI to check`);
-    process.exit(2);
-  }
+  if (!existsSync(WORKFLOW_DIR)) return [];
   const files = readdirSync(WORKFLOW_DIR)
     .filter((file) => file.endsWith('.yml') || file.endsWith('.yaml'))
     .sort();
@@ -419,6 +429,10 @@ export function readWorkflows() {
 // ---------------------------------------------------------------------------
 
 function check() {
+  if (!existsSync(WORKFLOW_DIR)) {
+    console.error(`workflow-branches: ${WORKFLOW_DIR} does not exist — there is no CI to check`);
+    process.exit(2);
+  }
   const workflows = readWorkflows();
   const remote = pickRemote();
   const existing = existingBranches(remote);

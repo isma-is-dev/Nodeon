@@ -1,3 +1,5 @@
+# <!-- shared-gate-copy: template/.github/workflows/workflow-guards.yml -->
+#
 # The check that cannot be silenced by the mistake it exists to catch.
 #
 # WHY THIS FILE EXISTS
@@ -8,16 +10,22 @@
 # The gates it was supposed to run stay "green" for ever, because nothing ran
 # them and nothing reported the absence.
 #
+# It already happened here. `Zemios/ecosystem` shipped workflows that
+# triggered on `main` while the branch of that repository was `master`: the
+# eight quality gates of the ecosystem never ran, and the workflow never
+# failed. Nothing in the ecosystem could have told, because a missing run and
+# a passing run look exactly the same from the outside.
+#
 # So this workflow has no branch filter at all. It runs on every push, to
 # every branch, and it does one thing: it checks that the other workflows
 # trigger on branches that exist, and that the trunk is one of them.
 #
-# It is cheap on purpose. A checkout and Node. No install: the script it runs
-# has no dependencies either.
+# It is cheap on purpose. A checkout and Node. No install: the repository has
+# no dependencies, and the script it runs has none either.
 #
-# The gate lives here and not in the other workflows for exactly that reason.
-# A gate inside the workflow it protects can be switched off by the same
-# mistake; a gate in a workflow with no branch filter cannot.
+# The gate lives here and not in `gates.yml` for exactly that reason. A gate
+# inside the workflow it protects can be switched off by the same mistake;
+# a gate in a workflow with no branch filter cannot.
 
 name: workflow-guards
 
@@ -51,9 +59,9 @@ jobs:
           node-version: '22'
 
       - name: Gate — workflows trigger on branches that exist
-        run: node scripts/check-workflow-branches.mjs
+        run: node tools/check-workflow-branches.mjs
 
       # A gate that has never failed is not a gate. This proves the one above
       # can report a red run before anyone has to trust it.
       - name: Gate — the branch gate can actually fail
-        run: node scripts/check-workflow-branches.test.mjs
+        run: node tools/check-workflow-branches.test.mjs
