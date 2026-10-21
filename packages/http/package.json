@@ -1,0 +1,9 @@
+{
+  "name": "@nodeon/http",
+  "version": "0.2.0",
+  "description": "HTTP client and server utilities for Nodeon",
+  "main": "src/index.no",
+  "type": "module",
+  "license": "MIT",
+  "keywords": ["nodeon", "http", "fetch", "server"]
+}

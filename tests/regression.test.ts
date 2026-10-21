@@ -237,3 +237,289 @@ describe("Regression: Error system — NodeonError", () => {
     expect(err.name).toBe("NodeonError");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────
+// BUG-010: anonymous `fn` in expression position.
+//
+// `fn` was only ever parsed as a *declaration* keyword, so the idiomatic
+// `items.filter(fn(f) { return f.ok })` failed with "Expected expression" at
+// the `fn`. Worse, the statement was then silently dropped from the AST
+// (body length 0) while the error was only recorded, so the file compiled to
+// empty output instead of failing loudly.
+//
+// The blow-up: the failed parse left the token cursor on the same `fn`, the
+// statement loop re-parsed it, and error recovery returned without consuming
+// anything — an unbounded loop that grew `errors[]` until the process died
+// with a JavaScript heap OOM. src/cli/commands/db.no is the real trigger and
+// it is 1 of only 4 files in src/ that the compiler could not compile.
+// ─────────────────────────────────────────────────────────────────
+
+describe("Regression: BUG-010 — anonymous fn expression + error-recovery loop", () => {
+  // The OOM: a single syntax error must not spin. Assert on the *count* of
+  // errors rather than wall-clock, so this fails fast instead of exhausting
+  // the heap when the regression comes back.
+  it("a syntax error produces a bounded number of diagnostics, not an unbounded loop", () => {
+    const src = `const out = files.filter(fn(f) { return true })\n`;
+    const ast = compileToAST(src);
+    // The whole point: the statement is understood, so there is no error at all.
+    expect(ast.errors ?? []).toHaveLength(0);
+    expect(ast.body).toHaveLength(1);
+  });
+
+  it("genuinely broken source terminates and still reports its error", () => {
+    // `fn` not followed by a parameter list is a real syntax error. Recovery
+    // must make forward progress so parseProgram() terminates.
+    const src = `const a = fn\nfn real() { return 1 }\n`;
+    const ast = compileToAST(src);
+    // Terminates (we got here) and the trailing valid function still parses.
+    expect(ast.body.some((s: any) => s.type === "FunctionDeclaration")).toBe(true);
+    expect((ast.errors ?? []).length).toBeGreaterThan(0);
+  });
+
+  it("recovery does not loop on a stray closing brace", () => {
+    const src = "}\n}\n}\nx = 1\n";
+    const ast = compileToAST(src);
+    // Must terminate; the trailing assignment is still recovered.
+    expect(ast.body.some((s: any) => s.type === "VariableDeclaration")).toBe(true);
+  });
+
+  // The language feature itself.
+  it("parses an anonymous fn as an expression, not a dropped statement", () => {
+    const ast = compileToAST(`const out = files.filter(fn(f) { return f.ok })`);
+    expect(ast.errors ?? []).toHaveLength(0);
+    expect(ast.body).toHaveLength(1);
+    expect(ast.body[0].type).toBe("VariableDeclaration");
+  });
+
+  it("compiles an anonymous fn argument to working JavaScript", () => {
+    const { js } = compile(`const out = files.filter(fn(f) { return f.ok })`);
+    expect(js).toContain("filter");
+    expect(js).toContain("f.ok");
+    expect(js).toContain("return");
+  });
+
+  it("generated anonymous fn actually executes with the right behaviour", () => {
+    // Behaviour, not shape: the arrow must be called and must return the value.
+    const { js } = compile(`const double = fn(n) { return n * 2 }`);
+    // eslint-disable-next-line no-new-func
+    const value = new Function(`${js}; return double(21);`)();
+    expect(value).toBe(42);
+  });
+
+  it("supports an anonymous fn with the expression body form", () => {
+    const { js } = compile(`const twice = fn(n) = n * 2`);
+    // eslint-disable-next-line no-new-func
+    const value = new Function(`${js}; return twice(5);`)();
+    expect(value).toBe(10);
+  });
+
+  it("supports a generator fn in expression position", () => {
+    // Newline-separated: Nodeon is a no-semicolon language, so `;` is not a
+    // valid statement separator.
+    const { js } = compile("const gen = fn*() { yield 1\n yield 2 }");
+    expect(js).toContain("function*");
+    // eslint-disable-next-line no-new-func
+    const out = new Function(`${js}; const o = []; for (const v of gen()) o.push(v); return o;`)();
+    expect(out).toEqual([1, 2]);
+  });
+
+  it("keeps `fn name(...)` as a declaration, not an expression", () => {
+    // The two forms are distinguished by what follows `fn`; the declaration
+    // form must not regress into being parsed as an anonymous function.
+    const ast = compileToAST(`fn greet(name) { return name }`);
+    expect(ast.errors ?? []).toHaveLength(0);
+    expect(ast.body).toHaveLength(1);
+    expect(ast.body[0].type).toBe("FunctionDeclaration");
+  });
+
+  it("an anonymous fn nested in a call chain is preserved", () => {
+    // The exact shape from src/cli/commands/db.no that crashed the compiler.
+    const src = `const files = ["b.js", "a.no", "c.txt"]
+const migrations = files
+  .filter(fn(f) { return f.endsWith(".no") || f.endsWith(".js") })
+  .sort()`;
+    const { js } = compile(src);
+    expect(js).toContain("filter");
+    expect(js).toContain("sort");
+    // eslint-disable-next-line no-new-func
+    const out = new Function(`${js}; return migrations;`)() as string[];
+    expect(out).toEqual(["a.no", "b.js"]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
+// BUG-011: object spread `{ ...src, key: value }` was not parsed.
+//
+// `parseObjectExpression` handled computed keys, shorthand and normal keys,
+// but not the `...` operator, so every object literal containing a spread
+// failed with "Expected property key". Recovery then dropped the rest of the
+// statement, which in a `return` produced a top-level `return` — invalid JS
+// that the bundler rejected, breaking the self-hosted build.
+//
+// Spread is used throughout the Nodeon sources (optimizer.no and others), so
+// this blocked compiling the compiler's own optimizer.
+// ─────────────────────────────────────────────────────────────────
+
+describe("Regression: BUG-011 — object spread in object literals", () => {
+  it("parses a spread property without errors", () => {
+    const ast = compileToAST(`const o = { ...base, v: 1 }`);
+    expect(ast.errors ?? []).toHaveLength(0);
+    expect(ast.body).toHaveLength(1);
+  });
+
+  it("emits the spread verbatim", () => {
+    const { js } = compile(`const o = { ...base, v: 1 }`);
+    expect(js).toContain("...");
+  });
+
+  it("merges objects with correct precedence at runtime", () => {
+    // Later properties win, including over a spread — that is JS semantics
+    // and the reason this is a behaviour test, not a string match.
+    const src = `fn merge(base, extra) {
+  return { ...base, ...extra, tag: "x" }
+}`;
+    // eslint-disable-next-line no-new-func
+    const out = new Function(`${compile(src).js}; return merge({ a: 1, b: 2 }, { b: 9, c: 3 });`)();
+    expect(out).toEqual({ a: 1, b: 9, c: 3, tag: "x" });
+  });
+
+  it("supports a spread returned from an arrow body", () => {
+    const src = `const out = [{ k: 1 }].map((p) => {
+  return { ...p, seen: true }
+})`;
+    // eslint-disable-next-line no-new-func
+    const out = new Function(`${compile(src).js}; return out;`)();
+    expect(out).toEqual([{ k: 1, seen: true }]);
+  });
+
+  it("supports multiple spreads mixed with shorthand and computed keys", () => {
+    const src = `const a = 1
+const key = "dyn"
+const o = { ...{ b: 2 }, [key]: 3, a }`;
+    // eslint-disable-next-line no-new-func
+    const out = new Function(`${compile(src).js}; return o;`)();
+    expect(out).toEqual({ b: 2, dyn: 3, a: 1 });
+  });
+
+  it("a spread inside a returned object does not leak a top-level return", () => {
+    // The failure signature of BUG-011: the return escaped its function, so the
+    // output started with a bare `return` before any function. Assert on the
+    // structure instead of a naive /^\s*return/m, which also matches a
+    // correctly-indented return inside the function body.
+    const { js } = compile(`fn f(p) {
+  return { ...p, v: 1 }
+}`);
+    expect(js.trimStart().startsWith("function")).toBe(true);
+    // The whole program is one top-level function declaration.
+    expect(js.trimEnd().endsWith("}")).toBe(true);
+    // And it is valid, executable JavaScript.
+    // eslint-disable-next-line no-new-func
+    const out = new Function(`${js}; return f({ a: 1 });`)();
+    expect(out).toEqual({ a: 1, v: 1 });
+  });
+
+  it("an arrow with an object-literal body is parenthesised in the output", () => {
+    // `x => { ...x, k: v }` is a BLOCK in JavaScript, so the spread would be
+    // a syntax error. The generator must emit `x => ({ ...x, k: v })`.
+    const { js } = compile(`const f = (c) => { ...c, k: 1 }`);
+    expect(js).toMatch(/=>\s*\(\{/);
+    // eslint-disable-next-line no-new-func
+    const out = new Function(`${js}; return f({ a: 1 });`)();
+    expect(out).toEqual({ a: 1, k: 1 });
+  });
+
+  it("supports a bare-parameter arrow with an object body", () => {
+    const { js } = compile(`const f = c => { ...c, k: 1 }`);
+    // eslint-disable-next-line no-new-func
+    const out = new Function(`${js}; return f({ a: 1 });`)();
+    expect(out).toEqual({ a: 1, k: 1 });
+  });
+
+  it("supports an arrow returning a parenthesised object literal", () => {
+    // `n` must exist on the input: `c.n + 1` on a missing field is NaN.
+    const src = `const out = [{ k: 1, n: 10 }].map((c) => ({
+  ...c,
+  n: c.n + 1
+}))`;
+    // eslint-disable-next-line no-new-func
+    const out = new Function(`${compile(src).js}; return out;`)();
+    expect(out).toEqual([{ k: 1, n: 11 }]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
+// BUG-012: `x = v` was always parsed as a declaration.
+//
+// Nodeon's headline feature is `x = 10` with no keyword (nodeon-design.md §3).
+// The parser turned EVERY `x = v` into VariableDeclaration, so a re-assignment
+// looked like a redeclaration. The generated JS was still right, which is why
+// 600+ tests passed — but every AST consumer was misled. The optimizer then
+// promoted an accumulated variable to `const` and dropped the accumulation:
+//
+//   let t = 0; for (v of a) { t = t + v }
+//   →  const t = 0; for (v of a) { const t = t + v }   // ReferenceError
+//
+// A first use declares; every later use assigns.
+// ─────────────────────────────────────────────────────────────────
+
+describe("Regression: BUG-012 — bare `x = v` declares once, then assigns", () => {
+  it("the first `x = v` is a declaration", () => {
+    const ast = compileToAST("x = 1");
+    expect(ast.body[0].type).toBe("VariableDeclaration");
+  });
+
+  it("a later `x = v` is an assignment, not a new declaration", () => {
+    const ast = compileToAST("x = 1\nx = 2");
+    expect(ast.body[0].type).toBe("VariableDeclaration");
+    expect(ast.body[1].type).toBe("ExpressionStatement");
+    expect((ast.body[1] as any).expression.type).toBe("AssignmentExpression");
+  });
+
+  it("re-assigning a `let` produces an assignment", () => {
+    const ast = compileToAST("let t = 0\nt = 5");
+    expect(ast.body[1].type).toBe("ExpressionStatement");
+  });
+
+  it("re-assignment inside a loop is an assignment", () => {
+    const ast = compileToAST("let t = 0\nfor v in [1, 2] { t = t + v }");
+    const forStmt = ast.body[1] as any;
+    expect(forStmt.type).toBe("ForStatement");
+    expect(forStmt.body[0].type).toBe("ExpressionStatement");
+    expect(forStmt.body[0].expression.type).toBe("AssignmentExpression");
+  });
+
+  it("generated JavaScript is unchanged by the AST fix", () => {
+    // The bug was AST-only; the emitted JS was always correct. Pin that so a
+    // future change to declaration/assignment detection cannot alter output.
+    const { js } = compile("let t = 0\nfor v in [1, 2] { t = t + v }");
+    expect(js).toContain("let t = 0");
+    expect(js).toContain("t = t + v");
+  });
+
+  it("an accumulated loop variable is not const-folded away", () => {
+    // The behaviour the AST bug actually broke. Inclusive range 0..3.
+    const { js } = compile("let n = 0\nfor i in 0..3 { n = n + i }");
+    // eslint-disable-next-line no-new-func
+    const out = new Function(`${js}; return n;`)();
+    expect(out).toBe(6);
+  });
+
+  it("a loop variable is registered as bound before the body", () => {
+    // `for v in xs { v = 1 }` assigns v; it does not declare a new `v`.
+    const ast = compileToAST("for v in [1] { v = 1 }");
+    const forStmt = ast.body[0] as any;
+    expect(forStmt.body[0].type).toBe("ExpressionStatement");
+  });
+
+  it("a function parameter shadows: `f(x) { x = 1 }` is an assignment", () => {
+    const ast = compileToAST("fn f(x) { x = 1 }");
+    const fn = ast.body[0] as any;
+    expect(fn.body[0].type).toBe("ExpressionStatement");
+  });
+
+  it("a destructured binding is a declaration, and re-use assigns", () => {
+    const ast = compileToAST("const { a, b } = obj\na = 5");
+    expect(ast.body[0].type).toBe("DestructuringDeclaration");
+    expect(ast.body[1].type).toBe("ExpressionStatement");
+  });
+});

@@ -1,0 +1,215 @@
+// Expect — assertion library for @nodeon/test
+// Usage: expect(value).toBe(expected), expect(fn).toThrow(), etc.
+
+fn formatValue(v) {
+  if v === undefined { return "undefined" }
+  if v === null { return "null" }
+  if typeof v == "string" { return JSON.stringify(v) }
+  try {
+    return JSON.stringify(v)
+  } catch (e) {
+    return String(v)
+  }
+}
+
+fn assertionError(message, expected, actual) {
+  const err = new Error(message)
+  err.name = "AssertionError"
+  err.expected = expected
+  err.actual = actual
+  return err
+}
+
+fn deepEqual(a, b) {
+  if a === b { return true }
+  if a == null || b == null { return false }
+  if typeof a != "object" || typeof b != "object" { return false }
+
+  if Array.isArray(a) && Array.isArray(b) {
+    if a.length != b.length { return false }
+    let i = 0
+    while i < a.length {
+      if !deepEqual(a[i], b[i]) { return false }
+      i = i + 1
+    }
+    return true
+  }
+
+  if Array.isArray(a) != Array.isArray(b) { return false }
+
+  const keysA = Object.keys(a).sort()
+  const keysB = Object.keys(b).sort()
+  if keysA.length != keysB.length { return false }
+
+  let j = 0
+  while j < keysA.length {
+    if keysA[j] != keysB[j] { return false }
+    if !deepEqual(a[keysA[j]], b[keysB[j]]) { return false }
+    j = j + 1
+  }
+  return true
+}
+
+fn checkMatch(pass, negatedValue, message) {
+  if negatedValue ? pass : !pass {
+    throw new Error(message)
+  }
+}
+
+fn buildMatchers(actual, negated) {
+  const matchers = {}
+
+  matchers.toBe = (expected) => {
+    const pass = actual === expected
+    const prefix = negated.value ? "Expected NOT to be" : "Expected"
+    checkMatch(pass, negated.value, prefix + " " + formatValue(expected) + " but got " + formatValue(actual))
+  }
+
+  matchers.toEqual = (expected) => {
+    const pass = deepEqual(actual, expected)
+    const prefix = negated.value ? "Expected NOT to equal" : "Expected"
+    checkMatch(pass, negated.value, prefix + " " + formatValue(expected) + " but got " + formatValue(actual))
+  }
+
+  matchers.toBeTruthy = () => {
+    const pass = !!actual
+    checkMatch(pass, negated.value, "Expected " + formatValue(actual) + (negated.value ? " to be falsy" : " to be truthy"))
+  }
+
+  matchers.toBeFalsy = () => {
+    const pass = !actual
+    checkMatch(pass, negated.value, "Expected " + formatValue(actual) + (negated.value ? " to be truthy" : " to be falsy"))
+  }
+
+  matchers.toBeNull = () => {
+    const pass = actual === null
+    checkMatch(pass, negated.value, "Expected " + formatValue(actual) + (negated.value ? " NOT to be null" : " to be null"))
+  }
+
+  matchers.toBeUndefined = () => {
+    const pass = actual === undefined
+    checkMatch(pass, negated.value, "Expected " + formatValue(actual) + (negated.value ? " NOT to be undefined" : " to be undefined"))
+  }
+
+  matchers.toBeDefined = () => {
+    const pass = actual !== undefined
+    checkMatch(pass, negated.value, "Expected value " + (negated.value ? "to be undefined" : "to be defined") + " but got " + formatValue(actual))
+  }
+
+  matchers.toBeGreaterThan = (expected) => {
+    const pass = actual > expected
+    checkMatch(pass, negated.value, "Expected " + formatValue(actual) + (negated.value ? " NOT" : "") + " to be greater than " + formatValue(expected))
+  }
+
+  matchers.toBeGreaterThanOrEqual = (expected) => {
+    const pass = actual >= expected
+    checkMatch(pass, negated.value, "Expected " + formatValue(actual) + (negated.value ? " NOT" : "") + " to be >= " + formatValue(expected))
+  }
+
+  matchers.toBeLessThan = (expected) => {
+    const pass = actual < expected
+    checkMatch(pass, negated.value, "Expected " + formatValue(actual) + (negated.value ? " NOT" : "") + " to be less than " + formatValue(expected))
+  }
+
+  matchers.toBeLessThanOrEqual = (expected) => {
+    const pass = actual <= expected
+    checkMatch(pass, negated.value, "Expected " + formatValue(actual) + (negated.value ? " NOT" : "") + " to be <= " + formatValue(expected))
+  }
+
+  matchers.toContain = (item) => {
+    let pass = false
+    if typeof actual == "string" {
+      pass = actual.includes(item)
+    } else {
+      if Array.isArray(actual) {
+        pass = actual.includes(item)
+      }
+    }
+    checkMatch(pass, negated.value, "Expected " + formatValue(actual) + (negated.value ? " NOT" : "") + " to contain " + formatValue(item))
+  }
+
+  matchers.toHaveLength = (expected) => {
+    const len = actual?.length
+    const pass = len === expected
+    checkMatch(pass, negated.value, "Expected length " + formatValue(expected) + " but got " + formatValue(len))
+  }
+
+  matchers.toMatch = (pattern) => {
+    const pass = pattern.test(actual)
+    checkMatch(pass, negated.value, "Expected " + formatValue(actual) + (negated.value ? " NOT" : "") + " to match " + String(pattern))
+  }
+
+  matchers.toThrow = (expectedMessage) => {
+    let threw = false
+    let thrownError = null
+    try {
+      actual()
+    } catch (e) {
+      threw = true
+      thrownError = e
+    }
+
+    if negated.value {
+      if threw {
+        throw assertionError("Expected function NOT to throw but it threw: " + (thrownError?.message || String(thrownError)), "no throw", thrownError)
+      }
+      return
+    }
+
+    if !threw {
+      throw assertionError("Expected function to throw but it did not", "throw", "no throw")
+    }
+
+    if expectedMessage != undefined {
+      const msg = thrownError?.message || String(thrownError)
+      if typeof expectedMessage == "string" {
+        if !msg.includes(expectedMessage) {
+          throw assertionError("Expected throw message to contain " + formatValue(expectedMessage) + " but got " + formatValue(msg), expectedMessage, msg)
+        }
+      }
+    }
+  }
+
+  matchers.toBeInstanceOf = (cls) => {
+    const pass = actual instanceof cls
+    checkMatch(pass, negated.value, "Expected " + formatValue(actual) + (negated.value ? " NOT" : "") + " to be instance of " + (cls.name || String(cls)))
+  }
+
+  matchers.toHaveProperty = (key, value) => {
+    const hasKey = actual != null && key in actual
+    if !hasKey && !negated.value {
+      throw assertionError("Expected object to have property " + formatValue(key), key, Object.keys(actual || {}))
+    }
+    if hasKey && negated.value && value === undefined {
+      throw assertionError("Expected object NOT to have property " + formatValue(key), "no property", key)
+    }
+    if value !== undefined && hasKey {
+      const actualVal = actual[key]
+      const pass = deepEqual(actualVal, value)
+      checkMatch(pass, negated.value, "Expected property " + formatValue(key) + " to be " + formatValue(value) + " but got " + formatValue(actualVal))
+    }
+  }
+
+  matchers.toBeArray = () => {
+    const pass = Array.isArray(actual)
+    checkMatch(pass, negated.value, "Expected " + formatValue(actual) + (negated.value ? " NOT" : "") + " to be an array")
+  }
+
+  matchers.toBeType = (expected) => {
+    const pass = typeof actual == expected
+    checkMatch(pass, negated.value, "Expected typeof " + (negated.value ? "NOT " : "") + formatValue(expected) + " but got " + formatValue(typeof actual))
+  }
+
+  // .not returns a new matcher set with negation flipped
+  Object.defineProperty(matchers, "not", {
+    get: () => {
+      return buildMatchers(actual, { value: !negated.value })
+    }
+  })
+
+  return matchers
+}
+
+export fn expect(actual) {
+  return buildMatchers(actual, { value: false })
+}

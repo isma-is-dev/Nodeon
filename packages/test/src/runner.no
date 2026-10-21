@@ -1,0 +1,213 @@
+// Test Runner — describe/it/beforeEach/afterEach with nested suites
+
+const suites = []
+let currentSuite = null
+let onlyMode = false
+
+fn createSuite(name, parent) {
+  return {
+    name: name,
+    parent: parent,
+    tests: [],
+    children: [],
+    beforeAll: [],
+    afterAll: [],
+    beforeEach: [],
+    afterEach: [],
+    only: false,
+    skip: false
+  }
+}
+
+fn createTest(name, testFn, suite) {
+  return {
+    name: name,
+    fn: testFn,
+    suite: suite,
+    only: false,
+    skip: false
+  }
+}
+
+export fn describe(name, suiteFn) {
+  const suite = createSuite(name, currentSuite)
+  if currentSuite {
+    currentSuite.children.push(suite)
+  } else {
+    suites.push(suite)
+  }
+  const prev = currentSuite
+  currentSuite = suite
+  suiteFn()
+  currentSuite = prev
+}
+
+export fn it(name, testFn) {
+  if !currentSuite {
+    const implicitSuite = createSuite("(root)", null)
+    suites.push(implicitSuite)
+    currentSuite = implicitSuite
+  }
+  const t = createTest(name, testFn, currentSuite)
+  currentSuite.tests.push(t)
+}
+
+export const test = it
+
+export fn beforeEach(f) {
+  if currentSuite { currentSuite.beforeEach.push(f) }
+}
+
+export fn afterEach(f) {
+  if currentSuite { currentSuite.afterEach.push(f) }
+}
+
+export fn beforeAll(f) {
+  if currentSuite { currentSuite.beforeAll.push(f) }
+}
+
+export fn afterAll(f) {
+  if currentSuite { currentSuite.afterAll.push(f) }
+}
+
+export fn skip(name, testFn) {
+  if !currentSuite {
+    const implicitSuite = createSuite("(root)", null)
+    suites.push(implicitSuite)
+    currentSuite = implicitSuite
+  }
+  const t = createTest(name, testFn, currentSuite)
+  t.skip = true
+  currentSuite.tests.push(t)
+}
+
+export fn only(name, testFn) {
+  if !currentSuite {
+    const implicitSuite = createSuite("(root)", null)
+    suites.push(implicitSuite)
+    currentSuite = implicitSuite
+  }
+  const t = createTest(name, testFn, currentSuite)
+  t.only = true
+  onlyMode = true
+  currentSuite.tests.push(t)
+}
+
+fn collectBeforeEach(suite) {
+  const hooks = []
+  if suite.parent {
+    const parentHooks = collectBeforeEach(suite.parent)
+    for h in parentHooks { hooks.push(h) }
+  }
+  for h in suite.beforeEach { hooks.push(h) }
+  return hooks
+}
+
+fn collectAfterEach(suite) {
+  const hooks = []
+  for h in suite.afterEach { hooks.push(h) }
+  if suite.parent {
+    const parentHooks = collectAfterEach(suite.parent)
+    for h in parentHooks { hooks.push(h) }
+  }
+  return hooks
+}
+
+fn fullSuiteName(suite) {
+  if suite.parent {
+    const parentName = fullSuiteName(suite.parent)
+    if parentName { return parentName + " > " + suite.name }
+  }
+  return suite.name
+}
+
+async fn runSuite(suite, results, indent) {
+  const prefix = "  ".repeat(indent)
+  console.log(prefix + suite.name)
+
+  // Run beforeAll hooks
+  for hook in suite.beforeAll {
+    await hook()
+  }
+
+  // Run tests
+  for t in suite.tests {
+    if t.skip || (onlyMode && !t.only) {
+      results.skipped = results.skipped + 1
+      console.log(prefix + "  - " + t.name + " (skipped)")
+      continue
+    }
+
+    const beforeHooks = collectBeforeEach(suite)
+    const afterHooks = collectAfterEach(suite)
+
+    try {
+      for hook in beforeHooks { await hook() }
+      await t.fn()
+      for hook in afterHooks { await hook() }
+      results.passed = results.passed + 1
+      console.log(prefix + "  \x1b[32m✓\x1b[0m " + t.name)
+    } catch (err) {
+      results.failed = results.failed + 1
+      results.failures.push({
+        name: fullSuiteName(suite) + " > " + t.name,
+        error: err
+      })
+      console.log(prefix + "  \x1b[31m✗\x1b[0m " + t.name)
+      console.log(prefix + "    \x1b[31m" + (err.message || String(err)) + "\x1b[0m")
+    }
+  }
+
+  // Run child suites
+  for child in suite.children {
+    await runSuite(child, results, indent + 1)
+  }
+
+  // Run afterAll hooks
+  for hook in suite.afterAll {
+    await hook()
+  }
+}
+
+export async fn run() {
+  const results = { passed: 0, failed: 0, skipped: 0, failures: [], startTime: Date.now() }
+
+  console.log("")
+
+  for suite in suites {
+    await runSuite(suite, results, 0)
+  }
+
+  const elapsed = Date.now() - results.startTime
+  console.log("")
+
+  if results.failures.length > 0 {
+    console.log("\x1b[31m--- FAILURES ---\x1b[0m")
+    for failure in results.failures {
+      console.log("")
+      console.log("  \x1b[31mFAILED:\x1b[0m " + failure.name)
+      if failure.error.message {
+        console.log("    " + failure.error.message)
+      }
+    }
+    console.log("")
+  }
+
+  const passLabel = "\x1b[32m" + results.passed + " passed\x1b[0m"
+  const failLabel = results.failed > 0 ? "\x1b[31m" + results.failed + " failed\x1b[0m" : ""
+  const skipLabel = results.skipped > 0 ? "\x1b[33m" + results.skipped + " skipped\x1b[0m" : ""
+  const parts = [passLabel, failLabel, skipLabel].filter(Boolean)
+  const total = results.passed + results.failed + results.skipped
+
+  console.log("Tests: " + parts.join(", ") + " (" + total + " total)")
+  const elapsedSec = elapsed / 1000
+  console.log("Time:  " + elapsedSec.toFixed(2) + "s")
+  console.log("")
+
+  // Reset state for next run
+  suites.length = 0
+  currentSuite = null
+  onlyMode = false
+
+  return results
+}

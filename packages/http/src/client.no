@@ -1,0 +1,127 @@
+// @nodeon/http — HTTP client utilities
+// Thin wrapper over Node.js fetch API
+
+export const STATUS_CODES = {
+  OK: 200,
+  CREATED: 201,
+  NO_CONTENT: 204,
+  BAD_REQUEST: 400,
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
+  NOT_FOUND: 404,
+  CONFLICT: 409,
+  UNPROCESSABLE: 422,
+  INTERNAL_ERROR: 500,
+  BAD_GATEWAY: 502,
+  SERVICE_UNAVAILABLE: 503
+}
+
+// Core request function
+export async fn request(url, options) {
+  const opts = options ?? {}
+  const method = opts.method ?? "GET"
+  const headers = opts.headers ?? {}
+  const body = opts.body
+  const timeout = opts.timeout ?? 30000
+
+  // Auto-set content-type for JSON bodies
+  if body && typeof body == "object" && !headers["Content-Type"] && !headers["content-type"] {
+    headers["Content-Type"] = "application/json"
+  }
+
+  const fetchOpts = {
+    method: method,
+    headers: headers
+  }
+
+  if body {
+    if typeof body == "object" {
+      fetchOpts.body = JSON.stringify(body)
+    } else {
+      fetchOpts.body = body
+    }
+  }
+
+  // Timeout via AbortController
+  const controller = new AbortController()
+  fetchOpts.signal = controller.signal
+  const timer = setTimeout(() => { controller.abort() }, timeout)
+
+  try {
+    const response = await fetch(url, fetchOpts)
+    clearTimeout(timer)
+
+    const result = {
+      ok: response.ok,
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers
+    }
+
+    // Auto-parse JSON responses
+    const ct = response.headers.get("content-type") || ""
+    if ct.includes("application/json") {
+      result.data = await response.json()
+    } else {
+      result.data = await response.text()
+    }
+
+    return result
+  } catch (err) {
+    clearTimeout(timer)
+    if err.name == "AbortError" {
+      throw new Error("Request timeout after " + timeout + "ms: " + url)
+    }
+    throw err
+  }
+}
+
+// Convenience methods
+export async fn get(url, options) {
+  return request(url, Object.assign({}, options ?? {}, { method: "GET" }))
+}
+
+export async fn post(url, body, options) {
+  return request(url, Object.assign({}, options ?? {}, { method: "POST", body: body }))
+}
+
+export async fn put(url, body, options) {
+  return request(url, Object.assign({}, options ?? {}, { method: "PUT", body: body }))
+}
+
+export async fn patch(url, body, options) {
+  return request(url, Object.assign({}, options ?? {}, { method: "PATCH", body: body }))
+}
+
+export async fn del(url, options) {
+  return request(url, Object.assign({}, options ?? {}, { method: "DELETE" }))
+}
+
+// Response helpers
+export fn createJsonResponse(data, status) {
+  return {
+    status: status ?? 200,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data)
+  }
+}
+
+export fn parseBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = ""
+    req.on("data", (chunk) => { body = body + chunk })
+    req.on("end", () => {
+      try {
+        const ct = req.headers["content-type"] || ""
+        if ct.includes("application/json") {
+          resolve(JSON.parse(body))
+        } else {
+          resolve(body)
+        }
+      } catch (err) {
+        reject(err)
+      }
+    })
+    req.on("error", reject)
+  })
+}

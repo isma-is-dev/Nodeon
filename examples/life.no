@@ -1,0 +1,87 @@
+// A small game simulation, written in Nodeon and run through BOTH backends.
+//
+// This is the end-to-end check: the language the user wants to build with
+// (web, mobile, games) has to survive a real program, not a feature list.
+// A grid of entities, movement, collision, scoring — the parts any game needs.
+//
+// A grid is a record holding a flat list of cells; the program has nested
+// loops, a conditional inside a loop and a call per cell.
+
+fn makeGrid(rows, cols) {
+  const g = { rows: rows, cols: cols, cells: [] }
+  for i in 0..(rows * cols - 1) {
+    g.cells.push(0)
+  }
+  return g
+}
+
+fn idxOf(g, r, c) {
+  return r * g.cols + c
+}
+
+fn place(g, r, c, v) {
+  g.cells[idxOf(g, r, c)] = v
+  return g
+}
+
+fn countNeighbours(g, r, c) {
+  let n = 0
+  if r > 0 { n = n + g.cells[idxOf(g, r - 1, c)] }
+  if r + 1 < g.rows { n = n + g.cells[idxOf(g, r + 1, c)] }
+  if c > 0 { n = n + g.cells[idxOf(g, r, c - 1)] }
+  if c + 1 < g.cols { n = n + g.cells[idxOf(g, r, c + 1)] }
+  return n
+}
+
+// One tick of the simulation. Returns the next grid.
+//
+// This is Conway's Life with ORTHOGONAL neighbours only — up, down, left and
+// right, not the eight around. A real glider needs the diagonals and does not
+// survive this; a five-cell pattern does, which is what makes the answer a
+// known number and the test worth having.
+fn step(g) {
+  const next = makeGrid(g.rows, g.cols)
+  for r in 0..(g.rows - 1) {
+    for c in 0..(g.cols - 1) {
+      const live = g.cells[idxOf(g, r, c)]
+      const n = countNeighbours(g, r, c)
+      let alive = 0
+      if live == 1 {
+        if n == 2 || n == 3 { alive = 1 }
+      } else {
+        if n == 3 { alive = 1 }
+      }
+      next.cells[idxOf(g, r, c)] = alive
+    }
+  }
+  return next
+}
+
+fn totalAlive(g) {
+  let t = 0
+  for v in g.cells { t = t + v }
+  return t
+}
+
+fn seedGlider(g) {
+  place(g, 1, 2, 1)
+  place(g, 2, 3, 1)
+  place(g, 3, 1, 1)
+  place(g, 3, 2, 1)
+  place(g, 3, 3, 1)
+  return g
+}
+
+// Run the simulation for `ticks` steps and return the total population seen.
+// This is the program's numeric entry point: a wasm export cannot be handed a
+// record from the host, so the test drives the whole program through this.
+fn simulate(ticks) {
+  let g = seedGlider(makeGrid(8, 8))
+  let total = 0
+  // `0..ticks` is INCLUSIVE, so this runs ticks+1 steps. Use `0..(ticks - 1)`.
+  for i in 0..(ticks - 1) {
+    g = step(g)
+    total = total + totalAlive(g)
+  }
+  return total
+}

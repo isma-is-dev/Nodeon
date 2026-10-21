@@ -517,24 +517,33 @@ fn promoteLetToConst(body) {
   return walkForLetPromotion(body, mutated)
 }
 
+// Collect every identifier that is ever assigned to, updated, or passed by
+// reference. The generic key walk must NOT stop at assignments: an assignment
+// can sit inside a loop body, a function body or a switch case, and the binding
+// it targets is still mutated no matter how deeply nested it is.
 fn walkForMutations(nodes, mutated) {
   if !nodes { return }
   if Array.isArray(nodes) {
     for n in nodes { walkForMutations(n, mutated) }
     return
   }
-  
+
   if nodes.type == "AssignmentExpression" || nodes.type == "CompoundAssignmentExpression" {
-    if nodes.left.type == "Identifier" { mutated.add(nodes.left.name) }
+    if nodes.left && nodes.left.type == "Identifier" { mutated.add(nodes.left.name) }
+    // Keep descending: the RHS may contain a nested assignment, and the
+    // enclosing structure still needs walking.
+    walkForMutations(nodes.left, mutated)
     walkForMutations(nodes.right, mutated)
     return
   }
   if nodes.type == "UpdateExpression" {
-    if nodes.argument.type == "Identifier" { mutated.add(nodes.argument.name) }
+    if nodes.argument && nodes.argument.type == "Identifier" { mutated.add(nodes.argument.name) }
     return
   }
-  
-  const keys = ["body", "consequent", "alternate", "cases", "expression", "left", "right", "argument", "value", "callee", "arguments", "object", "property", "elements", "properties", "condition", "iterable", "tryBlock", "catchBlock", "finallyBlock", "declaration"]
+  // A `for (x of xs)` / `for (x in xs)` loop variable is bound, never mutated.
+  // Declaring one is fine, so it does not disqualify const promotion.
+
+  const keys = ["body", "consequent", "alternate", "cases", "expression", "left", "right", "argument", "value", "callee", "arguments", "object", "property", "elements", "properties", "condition", "iterable", "variable", "tryBlock", "catchBlock", "finallyBlock", "declaration", "consequent", "consequent"]
   for key in keys {
     if nodes[key] { walkForMutations(nodes[key], mutated) }
   }
@@ -563,103 +572,108 @@ fn walkForLetPromotion(nodes, mutated) {
 
 // 2. Constant Propagation
 fn propagateConstants(body) {
-  return walkForConstProp(body, {})
+  // Bindings that are ever reassigned must never be replaced by their
+  // initialiser: `let t = 0; for (...) { t = t + v }` would otherwise become
+  // `const t = 0 + v`, silently discarding every previous iteration.
+  const mutated = new Set()
+  walkForMutations(body, mutated)
+  return walkForConstProp(body, {}, mutated)
 }
 
-fn walkForConstProp(nodes, constants) {
+fn walkForConstProp(nodes, constants, mutated) {
   if !nodes { return nodes }
   if Array.isArray(nodes) {
-    return nodes.map((n) => walkForConstProp(n, constants))
+    return nodes.map((n) => walkForConstProp(n, constants, mutated))
   }
-  
-  if nodes.type == "Identifier" && constants[nodes.name] != undefined {
+
+  if nodes.type == "Identifier" && constants[nodes.name] != undefined && !(mutated && mutated.has(nodes.name)) {
     return constants[nodes.name]
   }
 
   // Only dive into value positions to avoid replacing declarations/keys
   if nodes.type == "ExpressionStatement" {
-    nodes.expression = walkForConstProp(nodes.expression, constants)
+    nodes.expression = walkForConstProp(nodes.expression, constants, mutated)
   }
   if nodes.type == "VariableDeclaration" {
-    nodes.value = walkForConstProp(nodes.value, constants)
+    nodes.value = walkForConstProp(nodes.value, constants, mutated)
     if nodes.kind == "const" && nodes.value && nodes.value.type == "Literal" {
       constants[nodes.name.name] = nodes.value
     }
   }
   if nodes.type == "ReturnStatement" || nodes.type == "ThrowStatement" {
-    nodes.value = walkForConstProp(nodes.value, constants)
+    nodes.value = walkForConstProp(nodes.value, constants, mutated)
   }
   if nodes.type == "IfStatement" || nodes.type == "TernaryExpression" {
-    nodes.condition = walkForConstProp(nodes.condition, constants)
-    nodes.consequent = walkForConstProp(nodes.consequent, constants)
-    nodes.alternate = walkForConstProp(nodes.alternate, constants)
+    nodes.condition = walkForConstProp(nodes.condition, constants, mutated)
+    nodes.consequent = walkForConstProp(nodes.consequent, constants, mutated)
+    nodes.alternate = walkForConstProp(nodes.alternate, constants, mutated)
   }
   if nodes.type == "ForStatement" {
-    nodes.iterable = walkForConstProp(nodes.iterable, constants)
-    nodes.body = walkForConstProp(nodes.body, constants)
+    nodes.iterable = walkForConstProp(nodes.iterable, constants, mutated)
+    nodes.body = walkForConstProp(nodes.body, constants, mutated)
   }
   if nodes.type == "WhileStatement" || nodes.type == "DoWhileStatement" {
-    nodes.condition = walkForConstProp(nodes.condition, constants)
-    nodes.body = walkForConstProp(nodes.body, constants)
+    nodes.condition = walkForConstProp(nodes.condition, constants, mutated)
+    nodes.body = walkForConstProp(nodes.body, constants, mutated)
   }
   if nodes.type == "FunctionDeclaration" || nodes.type == "ArrowFunction" {
     // Basic scoping clone
-    nodes.body = walkForConstProp(nodes.body, Object.assign({}, constants))
+    nodes.body = walkForConstProp(nodes.body, Object.assign({}, constants), mutated)
   }
   if nodes.type == "BinaryExpression" || nodes.type == "AssignmentExpression" || nodes.type == "CompoundAssignmentExpression" {
     if nodes.type != "AssignmentExpression" && nodes.type != "CompoundAssignmentExpression" {
-      nodes.left = walkForConstProp(nodes.left, constants)
+      nodes.left = walkForConstProp(nodes.left, constants, mutated)
     }
-    nodes.right = walkForConstProp(nodes.right, constants)
+    nodes.right = walkForConstProp(nodes.right, constants, mutated)
   }
   if nodes.type == "UnaryExpression" || nodes.type == "UpdateExpression" || nodes.type == "SpreadExpression" || nodes.type == "AwaitExpression" {
     if nodes.type != "UpdateExpression" {
-      nodes.argument = walkForConstProp(nodes.argument, constants)
+      nodes.argument = walkForConstProp(nodes.argument, constants, mutated)
     }
   }
   if nodes.type == "CallExpression" || nodes.type == "NewExpression" {
-    nodes.callee = walkForConstProp(nodes.callee, constants)
-    nodes.arguments = walkForConstProp(nodes.arguments, constants)
+    nodes.callee = walkForConstProp(nodes.callee, constants, mutated)
+    nodes.arguments = walkForConstProp(nodes.arguments, constants, mutated)
   }
   if nodes.type == "ArrayExpression" {
-    nodes.elements = walkForConstProp(nodes.elements, constants)
+    nodes.elements = walkForConstProp(nodes.elements, constants, mutated)
   }
   if nodes.type == "ObjectExpression" {
     nodes.properties = nodes.properties.map((p) => {
-      const newP = { ...p, value: walkForConstProp(p.value, constants) }
-      if p.computed { newP.key = walkForConstProp(p.key, constants) }
+      const newP = { ...p, value: walkForConstProp(p.value, constants, mutated) }
+      if p.computed { newP.key = walkForConstProp(p.key, constants, mutated) }
       return newP
     })
   }
   if nodes.type == "MemberExpression" {
-    nodes.object = walkForConstProp(nodes.object, constants)
+    nodes.object = walkForConstProp(nodes.object, constants, mutated)
     if nodes.computed {
-      nodes.property = walkForConstProp(nodes.property, constants)
+      nodes.property = walkForConstProp(nodes.property, constants, mutated)
     }
   }
   if nodes.type == "SwitchStatement" {
-    nodes.discriminant = walkForConstProp(nodes.discriminant, constants)
-    nodes.cases = walkForConstProp(nodes.cases, constants)
+    nodes.discriminant = walkForConstProp(nodes.discriminant, constants, mutated)
+    nodes.cases = walkForConstProp(nodes.cases, constants, mutated)
   }
   if nodes.type == "SwitchCase" {
-    nodes.test = walkForConstProp(nodes.test, constants)
-    nodes.consequent = walkForConstProp(nodes.consequent, constants)
+    nodes.test = walkForConstProp(nodes.test, constants, mutated)
+    nodes.consequent = walkForConstProp(nodes.consequent, constants, mutated)
   }
   if nodes.type == "MatchStatement" {
-    nodes.discriminant = walkForConstProp(nodes.discriminant, constants)
-    nodes.cases = walkForConstProp(nodes.cases, constants)
+    nodes.discriminant = walkForConstProp(nodes.discriminant, constants, mutated)
+    nodes.cases = walkForConstProp(nodes.cases, constants, mutated)
   }
   if nodes.type == "MatchCase" {
-    nodes.guard = walkForConstProp(nodes.guard, constants)
-    nodes.body = walkForConstProp(nodes.body, constants)
+    nodes.guard = walkForConstProp(nodes.guard, constants, mutated)
+    nodes.body = walkForConstProp(nodes.body, constants, mutated)
   }
   if nodes.type == "_OptimizedBlock" || nodes.type == "BlockStatement" {
-    nodes.body = walkForConstProp(nodes.body, constants)
+    nodes.body = walkForConstProp(nodes.body, constants, mutated)
   }
   if nodes.type == "TryCatchStatement" {
-    nodes.tryBlock = walkForConstProp(nodes.tryBlock, constants)
-    nodes.catchBlock = walkForConstProp(nodes.catchBlock, constants)
-    nodes.finallyBlock = walkForConstProp(nodes.finallyBlock, constants)
+    nodes.tryBlock = walkForConstProp(nodes.tryBlock, constants, mutated)
+    nodes.catchBlock = walkForConstProp(nodes.catchBlock, constants, mutated)
+    nodes.finallyBlock = walkForConstProp(nodes.finallyBlock, constants, mutated)
   }
   return nodes
 }

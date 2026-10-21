@@ -1,0 +1,9 @@
+{
+  "name": "@nodeon/json",
+  "version": "0.2.0",
+  "description": "JSON utilities for Nodeon",
+  "main": "src/index.no",
+  "type": "module",
+  "license": "MIT",
+  "keywords": ["nodeon", "json", "parse", "schema"]
+}

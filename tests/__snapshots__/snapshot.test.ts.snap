@@ -66,6 +66,7 @@ async function fetchData(url) {
 exports[`snapshot tests > types.no 1`] = `
 "
 
+
 const Color = Object.freeze({
   Red: 0,
   Green: 1,

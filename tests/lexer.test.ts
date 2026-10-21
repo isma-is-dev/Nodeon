@@ -227,13 +227,24 @@ describe("Lexer", () => {
 
   // ── Error messages ───────────────────────────────────────
   describe("error messages", () => {
-    it("includes line:column in syntax errors", () => {
-      try {
-        tokenize("x\n@");
-        expect.fail("Should have thrown");
-      } catch (e: any) {
-        expect(e.message).toMatch(/2:\d/);
-      }
+    it("includes line:column when recovering from an unexpected character", () => {
+      // The lexer no longer throws here: throwing aborted the whole file, so a
+      // single stray character silently emptied the output including every
+      // function around it. It now records the error and keeps scanning.
+      const lexer = new Lexer("x\n@") as any;
+      const tokens = lexer.tokenize();
+      const errors = lexer.errors ?? [];
+      expect(errors.length).toBeGreaterThan(0);
+      expect(errors[0].message).toMatch(/2:\d/);
+      // The tokens before the bad character were still produced.
+      expect(tokens.filter((t: any) => t.type !== TokenType.EOF).length).toBeGreaterThan(0);
+    });
+
+    it("still throws for a fatal lexical error (unterminated string)", () => {
+      // Recovery is for recoverable problems. An unterminated string means the
+      // rest of the file cannot be tokenised correctly, so this must still
+      // throw and be reported by the caller.
+      expect(() => tokenize('"unterminated')).toThrow();
     });
   });
 });

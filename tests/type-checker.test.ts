@@ -590,3 +590,79 @@ describe("Type Checker: Interface conformance", () => {
     `, "missing required method 'baseMethod' from interface 'Extended'");
   });
 });
+
+// ── Control Flow Narrowing ──────────────────────────────────────────
+
+describe("Type Checker: Control flow narrowing", () => {
+  it("narrows typeof x === 'string' in if body", () => {
+    expectNoErrors(`
+      fn test(x: string | number) {
+        if typeof x == "string" {
+          let y: string = x
+        }
+      }
+    `);
+  });
+
+  it("narrows typeof x !== 'string' (negative) in else body", () => {
+    expectNoErrors(`
+      fn test(x: string | number) {
+        if typeof x == "string" {
+          let y: string = x
+        } else {
+          let y: number = x
+        }
+      }
+    `);
+  });
+
+  it("narrows x !== null removes null from union", () => {
+    expectNoErrors(`
+      fn test(x: string?) {
+        if x !== null {
+          let y: string = x
+        }
+      }
+    `);
+  });
+
+  it("truthiness check narrows out null/undefined", () => {
+    // if (x) should narrow out null/undefined
+    expectNoErrors(`
+      fn test(x: string?) {
+        if x {
+          let y: string = x
+        }
+      }
+    `);
+  });
+
+  it("instanceof narrows to class type", () => {
+    expectNoErrors(`
+      class Dog {}
+      fn test(x: any) {
+        if x instanceof Dog {
+          let d: Dog = x
+        }
+      }
+    `);
+  });
+
+  it("typeof narrowing works both directions", () => {
+    expectNoErrors(`
+      fn test(x: string | number) {
+        if "number" == typeof x {
+          let y: number = x
+        }
+      }
+    `);
+  });
+
+  it("nullable type allows null assignment", () => {
+    expectNoErrors(`let x: string? = null`);
+  });
+
+  it("nullable type allows value assignment", () => {
+    expectNoErrors(`let x: string? = "hello"`);
+  });
+});

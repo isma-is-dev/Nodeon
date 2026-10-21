@@ -1,0 +1,9 @@
+{
+  "name": "@nodeon/test",
+  "version": "0.1.0",
+  "description": "Nodeon built-in test framework — describe/it/expect with zero config",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist/**/*"],
+  "license": "MIT"
+}

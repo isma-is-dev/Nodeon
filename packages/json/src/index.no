@@ -1,0 +1,197 @@
+// @nodeon/json — JSON utilities for Nodeon
+// Safe parsing, schema validation, path queries, diff/patch
+
+// Safe JSON parse — returns Result-like { ok, data, error }
+export fn safeParse(str) {
+  try {
+    const data = JSON.parse(str)
+    return { ok: true, data: data, error: null }
+  } catch (e) {
+    return { ok: false, data: null, error: e.message }
+  }
+}
+
+// Pretty print JSON
+export fn pretty(value, indent) {
+  return JSON.stringify(value, null, indent ?? 2)
+}
+
+// Minify JSON (remove whitespace)
+export fn minify(value) {
+  if typeof value == "string" {
+    return JSON.stringify(JSON.parse(value))
+  }
+  return JSON.stringify(value)
+}
+
+// Get nested value by dot path: get(obj, "a.b.c") → obj.a.b.c
+export fn get(obj, path, defaultValue) {
+  if !obj || !path { return defaultValue }
+  const parts = path.split(".")
+  let current = obj
+  for part in parts {
+    if current == null || current == undefined { return defaultValue }
+    // Handle array index: "items.0.name"
+    const idx = parseInt(part, 10)
+    if !isNaN(idx) && Array.isArray(current) {
+      current = current[idx]
+    } else {
+      current = current[part]
+    }
+  }
+  if current == undefined { return defaultValue }
+  return current
+}
+
+// Set nested value by dot path: set(obj, "a.b.c", 42)
+export fn set(obj, path, value) {
+  if !obj || !path { return obj }
+  const parts = path.split(".")
+  let current = obj
+  let i = 0
+  while i < parts.length - 1 {
+    const part = parts[i]
+    if current[part] == null || current[part] == undefined {
+      // Peek next: if numeric, create array; otherwise object
+      const nextPart = parts[i + 1]
+      const nextIdx = parseInt(nextPart, 10)
+      if !isNaN(nextIdx) {
+        current[part] = []
+      } else {
+        current[part] = {}
+      }
+    }
+    current = current[part]
+    i = i + 1
+  }
+  current[parts[parts.length - 1]] = value
+  return obj
+}
+
+// Check if value matches a simple schema
+// Schema format: { name: "string", age: "number", email: "string", tags: "array" }
+export fn validate(value, schema) {
+  const errors = []
+  if typeof schema != "object" || schema == null {
+    return { valid: true, errors: errors }
+  }
+  const keys = Object.keys(schema)
+  for key in keys {
+    const expected = schema[key]
+    const actual = value ? value[key] : undefined
+
+    if typeof expected == "string" {
+      // Type check
+      if expected == "array" {
+        if !Array.isArray(actual) {
+          errors.push("Expected " + key + " to be array, got " + typeof actual)
+        }
+      } else {
+        if expected == "required" {
+          if actual == null || actual == undefined {
+            errors.push("Missing required field: " + key)
+          }
+        } else {
+          if actual != null && actual != undefined && typeof actual != expected {
+            errors.push("Expected " + key + " to be " + expected + ", got " + typeof actual)
+          }
+        }
+      }
+    } else {
+      if typeof expected == "object" && expected != null {
+        // Nested schema
+        const nested = validate(actual, expected)
+        if !nested.valid {
+          for err in nested.errors {
+            errors.push(key + "." + err)
+          }
+        }
+      }
+    }
+  }
+  return { valid: errors.length == 0, errors: errors }
+}
+
+// Shallow diff of two objects — returns { added, removed, changed }
+export fn diff(a, b) {
+  const added = []
+  const removed = []
+  const changed = []
+
+  const aKeys = a ? Object.keys(a) : []
+  const bKeys = b ? Object.keys(b) : []
+
+  for key in bKeys {
+    if !a || !(key in a) {
+      added.push(key)
+    } else {
+      if JSON.stringify(a[key]) != JSON.stringify(b[key]) {
+        changed.push(key)
+      }
+    }
+  }
+
+  for key in aKeys {
+    if !b || !(key in b) {
+      removed.push(key)
+    }
+  }
+
+  return { added: added, removed: removed, changed: changed }
+}
+
+// Pick specified keys from object
+export fn pick(obj, keys) {
+  if !obj { return {} }
+  const result = {}
+  for key in keys {
+    if key in obj {
+      result[key] = obj[key]
+    }
+  }
+  return result
+}
+
+// Omit specified keys from object
+export fn omit(obj, keys) {
+  if !obj { return {} }
+  const result = {}
+  const allKeys = Object.keys(obj)
+  for key in allKeys {
+    if keys.indexOf(key) == -1 {
+      result[key] = obj[key]
+    }
+  }
+  return result
+}
+
+// Flatten nested object: { a: { b: 1 } } → { "a.b": 1 }
+export fn flatten(obj, prefix) {
+  const result = {}
+  const pfx = prefix ?? ""
+  const keys = Object.keys(obj || {})
+  for key in keys {
+    const fullKey = pfx ? pfx + "." + key : key
+    const val = obj[key]
+    if typeof val == "object" && val != null && !Array.isArray(val) {
+      const nested = flatten(val, fullKey)
+      const nestedKeys = Object.keys(nested)
+      for nk in nestedKeys {
+        result[nk] = nested[nk]
+      }
+    } else {
+      result[fullKey] = val
+    }
+  }
+  return result
+}
+
+// Unflatten: { "a.b": 1 } → { a: { b: 1 } }
+export fn unflatten(obj) {
+  const result = {}
+  const keys = Object.keys(obj || {})
+  for key in keys {
+    set(result, key, obj[key])
+  }
+  return result
+}

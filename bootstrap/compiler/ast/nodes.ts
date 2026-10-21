@@ -8,7 +8,8 @@ export type TypeAnnotation =
   | { kind: "object"; properties: { key: string; value: TypeAnnotation; optional?: boolean }[] } // { name: string, age?: number }
   | { kind: "tuple"; elements: TypeAnnotation[] }                 // [string, number]
   | { kind: "literal"; value: string | number | boolean }         // "hello", 42, true
-  | { kind: "intersection"; types: TypeAnnotation[] };            // A & B
+  | { kind: "intersection"; types: TypeAnnotation[] }             // A & B
+  | { kind: "nullable"; inner: TypeAnnotation };                  // string?, number?
 
 // ── Source Location (for source maps) ────────────────────────────────
 export type SourceLoc = { line: number; column: number };
@@ -36,6 +37,7 @@ export type Statement = (
   | ClassDeclaration
   | TryCatchStatement
   | ThrowStatement
+  | ErrorStatement
   | SwitchStatement
   | BreakStatement
   | ContinueStatement
@@ -200,6 +202,14 @@ export type TryCatchStatement = {
   finallyBlock: Statement[] | null;
 };
 
+// A statement that could not be parsed. Emitting this keeps the surrounding
+// function (and everything after it) in the output, and turns a silent,
+// whole-function deletion into a visible build-time error.
+export type ErrorStatement = {
+  type: "ErrorStatement";
+  message: string;
+};
+
 export type ThrowStatement = {
   type: "ThrowStatement";
   value: Expression;
@@ -325,6 +335,7 @@ export type Expression =
   | ArrayExpression
   | ObjectExpression
   | ArrowFunction
+  | FunctionExpression
   | AssignmentExpression
   | CompoundAssignmentExpression
   | NewExpression
@@ -418,6 +429,18 @@ export type ArrowFunction = {
   params: Param[];
   body: Statement[] | Expression;
   async: boolean;
+  returnType?: TypeAnnotation;
+  typeParams?: string[];
+};
+
+// Anonymous `fn(a) { ... }` written where an expression is expected.
+// Same grammar as a FunctionDeclaration minus the name.
+export type FunctionExpression = {
+  type: "FunctionExpression";
+  params: Param[];
+  body: Statement[];
+  async: boolean;
+  generator: boolean;
   returnType?: TypeAnnotation;
   typeParams?: string[];
 };

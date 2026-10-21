@@ -229,6 +229,12 @@ function emitStatement(stmt: Statement, ctx: GenContext): string {
       return emitTryCatch(stmt, ctx);
     case "ThrowStatement":
       return `throw ${emitExpression(stmt.value, ctx)};`;
+    case "ErrorStatement":
+      // A statement that failed to parse. Emitting a throw here means a syntax
+      // error can never pass silently through a code path that ignores
+      // diagnostics (the build script, `run`, the CLI) — it fails loudly at the
+      // exact place instead of quietly dropping a function.
+      return `throw new Error(${JSON.stringify(`Nodeon syntax error: ${(stmt as any).message}`)});`;
     case "SwitchStatement":
       return emitSwitch(stmt, ctx);
     case "BreakStatement":
@@ -504,9 +510,91 @@ function emitSwitch(stmt: SwitchStatement, ctx: GenContext): string {
   return `switch${ctx.sp}(${disc})${ctx.sp}{${ctx.nl}${cases}${ctx.nl}${pad(ctx)}}`;
 }
 
+/**
+ * Rewrite bare references to `from` into `to` throughout an expression.
+ * A match guard such as `m > 10` is emitted against a hoisted slot so it can
+ * be read before the branch body runs. Only *free* references are renamed:
+ * `obj.m`, `{ m: 1 }` and `fn(m) { ... }` parameters must keep their own `m`.
+ */
+function renameBinding(expr: any, from: string, to: string): any {
+  if (!expr || typeof expr !== "object") return expr;
+
+  // Free identifier reference.
+  if (expr.type === "Identifier" && expr.name === from) {
+    return { ...expr, name: to };
+  }
+
+  // `obj.m` — the property name is not a reference to the binding.
+  if (expr.type === "MemberExpression") {
+    return { ...expr, object: renameBinding(expr.object, from, to) };
+  }
+
+  // Shorthand `{ m }` becomes `{ m: slot }`; `{ m: v }` keeps its key.
+  if (expr.type === "ObjectExpression") {
+    return {
+      ...expr,
+      properties: (expr.properties ?? []).map((p: any) => {
+        if (p.spread) return p;
+        const isKeyName =
+          p.key && p.key.type === "Identifier" && p.key.name === from;
+        if (p.shorthand && isKeyName) {
+          return { ...p, shorthand: false, value: { type: "Identifier", name: to } };
+        }
+        return { ...p, value: renameBinding(p.value, from, to) };
+      }),
+    };
+  }
+
+  // `{ m = 1 }` default — the key is the binding name, the value may reference it.
+  if (expr.type === "ObjectPattern") {
+    return {
+      ...expr,
+      properties: (expr.properties ?? []).map((p: any) => ({
+        ...p,
+        value: p.value ? renameBinding(p.value, from, to) : p.value,
+        defaultValue: p.defaultValue
+          ? renameBinding(p.defaultValue, from, to)
+          : p.defaultValue,
+      })),
+    };
+  }
+
+  // Array destructuring: `[m] = xs`.
+  if (expr.type === "ArrayPattern") {
+    return {
+      ...expr,
+      elements: (expr.elements ?? []).map((el: any) => renameBinding(el, from, to)),
+    };
+  }
+
+  // A function introduces its own scope: do NOT rename its parameters, and do
+  // not walk into its body.
+  if (
+    expr.type === "ArrowFunction" ||
+    expr.type === "FunctionExpression" ||
+    expr.type === "FunctionDeclaration"
+  ) {
+    return expr;
+  }
+
+  // Generic container rewrite.
+  const clone: any = { ...expr };
+  for (const key of Object.keys(clone)) {
+    const value = clone[key];
+    if (Array.isArray(value)) {
+      clone[key] = value.map((v) => renameBinding(v, from, to));
+    } else if (value && typeof value === "object" && "type" in value) {
+      clone[key] = renameBinding(value, from, to);
+    }
+  }
+  return clone;
+}
+
 function emitMatch(stmt: MatchStatement, ctx: GenContext): string {
   const disc = emitExpression(stmt.discriminant, ctx);
   const parts: string[] = [];
+  // Hoisted `var` declarations for binding patterns, emitted before the chain.
+  const slots: string[] = [];
 
   for (let i = 0; i < stmt.cases.length; i++) {
     const c = stmt.cases[i];
@@ -515,7 +603,15 @@ function emitMatch(stmt: MatchStatement, ctx: GenContext): string {
     if (c.pattern === null) {
       // default case → else block
       const body = c.body.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl);
-      parts.push(`${ctx.sp}else${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`);
+      // A `default` may carry a guard (`default when x > 0 { ... }`). A bare
+      // `else` cannot have a condition, so emit `else if (<guard>)`.
+      if (c.guard) {
+        parts.push(
+          `${ctx.sp}else${ctx.sp}if${ctx.sp}(${emitExpression(c.guard, ctx)})${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`,
+        );
+      } else {
+        parts.push(`${ctx.sp}else${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`);
+      }
     } else if (c.pattern.type === "CallExpression" && c.pattern.callee.type === "Identifier") {
       // ADT variant destructuring: case Circle(r) { ... } → if (disc.tag === "Circle") { const r = disc.radius ?? disc._0; ... }
       const variantName = c.pattern.callee.name;
@@ -545,8 +641,50 @@ function emitMatch(stmt: MatchStatement, ctx: GenContext): string {
       const body = c.body.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl);
       const keyword = i === 0 ? "if" : `${ctx.sp}else if`;
       parts.push(`${keyword}${ctx.sp}(${cond})${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`);
+    } else if (c.pattern.type === "Identifier") {
+      // Binding pattern: `case m when m > 10 { ... }` means "bind m to the
+      // matched value, then test the guard".
+      //
+      // The guard must be able to SEE the binding, and the binding must not
+      // leak into the next case. Declaring it inside the branch produced
+      // `if (m > 10) { const m = n; }` — a use before declaration. Wrapping the
+      // branch in a block to scope it swallows the `else` that a following
+      // `default` needs, silently dropping that arm.
+      //
+      // Solution: a uniquely-named `var` hoisted to the top of the match, so
+      // the if/else chain stays flat and every case can see its own binding.
+      // `var` is function-scoped and hoists, which is exactly the semantics a
+      // per-case binding needs here. The visible name is re-bound with
+      // `let` inside the branch so the body still reads naturally.
+      const binder = c.pattern.name;
+      const slot = `_match${i}_${binder}`;
+      const inner2 = childScope(indented(ctx));
+      const keyword = i === 0 ? "if" : `${ctx.sp}else if`;
+      slots.push(`${pad(indented(ctx))}var${ctx.sp}${slot};`);
+
+      // The guard refers to the binding by its source name, so it must be
+      // emitted against the slot — otherwise `m > 10` resolves to a `m` that
+      // does not exist yet, giving a ReferenceError with no diagnostic.
+      const guardFor = (e: Expression): string =>
+        emitExpression(renameBinding(e, binder, slot), inner2);
+
+      const bind = `${pad(inner2)}let${ctx.sp}${binder}${ctx.sp}=${ctx.sp}${slot};`;
+      const body = c.body
+        .map((s) => pad(inner2) + emitStatement(s, inner2))
+        .join(ctx.nl);
+
+      if (c.guard) {
+        const cond = `(${slot} = ${disc})${ctx.sp}&&${ctx.sp}(${guardFor(c.guard)})`;
+        parts.push(
+          `${keyword}${ctx.sp}(${cond})${ctx.sp}{${ctx.nl}${bind}${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`,
+        );
+      } else {
+        parts.push(
+          `${keyword}${ctx.sp}(true)${ctx.sp}{${ctx.nl}${bind}${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`,
+        );
+      }
     } else {
-      // Plain value match (original behavior)
+      // Literal / expression pattern.
       let cond = `${disc}${ctx.sp}===${ctx.sp}${emitExpression(c.pattern, ctx)}`;
       if (c.guard) {
         cond += `${ctx.sp}&&${ctx.sp}${emitExpression(c.guard, ctx)}`;
@@ -557,6 +695,9 @@ function emitMatch(stmt: MatchStatement, ctx: GenContext): string {
     }
   }
 
+  if (slots.length > 0) {
+    return slots.join(ctx.nl) + ctx.nl + parts.join("");
+  }
   return parts.join("");
 }
 
@@ -698,6 +839,20 @@ function emitExpression(expr: Expression, ctx: GenContext): string {
       return emitObject(expr, ctx);
     case "ArrowFunction":
       return emitArrow(expr, ctx);
+    case "FunctionExpression":
+      // Anonymous `fn(a) { ... }`.
+      // A generator cannot be an arrow, so `fn*` lowers to `function*`.
+      // The expression-body form `fn(a) = expr` is stored as a single
+      // ExpressionStatement and must be returned, matching how a named
+      // `fn f(a) = expr` declaration is emitted.
+      if (expr.generator) {
+        const fparams = (expr as any).params.map((p: any) => emitParam(p, ctx)).join("," + ctx.sp);
+        const stmts = (expr as any).body as Statement[];
+        const inner = indented(ctx);
+        const fbody = stmts.map((s) => pad(inner) + emitStatement(s, inner)).join(ctx.nl);
+        return `function*${ctx.sp}(${fparams})${ctx.sp}{${ctx.nl}${fbody}${ctx.nl}${pad(ctx)}}`;
+      }
+      return emitFunctionExpression(expr as any, ctx);
     case "AssignmentExpression":
       return `${emitExpression(expr.left, ctx)}${ctx.sp}=${ctx.sp}${emitExpression(expr.right, ctx)}`;
     case "CompoundAssignmentExpression":
@@ -709,7 +864,12 @@ function emitExpression(expr: Expression, ctx: GenContext): string {
     case "SpreadExpression":
       return `...${emitExpression(expr.argument, ctx)}`;
     case "TernaryExpression":
-      return `${emitExpression(expr.condition, ctx)}${ctx.sp}?${ctx.sp}${emitExpression(expr.consequent, ctx)}${ctx.sp}:${ctx.sp}${emitExpression(expr.alternate, ctx)}`;
+      // A ternary's condition binds looser than any binary operator, so a
+      // binary condition must be parenthesised: `(a || b) ?? c` emitted as
+      // `a || b ?? c` is a JavaScript SyntaxError. The arms are assignments
+      // (right-associative), so they keep their parens only when they are
+      // themselves ternaries.
+      return `${emitTernaryOperand(expr.condition, ctx)}${ctx.sp}?${ctx.sp}${emitTernaryArm(expr.consequent, ctx)}${ctx.sp}:${ctx.sp}${emitTernaryArm(expr.alternate, ctx)}`;
     case "TypeofExpression":
       return `typeof ${emitExpression(expr.argument, ctx)}`;
     case "VoidExpression":
@@ -786,6 +946,9 @@ function emitExpression(expr: Expression, ctx: GenContext): string {
 function emitLiteral(lit: Literal): string {
   switch (lit.literalType) {
     case "number": return String(lit.value);
+    // A BigInt must keep its `n` suffix: `String(123n)` is "123", so emitting
+    // the bare value would silently turn a BigInt into a Number.
+    case "bigint": return `${String(lit.value)}n`;
     case "string": return JSON.stringify(lit.value);
     case "boolean": return String(lit.value);
     case "null": return "null";
@@ -858,17 +1021,65 @@ function emitBinary(bin: BinaryExpression, ctx: GenContext): string {
     throw new Error("Range operator '..' can only be used inside 'for' loops (e.g., for i in 0..10)");
   }
 
-  const left = parenthesizeIfNeeded(bin.left, bin.operator, ctx);
-  const right = parenthesizeIfNeeded(bin.right, bin.operator, ctx);
+  const left = parenthesizeIfNeeded(bin.left, bin.operator, "left", ctx);
+  const right = parenthesizeIfNeeded(bin.right, bin.operator, "right", ctx);
   return `${left}${ctx.sp}${op}${ctx.sp}${right}`;
 }
 
-function parenthesizeIfNeeded(expr: Expression, parentOp: string, ctx: GenContext): string {
+// Operators whose right operand must keep its parentheses even at EQUAL
+// precedence, because they are left-associative: `a - (b - c)` is not
+// `a - b - c`. Everything else only needs parens when strictly lower.
+const RIGHT_ASSOC_OPS = new Set(["-", "/", "%", "**"]);
+
+/**
+ * Emit a child expression, adding parentheses when precedence requires them.
+ * `side` matters: for a left-associative operator the RIGHT child needs
+ * parentheses at equal precedence, the left child does not.
+ */
+/** A ternary condition needs parens around any binary/logical expression. */
+function emitTernaryOperand(e: Expression, ctx: GenContext): string {
+  const inner = emitExpression(e, ctx);
+  if (
+    e.type === "BinaryExpression" ||
+    e.type === "AssignmentExpression" ||
+    e.type === "CompoundAssignmentExpression"
+  ) {
+    return `(${inner})`;
+  }
+  return inner;
+}
+
+/** A ternary arm is right-associative; only a nested ternary needs parens. */
+function emitTernaryArm(e: Expression, ctx: GenContext): string {
+  const inner = emitExpression(e, ctx);
+  return e.type === "TernaryExpression" ? `(${inner})` : inner;
+}
+
+function parenthesizeIfNeeded(
+  expr: Expression,
+  parentOp: string,
+  side: "left" | "right",
+  ctx: GenContext,
+): string {
   if (expr.type !== "BinaryExpression") return emitExpression(expr, ctx);
   const parentPrec = BIN_PRECEDENCE[parentOp] ?? 0;
   const childPrec = BIN_PRECEDENCE[expr.operator] ?? 0;
   const inner = emitBinary(expr, ctx);
-  return childPrec < parentPrec ? `(${inner})` : inner;
+
+  // `??` may not be mixed with `||`/`&&` without parentheses, even when the
+  // precedence numbers would allow it: `a || b ?? c` is a JavaScript
+  // SyntaxError, not a slow path.
+  if (
+    (parentOp === "??" && (expr.operator === "||" || expr.operator === "&&")) ||
+    (expr.operator === "??" && (parentOp === "||" || parentOp === "&&"))
+  ) {
+    return `(${inner})`;
+  }
+
+  const needsParens =
+    childPrec < parentPrec ||
+    (side === "right" && childPrec === parentPrec && RIGHT_ASSOC_OPS.has(parentOp));
+  return needsParens ? `(${inner})` : inner;
 }
 
 function emitTemplate(t: TemplateLiteral, ctx: GenContext): string {
@@ -906,6 +1117,8 @@ function emitArray(arr: ArrayExpression, ctx: GenContext): string {
 function emitObject(obj: ObjectExpression, ctx: GenContext): string {
   if (obj.properties.length === 0) return "{}";
   const props = obj.properties.map((p) => {
+    // Object spread: { ...src } — the value is emitted bare, no key.
+    if ((p as any).spread) return `...${emitExpression(p.value, ctx)}`;
     if (p.shorthand) return (p.key as Identifier).name;
     let keyStr: string;
     if (p.computed) {
@@ -918,6 +1131,32 @@ function emitObject(obj: ObjectExpression, ctx: GenContext): string {
     return `${keyStr}:${ctx.sp}${emitExpression(p.value, ctx)}`;
   }).join("," + ctx.sp);
   return `{${ctx.sp}${props}${ctx.sp}}`;
+}
+
+// Anonymous `fn(...)` expression. Unlike ArrowFunction it honours the
+// language's implicit-return rule: a body that is a single bare expression
+// returns its value, exactly as a named `fn f(a) = expr` does.
+function emitFunctionExpression(fn: any, ctx: GenContext): string {
+  const params = fn.params.map((p: any) => emitParam(p, ctx)).join("," + ctx.sp);
+  const paramStr = fn.params.length === 1 && !fn.params[0].rest && !fn.params[0].defaultValue
+    ? fn.params[0].name
+    : `(${params})`;
+  const stmts: Statement[] = fn.body ?? [];
+  const last = stmts[stmts.length - 1];
+  const retLast = fn.implicitReturn && last && last.type === "ExpressionStatement";
+
+  const inner = indented(ctx);
+  const body = stmts
+    .map((s, i) => {
+      const isLast = i === stmts.length - 1;
+      if (retLast && isLast) {
+        return pad(inner) + `return${ctx.sp}` + emitExpression((s as any).expression, inner) + ";";
+      }
+      return pad(inner) + emitStatement(s, inner);
+    })
+    .join(ctx.nl);
+
+  return `${paramStr}${ctx.sp}=>${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`;
 }
 
 function emitArrow(fn: ArrowFunction, ctx: GenContext): string {
@@ -933,7 +1172,14 @@ function emitArrow(fn: ArrowFunction, ctx: GenContext): string {
     return `${async}${paramStr}${ctx.sp}=>${ctx.sp}{${ctx.nl}${body}${ctx.nl}${pad(ctx)}}`;
   }
 
-  return `${async}${paramStr}${ctx.sp}=>${ctx.sp}${emitExpression(fn.body as Expression, ctx)}`;
+  // An object literal as an arrow body MUST be parenthesised: `x => { a: 1 }`
+  // is a block in JavaScript, and the braces make `...spread` a syntax error.
+  const bodyExpr = fn.body as Expression;
+  if (bodyExpr && bodyExpr.type === "ObjectExpression") {
+    return `${async}${paramStr}${ctx.sp}=>${ctx.sp}(${emitExpression(bodyExpr, ctx)})`;
+  }
+
+  return `${async}${paramStr}${ctx.sp}=>${ctx.sp}${emitExpression(bodyExpr, ctx)}`;
 }
 
 function emitNew(n: NewExpression, ctx: GenContext): string {

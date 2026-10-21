@@ -1,0 +1,276 @@
+import { GREEN, RED, YELLOW, BOLD, RESET, CYAN } from "../utils/colors.no"
+
+const fs = require("fs")
+const path = require("path")
+
+fn loadConfig() {
+  const configPath = path.join(process.cwd(), "nodeon.json")
+  if !fs.existsSync(configPath) {
+    return null
+  }
+  try {
+    return JSON.parse(fs.readFileSync(configPath, "utf8"))
+  } catch (e) {
+    return null
+  }
+}
+
+fn getMigrationsDir(config) {
+  if config && config.db && config.db.migrations {
+    return path.resolve(process.cwd(), config.db.migrations)
+  }
+  return path.join(process.cwd(), "packages", "db", "src", "migrations")
+}
+
+fn getSeedsDir(config) {
+  if config && config.db && config.db.seeds {
+    return path.resolve(process.cwd(), config.db.seeds)
+  }
+  return path.join(process.cwd(), "packages", "db", "src", "seeds")
+}
+
+fn getAppliedMigrationsPath() {
+  return path.join(process.cwd(), ".nodeon-migrations.json")
+}
+
+fn loadAppliedMigrations() {
+  const filePath = getAppliedMigrationsPath()
+  if fs.existsSync(filePath) {
+    try {
+      return JSON.parse(fs.readFileSync(filePath, "utf8"))
+    } catch (e) {
+      return { applied: [] }
+    }
+  }
+  return { applied: [] }
+}
+
+fn saveAppliedMigrations(state) {
+  const filePath = getAppliedMigrationsPath()
+  fs.writeFileSync(filePath, JSON.stringify(state, null, 2), "utf8")
+}
+
+fn discoverMigrations(migrationsDir) {
+  if !fs.existsSync(migrationsDir) {
+    return []
+  }
+  const files = fs.readdirSync(migrationsDir)
+  const migrations = files
+    .filter(fn(f) { return f.endsWith(".no") || f.endsWith(".js") })
+    .sort()
+  return migrations
+}
+
+fn runMigrate(args, config) {
+  const migrationsDir = getMigrationsDir(config)
+  const allMigrations = discoverMigrations(migrationsDir)
+  const state = loadAppliedMigrations()
+  const applied = state.applied || []
+
+  const pending = allMigrations.filter(fn(m) { return !applied.includes(m) })
+
+  if pending.length == 0 {
+    console.log(GREEN + "  No pending migrations." + RESET)
+    return
+  }
+
+  console.log(BOLD + "  Running " + pending.length + " migration(s)..." + RESET)
+  console.log("")
+
+  for migration in pending {
+    const migPath = path.join(migrationsDir, migration)
+    console.log("  " + CYAN + "migrate" + RESET + "  " + migration)
+
+    try {
+      const mod = require(migPath)
+      if mod.up && typeof mod.up == "function" {
+        mod.up()
+      }
+      applied.push(migration)
+    } catch (e) {
+      console.error("  " + RED + "FAILED" + RESET + "  " + migration + ": " + e.message)
+      saveAppliedMigrations({ applied: applied })
+      process.exit(1)
+    }
+  }
+
+  saveAppliedMigrations({ applied: applied })
+  console.log("")
+  console.log(GREEN + "  " + pending.length + " migration(s) applied successfully." + RESET)
+}
+
+fn runRollback(args, config) {
+  const state = loadAppliedMigrations()
+  const applied = state.applied || []
+
+  if applied.length == 0 {
+    console.log(YELLOW + "  No migrations to rollback." + RESET)
+    return
+  }
+
+  const steps = parseInt(args[0] || "1", 10)
+  const toRollback = applied.slice(-steps).reverse()
+
+  const migrationsDir = getMigrationsDir(config)
+
+  console.log(BOLD + "  Rolling back " + toRollback.length + " migration(s)..." + RESET)
+  console.log("")
+
+  for migration in toRollback {
+    const migPath = path.join(migrationsDir, migration)
+    console.log("  " + YELLOW + "rollback" + RESET + "  " + migration)
+
+    try {
+      if fs.existsSync(migPath) {
+        const mod = require(migPath)
+        if mod.down && typeof mod.down == "function" {
+          mod.down()
+        }
+      }
+      const idx = applied.indexOf(migration)
+      if idx >= 0 {
+        applied.splice(idx, 1)
+      }
+    } catch (e) {
+      console.error("  " + RED + "FAILED" + RESET + "  " + migration + ": " + e.message)
+      saveAppliedMigrations({ applied: applied })
+      process.exit(1)
+    }
+  }
+
+  saveAppliedMigrations({ applied: applied })
+  console.log("")
+  console.log(GREEN + "  Rolled back " + toRollback.length + " migration(s)." + RESET)
+}
+
+fn runSeed(args, config) {
+  const seedsDir = getSeedsDir(config)
+
+  if !fs.existsSync(seedsDir) {
+    console.log(YELLOW + "  No seeds directory found at " + seedsDir + RESET)
+    return
+  }
+
+  const files = fs.readdirSync(seedsDir)
+    .filter(fn(f) { return f.endsWith(".no") || f.endsWith(".js") })
+    .sort()
+
+  if files.length == 0 {
+    console.log(YELLOW + "  No seed files found." + RESET)
+    return
+  }
+
+  console.log(BOLD + "  Running " + files.length + " seed(s)..." + RESET)
+  console.log("")
+
+  for file in files {
+    const seedPath = path.join(seedsDir, file)
+    console.log("  " + CYAN + "seed" + RESET + "  " + file)
+
+    try {
+      const mod = require(seedPath)
+      if mod.run && typeof mod.run == "function" {
+        mod.run()
+      } else if mod.default && typeof mod.default == "function" {
+        mod.default()
+      }
+    } catch (e) {
+      console.error("  " + RED + "FAILED" + RESET + "  " + file + ": " + e.message)
+    }
+  }
+
+  console.log("")
+  console.log(GREEN + "  Seeds complete." + RESET)
+}
+
+fn runReset(args, config) {
+  console.log(BOLD + "  Resetting database..." + RESET)
+  console.log("")
+
+  // Clear applied migrations
+  saveAppliedMigrations({ applied: [] })
+  console.log("  " + YELLOW + "Cleared migration state" + RESET)
+
+  // Re-run all migrations
+  runMigrate([], config)
+
+  // Run seeds
+  runSeed([], config)
+}
+
+fn runStatus(args, config) {
+  const migrationsDir = getMigrationsDir(config)
+  const allMigrations = discoverMigrations(migrationsDir)
+  const state = loadAppliedMigrations()
+  const applied = state.applied || []
+
+  console.log("")
+  console.log(BOLD + "  Migration Status" + RESET)
+  console.log("")
+
+  if allMigrations.length == 0 {
+    console.log("  No migrations found in " + migrationsDir)
+    return
+  }
+
+  for migration in allMigrations {
+    if applied.includes(migration) {
+      console.log("  " + GREEN + "  [applied]" + RESET + "  " + migration)
+    } else {
+      console.log("  " + YELLOW + "  [pending]" + RESET + "  " + migration)
+    }
+  }
+
+  const pending = allMigrations.filter(fn(m) { return !applied.includes(m) })
+  console.log("")
+  console.log("  " + applied.length + " applied, " + pending.length + " pending")
+  console.log("")
+}
+
+export fn runDb(args) {
+  const subcmd = args[0]
+  const config = loadConfig()
+
+  console.log("")
+
+  if !subcmd || subcmd == "help" || subcmd == "--help" {
+    console.log(BOLD + "  nodeon db" + RESET + " — Database management")
+    console.log("")
+    console.log("  " + CYAN + "nodeon db migrate" + RESET + "          Run pending migrations")
+    console.log("  " + CYAN + "nodeon db rollback [N]" + RESET + "    Rollback last N migrations (default: 1)")
+    console.log("  " + CYAN + "nodeon db seed" + RESET + "            Run seed files")
+    console.log("  " + CYAN + "nodeon db reset" + RESET + "           Drop + migrate + seed")
+    console.log("  " + CYAN + "nodeon db status" + RESET + "          Show migration status")
+    console.log("")
+    return
+  }
+
+  if subcmd == "migrate" {
+    runMigrate(args.slice(1), config)
+    return
+  }
+
+  if subcmd == "rollback" {
+    runRollback(args.slice(1), config)
+    return
+  }
+
+  if subcmd == "seed" {
+    runSeed(args.slice(1), config)
+    return
+  }
+
+  if subcmd == "reset" {
+    runReset(args.slice(1), config)
+    return
+  }
+
+  if subcmd == "status" {
+    runStatus(args.slice(1), config)
+    return
+  }
+
+  console.error(RED + "  Unknown db subcommand: " + subcmd + RESET)
+  console.error("  Run " + CYAN + "'nodeon db help'" + RESET + " for usage.")
+  process.exit(1)
+}

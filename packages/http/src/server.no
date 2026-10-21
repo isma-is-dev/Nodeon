@@ -1,0 +1,141 @@
+// @nodeon/http — Lightweight HTTP server and router
+// Thin wrapper over Node.js http module
+
+const http = require('http')
+
+export class Router {
+  #routes = []
+  #middleware = []
+
+  fn use(handler) {
+    this.#middleware.push(handler)
+  }
+
+  fn get(path, handler) {
+    this.#routes.push({ method: "GET", path: path, handler: handler })
+  }
+
+  fn post(path, handler) {
+    this.#routes.push({ method: "POST", path: path, handler: handler })
+  }
+
+  fn put(path, handler) {
+    this.#routes.push({ method: "PUT", path: path, handler: handler })
+  }
+
+  fn patch(path, handler) {
+    this.#routes.push({ method: "PATCH", path: path, handler: handler })
+  }
+
+  fn del(path, handler) {
+    this.#routes.push({ method: "DELETE", path: path, handler: handler })
+  }
+
+  fn all(path, handler) {
+    this.#routes.push({ method: "*", path: path, handler: handler })
+  }
+
+  fn matchRoute(method, urlPath) {
+    for route in this.#routes {
+      if route.method != "*" && route.method != method { continue }
+      const params = matchPath(route.path, urlPath)
+      if params != null {
+        return { handler: route.handler, params: params }
+      }
+    }
+    return null
+  }
+
+  fn getMiddleware() {
+    return this.#middleware
+  }
+}
+
+fn matchPath(pattern, urlPath) {
+  // Exact match
+  if pattern == urlPath { return {} }
+
+  // Pattern with :params
+  const patternParts = pattern.split("/")
+  const urlParts = urlPath.split("/")
+  if patternParts.length != urlParts.length { return null }
+
+  const params = {}
+  let i = 0
+  while i < patternParts.length {
+    const pp = patternParts[i]
+    const up = urlParts[i]
+    if pp.startsWith(":") {
+      params[pp.slice(1)] = up
+    } else {
+      if pp != up { return null }
+    }
+    i = i + 1
+  }
+  return params
+}
+
+export fn createServer(router, options) {
+  const opts = options ?? {}
+  const port = opts.port ?? 3000
+
+  async fn handleRequest(req, res) {
+    const url = new URL(req.url, "http://localhost")
+    const method = req.method
+
+    // Run middleware
+    const middleware = router.getMiddleware()
+    let mwIdx = 0
+    let shouldContinue = true
+
+    fn runNext() {
+      if mwIdx >= middleware.length {
+        shouldContinue = true
+        return
+      }
+      const mw = middleware[mwIdx]
+      mwIdx = mwIdx + 1
+      try {
+        mw(req, res, runNext)
+      } catch (err) {
+        res.writeHead(500, { "Content-Type": "application/json" })
+        res.end(JSON.stringify({ error: err.message }))
+        shouldContinue = false
+      }
+    }
+
+    runNext()
+    if !shouldContinue { return }
+
+    // Match route
+    const matched = router.matchRoute(method, url.pathname)
+    if !matched {
+      res.writeHead(404, { "Content-Type": "application/json" })
+      res.end(JSON.stringify({ error: "Not found", path: url.pathname }))
+      return
+    }
+
+    try {
+      req.params = matched.params
+      req.query = Object.fromEntries(url.searchParams)
+      const result = await matched.handler(req, res)
+      if !res.headersSent && result != undefined {
+        res.writeHead(200, { "Content-Type": "application/json" })
+        res.end(JSON.stringify(result))
+      }
+    } catch (err) {
+      if !res.headersSent {
+        res.writeHead(500, { "Content-Type": "application/json" })
+        res.end(JSON.stringify({ error: err.message }))
+      }
+    }
+  }
+
+  const server = http.createServer(handleRequest)
+
+  server.listen(port, () => {
+    console.log("Server listening on http://localhost:" + port)
+  })
+
+  return server
+}

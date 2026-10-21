@@ -1,0 +1,145 @@
+// @nodeon/db — Database connection management
+// Supports PostgreSQL via pg, SQLite via better-sqlite3, or in-memory for testing
+
+export class Database {
+  #driver = null
+  #config = null
+  #pool = null
+  #connected = false
+
+  fn constructor(config) {
+    this.#config = config
+    this.#driver = config.driver ?? "memory"
+  }
+
+  async fn connect() {
+    if this.#connected { return }
+
+    if this.#driver == "pg" || this.#driver == "postgresql" {
+      const pg = require('pg')
+      this.#pool = new pg.Pool({
+        connectionString: this.#config.url,
+        max: this.#config.poolSize ?? 10
+      })
+      this.#connected = true
+    } else {
+      if this.#driver == "sqlite" {
+        const Database = require('better-sqlite3')
+        this.#pool = new Database(this.#config.url ?? ":memory:")
+        this.#connected = true
+      } else {
+        // In-memory driver for testing
+        this.#pool = new MemoryDriver()
+        this.#connected = true
+      }
+    }
+  }
+
+  async fn query(sql, params) {
+    if !this.#connected { await this.connect() }
+
+    if this.#driver == "pg" || this.#driver == "postgresql" {
+      const result = await this.#pool.query(sql, params ?? [])
+      return { rows: result.rows, rowCount: result.rowCount }
+    }
+
+    if this.#driver == "sqlite" {
+      if sql.trim().toUpperCase().startsWith("SELECT") || sql.trim().toUpperCase().startsWith("RETURNING") {
+        const rows = this.#pool.prepare(sql).all(...(params ?? []))
+        return { rows: rows, rowCount: rows.length }
+      }
+      const info = this.#pool.prepare(sql).run(...(params ?? []))
+      return { rows: [], rowCount: info.changes }
+    }
+
+    // Memory driver
+    return this.#pool.query(sql, params)
+  }
+
+  async fn close() {
+    if !this.#connected { return }
+    if this.#driver == "pg" || this.#driver == "postgresql" {
+      await this.#pool.end()
+    }
+    if this.#driver == "sqlite" {
+      this.#pool.close()
+    }
+    this.#connected = false
+  }
+
+  fn isConnected() {
+    return this.#connected
+  }
+
+  fn getDriver() {
+    return this.#driver
+  }
+}
+
+// In-memory database driver for testing
+class MemoryDriver {
+  #tables = {}
+
+  fn query(sql, params) {
+    // Very simple SQL-like memory store for testing
+    const trimmed = sql.trim().toUpperCase()
+
+    if trimmed.startsWith("CREATE TABLE") {
+      const match = sql.match(/CREATE TABLE\s+(?:IF NOT EXISTS\s+)?(\w+)/i)
+      if match {
+        const tableName = match[1]
+        if !this.#tables[tableName] {
+          this.#tables[tableName] = []
+        }
+      }
+      return { rows: [], rowCount: 0 }
+    }
+
+    if trimmed.startsWith("INSERT INTO") {
+      const match = sql.match(/INSERT INTO\s+(\w+)/i)
+      if match {
+        const tableName = match[1]
+        if !this.#tables[tableName] { this.#tables[tableName] = [] }
+        // Store params as a row
+        this.#tables[tableName].push(params ?? [])
+        return { rows: [], rowCount: 1 }
+      }
+    }
+
+    if trimmed.startsWith("SELECT") {
+      const match = sql.match(/FROM\s+(\w+)/i)
+      if match {
+        const tableName = match[1]
+        const rows = this.#tables[tableName] ?? []
+        return { rows: rows, rowCount: rows.length }
+      }
+    }
+
+    if trimmed.startsWith("DELETE FROM") {
+      const match = sql.match(/DELETE FROM\s+(\w+)/i)
+      if match {
+        const tableName = match[1]
+        const count = (this.#tables[tableName] ?? []).length
+        this.#tables[tableName] = []
+        return { rows: [], rowCount: count }
+      }
+    }
+
+    if trimmed.startsWith("DROP TABLE") {
+      const match = sql.match(/DROP TABLE\s+(?:IF EXISTS\s+)?(\w+)/i)
+      if match {
+        const tableName = match[1]
+        const existed = this.#tables[tableName] != undefined
+        this.#tables[tableName] = undefined
+        return { rows: [], rowCount: existed ? 1 : 0 }
+      }
+    }
+
+    return { rows: [], rowCount: 0 }
+  }
+}
+
+// Factory function
+export fn connect(config) {
+  return new Database(config)
+}

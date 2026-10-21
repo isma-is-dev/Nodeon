@@ -1,0 +1,162 @@
+import { GREEN, RED, YELLOW, BOLD, RESET, CYAN } from "../utils/colors.no"
+
+const fs = require("fs")
+const path = require("path")
+
+fn walkDir(dir, callback) {
+  if !fs.existsSync(dir) {
+    return
+  }
+  const entries = fs.readdirSync(dir, { withFileTypes: true })
+  for entry in entries {
+    const fullPath = path.join(dir, entry.name)
+    if entry.isDirectory() && entry.name != "node_modules" && entry.name != ".git" && entry.name != "dist" {
+      walkDir(fullPath, callback)
+    } else if entry.isFile() {
+      callback(fullPath)
+    }
+  }
+}
+
+fn ensureDir(dirPath) {
+  if !fs.existsSync(dirPath) {
+    fs.mkdirSync(dirPath, { recursive: true })
+  }
+}
+
+export fn runEject(args) {
+  const cwd = process.cwd()
+  const outDir = args[0] || "ejected"
+  const targetDir = path.resolve(cwd, outDir)
+
+  // Check for source files
+  const srcDir = path.join(cwd, "src")
+  if !fs.existsSync(srcDir) {
+    console.error(RED + "  Error: No src/ directory found." + RESET)
+    process.exit(1)
+  }
+
+  // Check target doesn't exist
+  if fs.existsSync(targetDir) {
+    if !args.includes("--force") {
+      console.error(RED + "  Error: Directory '" + outDir + "' already exists." + RESET)
+      console.error("  Use " + CYAN + "--force" + RESET + " to overwrite.")
+      process.exit(1)
+    }
+  }
+
+  console.log("")
+  console.log(BOLD + "  Nodeon Eject" + RESET)
+  console.log("")
+  console.log("  Exporting project as plain JavaScript to " + CYAN + outDir + "/" + RESET)
+  console.log("")
+
+  // Try to load the compile function
+  let compile = null
+  try {
+    const compiler = require(path.join(cwd, "dist-no", "nodeon-compiler.cjs"))
+    compile = compiler.compile
+  } catch (e) {
+    try {
+      const compiler = require(path.join(cwd, "node_modules", "nodeon", "dist-no", "nodeon-compiler.cjs"))
+      compile = compiler.compile
+    } catch (e2) {
+      // Fallback: just copy .no files as-is with a note
+      compile = null
+    }
+  }
+
+  let fileCount = 0
+  let errorCount = 0
+
+  // Walk src/ and compile each .no file
+  walkDir(srcDir, fn(filePath) {
+    const relPath = path.relative(cwd, filePath)
+
+    if filePath.endsWith(".no") {
+      const jsRelPath = relPath.replace(/\.no$/, ".js")
+      const targetPath = path.join(targetDir, jsRelPath)
+      ensureDir(path.dirname(targetPath))
+
+      if compile {
+        try {
+          const source = fs.readFileSync(filePath, "utf8")
+          const result = compile(source)
+          const jsCode = result.code || result
+          fs.writeFileSync(targetPath, jsCode, "utf8")
+          console.log("  " + GREEN + "compiled" + RESET + "  " + relPath + " -> " + jsRelPath)
+          fileCount = fileCount + 1
+        } catch (e) {
+          console.log("  " + RED + "error" + RESET + "    " + relPath + ": " + e.message)
+          errorCount = errorCount + 1
+        }
+      } else {
+        // No compiler available — copy with header comment
+        const source = fs.readFileSync(filePath, "utf8")
+        const header = "// Ejected from Nodeon - requires manual conversion to JavaScript\n// Original: " + relPath + "\n\n"
+        fs.writeFileSync(targetPath.replace(/\.js$/, ".no.txt"), header + source, "utf8")
+        console.log("  " + YELLOW + "copied" + RESET + "    " + relPath + " (compiler not available)")
+        fileCount = fileCount + 1
+      }
+    } else {
+      // Non-.no files: copy as-is
+      const targetPath = path.join(targetDir, relPath)
+      ensureDir(path.dirname(targetPath))
+      fs.copyFileSync(filePath, targetPath)
+      console.log("  " + CYAN + "copied" + RESET + "    " + relPath)
+      fileCount = fileCount + 1
+    }
+  })
+
+  // Copy config files
+  const configFiles = ["package.json", ".env", ".env.example", ".gitignore", "README.md"]
+  for configFile in configFiles {
+    const configPath = path.join(cwd, configFile)
+    if fs.existsSync(configPath) {
+      const targetPath = path.join(targetDir, configFile)
+      fs.copyFileSync(configPath, targetPath)
+      console.log("  " + CYAN + "copied" + RESET + "    " + configFile)
+      fileCount = fileCount + 1
+    }
+  }
+
+  // Generate a package.json if it doesn't exist
+  const ejectedPkgPath = path.join(targetDir, "package.json")
+  if !fs.existsSync(ejectedPkgPath) {
+    const configPath = path.join(cwd, "nodeon.json")
+    let name = "ejected-project"
+    let version = "1.0.0"
+    if fs.existsSync(configPath) {
+      try {
+        const config = JSON.parse(fs.readFileSync(configPath, "utf8"))
+        name = config.name || name
+        version = config.version || version
+      } catch (e) {
+        // ignore
+      }
+    }
+    const pkg = {
+      name: name,
+      version: version,
+      type: "module",
+      scripts: {
+        start: "node src/main.js"
+      }
+    }
+    fs.writeFileSync(ejectedPkgPath, JSON.stringify(pkg, null, 2), "utf8")
+    console.log("  " + GREEN + "created" + RESET + "   package.json")
+  }
+
+  console.log("")
+  if errorCount > 0 {
+    console.log("  " + GREEN + fileCount + " files exported" + RESET + ", " + RED + errorCount + " errors" + RESET)
+  } else {
+    console.log("  " + GREEN + fileCount + " files exported successfully." + RESET)
+  }
+  console.log("")
+  console.log("  Next steps:")
+  console.log("    cd " + outDir)
+  console.log("    npm install")
+  console.log("    npm start")
+  console.log("")
+}

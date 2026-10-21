@@ -1,0 +1,190 @@
+// @nodeon/string — String manipulation utilities for Nodeon
+// Pure Nodeon implementations — no external dependencies
+
+// Capitalize first letter
+export fn capitalize(str) {
+  if !str || str.length == 0 { return str }
+  return str[0].toUpperCase() + str.slice(1)
+}
+
+// Capitalize first letter of each word
+export fn titleCase(str) {
+  if !str { return str }
+  return str.split(" ").map((word) => capitalize(word)).join(" ")
+}
+
+// Convert to camelCase
+export fn camelCase(str) {
+  if !str { return str }
+  const words = splitWords(str)
+  if words.length == 0 { return "" }
+  const first = words[0].toLowerCase()
+  const rest = words.slice(1).map((w) => capitalize(w.toLowerCase()))
+  return first + rest.join("")
+}
+
+// Convert to PascalCase
+export fn pascalCase(str) {
+  if !str { return str }
+  return splitWords(str).map((w) => capitalize(w.toLowerCase())).join("")
+}
+
+// Convert to snake_case
+export fn snakeCase(str) {
+  if !str { return str }
+  return splitWords(str).map((w) => w.toLowerCase()).join("_")
+}
+
+// Convert to kebab-case
+export fn kebabCase(str) {
+  if !str { return str }
+  return splitWords(str).map((w) => w.toLowerCase()).join("-")
+}
+
+// Convert to CONSTANT_CASE
+export fn constantCase(str) {
+  if !str { return str }
+  return splitWords(str).map((w) => w.toUpperCase()).join("_")
+}
+
+// Truncate string with ellipsis
+export fn truncate(str, maxLen, suffix) {
+  if !str { return str }
+  const sfx = suffix ?? "..."
+  if str.length <= maxLen { return str }
+  return str.slice(0, maxLen - sfx.length) + sfx
+}
+
+// Pad string to length
+export fn padStart(str, length, char) {
+  const c = char ?? " "
+  let result = String(str)
+  while result.length < length {
+    result = c + result
+  }
+  return result
+}
+
+export fn padEnd(str, length, char) {
+  const c = char ?? " "
+  let result = String(str)
+  while result.length < length {
+    result = result + c
+  }
+  return result
+}
+
+// Repeat string n times
+export fn repeat(str, count) {
+  let result = ""
+  let i = 0
+  while i < count {
+    result = result + str
+    i = i + 1
+  }
+  return result
+}
+
+// Reverse a string
+export fn reverse(str) {
+  if !str { return str }
+  let result = ""
+  let i = str.length - 1
+  while i >= 0 {
+    result = result + str[i]
+    i = i - 1
+  }
+  return result
+}
+
+// Count occurrences of substring
+export fn countOccurrences(str, sub) {
+  if !str || !sub || sub.length == 0 { return 0 }
+  let count = 0
+  let idx = str.indexOf(sub)
+  while idx != -1 {
+    count = count + 1
+    idx = str.indexOf(sub, idx + sub.length)
+  }
+  return count
+}
+
+// Check if string is blank (empty or whitespace only)
+export fn isBlank(str) {
+  return !str || str.trim().length == 0
+}
+
+// Strip HTML tags
+export fn stripTags(str) {
+  if !str { return str }
+  return str.replace(/<[^>]*>/g, "")
+}
+
+// Escape HTML entities
+export fn escapeHtml(str) {
+  if !str { return str }
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
+// Unescape HTML entities
+export fn unescapeHtml(str) {
+  if !str { return str }
+  return str
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+}
+
+// Slugify — convert to URL-safe string
+export fn slugify(str) {
+  if !str { return str }
+  return str
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+}
+
+// Word wrap
+export fn wordWrap(str, width) {
+  if !str { return str }
+  const maxWidth = width ?? 80
+  const words = str.split(" ")
+  const lines = []
+  let currentLine = ""
+  for word in words {
+    if currentLine.length + word.length + 1 > maxWidth {
+      lines.push(currentLine)
+      currentLine = word
+    } else {
+      if currentLine.length > 0 {
+        currentLine = currentLine + " " + word
+      } else {
+        currentLine = word
+      }
+    }
+  }
+  if currentLine.length > 0 {
+    lines.push(currentLine)
+  }
+  return lines.join("\n")
+}
+
+// --- Internal helpers ---
+
+fn splitWords(str) {
+  // Split on spaces, underscores, hyphens, and camelCase boundaries
+  return str
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_\-]+/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 0)
+}

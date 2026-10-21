@@ -45,7 +45,7 @@ export function runBuild(args) {
   for (const file of filesToCompile) {
     const relFile = path.relative(process.cwd(), file);
     try {
-      const outPath = file === absInput ? output : undefined;
+      const outPath = (file === absInput) ? output : undefined;
       const result = compileFile(relFile, outPath, { minify: minify, write: true, sourceMap: sourceMap, check: check });
       const extra = [minify ? "minified" : "", sourceMap ? "+map" : ""].filter(Boolean).join(", ");
       console.log("  " + GREEN + "✓" + RESET + " " + path.basename(relFile) + " → " + path.basename(result.out) + extra ? " (" + extra + ")" : "");

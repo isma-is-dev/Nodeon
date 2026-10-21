@@ -1,0 +1,33 @@
+// Assertion utilities — lightweight assertions for runtime checks
+
+export fn assert(condition, message) {
+  if !condition {
+    throw new Error("Assertion failed: " + (message ?? "condition was false"))
+  }
+}
+
+export fn assertEq(actual, expected, message) {
+  if actual !== expected {
+    const msg = message ?? "assertEq failed"
+    throw new Error(msg + "\n  expected: " + JSON.stringify(expected) + "\n  actual:   " + JSON.stringify(actual))
+  }
+}
+
+export fn assertNe(actual, notExpected, message) {
+  if actual === notExpected {
+    const msg = message ?? "assertNe failed"
+    throw new Error(msg + "\n  values should differ but both are: " + JSON.stringify(actual))
+  }
+}
+
+export fn assertThrows(f, message) {
+  let threw = false
+  try {
+    f()
+  } catch (e) {
+    threw = true
+  }
+  if !threw {
+    throw new Error("assertThrows failed: " + (message ?? "expected function to throw"))
+  }
+}

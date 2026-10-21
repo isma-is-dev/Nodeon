@@ -1,0 +1,83 @@
+// Iteration utilities — functional helpers for arrays and iterables
+
+export fn range(start, end, step) {
+  const s = step ?? 1
+  const result = []
+  if s > 0 {
+    let i = start
+    while i < end {
+      result.push(i)
+      i = i + s
+    }
+  } else {
+    let i = start
+    while i > end {
+      result.push(i)
+      i = i + s
+    }
+  }
+  return result
+}
+
+export fn enumerate(arr) {
+  const result = []
+  let i = 0
+  while i < arr.length {
+    result.push([i, arr[i]])
+    i = i + 1
+  }
+  return result
+}
+
+export fn zip(a, b) {
+  const len = Math.min(a.length, b.length)
+  const result = []
+  let i = 0
+  while i < len {
+    result.push([a[i], b[i]])
+    i = i + 1
+  }
+  return result
+}
+
+export fn chunk(arr, size) {
+  const result = []
+  let i = 0
+  while i < arr.length {
+    result.push(arr.slice(i, i + size))
+    i = i + size
+  }
+  return result
+}
+
+export fn unique(arr) {
+  return Array.from(new Set(arr))
+}
+
+export fn groupBy(arr, keyFn) {
+  const groups = {}
+  for item in arr {
+    const key = keyFn(item)
+    if !groups[key] { groups[key] = [] }
+    groups[key].push(item)
+  }
+  return groups
+}
+
+export fn partition(arr, predicate) {
+  const pass = []
+  const fail = []
+  for item in arr {
+    if predicate(item) {
+      pass.push(item)
+    } else {
+      fail.push(item)
+    }
+  }
+  return [pass, fail]
+}
+
+export fn flatten(arr, depth) {
+  const d = depth ?? 1
+  return arr.flat(d)
+}
